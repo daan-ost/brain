@@ -1,0 +1,9 @@
+X-Powered-By: PHP/8.3.14
+Cache-Control: no-cache, private
+Date: Mon, 20 Oct 2025 09:34:22 GMT
+Content-Type: application/json
+Permissions-Policy: interest-cohort=()
+Set-Cookie: XSRF-TOKEN=eyJpdiI6IkVuVE1qc3RSTTI1ZzhMeWNpRTl4Q1E9PSIsInZhbHVlIjoiTFd1R1RGVWdtNDg3ek01TlNTZlRRVk9YK1MzRVNkV3ZPQVE3M1hMRzhkcEFmeHg4aGorZ2owalA0QTA5cDFFOHo0ZG13bkcxOEgwNExBLzRZZG5Kd3M3M3liKzBteU1aZDg0bEJYMmJZSTFXMVdGdEdPK1Q0UUl0TnEyTDJtREwiLCJtYWMiOiI4ZjgzMDUyZGE1YWMwMmI1OTY5ZjIzMzZlNjY1MjRjM2Y5MGEzYjY2MWU1MzZhZDcyYjAzNDk3OTZlMTYwODljIiwidGFnIjoiIn0%3D; expires=Mon, 27 Oct 2025 09:34:22 GMT; Max-Age=604800; path=/; secure; samesite=strict
+Set-Cookie: laravel-session=eyJpdiI6InNPbE1zNmFnVEhyOVVodGlObU5jdXc9PSIsInZhbHVlIjoicEJOb0tmbGs3TkFtcDd2MElxQWRySHJVN0xIc2l0d2NDTnFjNWN0YTNubHMvOTNJM3pOVGRndldkTDFpSVIvVmxjb0Q0Ykt1QXFJeFRYM0J5TGJWR040WkRIZEtzdHJxWHhYdkxBaFRQVG9uQzdMeGs0RVd1Z1hSWnltV1BvT2ciLCJtYWMiOiI4YjgzZGYzMDYyMjFhYWFlYzY5YjBlMzY0NzQ3ZTFhNTAwMzIyYWEyYmFmMDA5Y2U1NDlmZmVhOThhZDc1MTk1IiwidGFnIjoiIn0%3D; expires=Mon, 27 Oct 2025 09:34:22 GMT; Max-Age=604800; path=/; secure; httponly; samesite=strict
+
+{"success":false,"output":"","exitCode":1,"command":"\/Applications\/MAMP\/bin\/php\/php8.3.14\/bin\/php-cgi -d memory_limit=2G \/Users\/daanvantongeren\/Documents\/Sites\/pdfen\/www\/artisan test","outputTruncated":false,"originalOutputLength":0,"batchInfo":null}

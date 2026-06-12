@@ -1,0 +1,1123 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | NL Slug Mapping
+    |--------------------------------------------------------------------------
+    |
+    | Maps Dutch slugs to their English config keys.
+    | When a Dutch page is loaded, this mapping is used to find the correct config.
+    |
+    */
+    'nl_slug_mapping' => [
+        // Overview pages
+        'converteren' => 'convert',
+        'converteren/naar-pdf' => 'convert/to-pdf',
+        'converteren/van-pdf' => 'convert/from-pdf',
+        'samenvoegen' => 'merge',
+
+        //convert from to pdf
+        'converteer-visio-naar-pdf' => 'vsd-to-pdf',
+        'converteer-excel-naar-pdf' => 'excel-to-pdf',
+        'converteer-word-naar-pdf' => 'word-to-pdf',
+        'converteer-doc-naar-pdf' => 'doc-to-pdf',
+        'converteer-powerpoint-naar-pdf' => 'powerpoint-to-pdf',
+        'converteer-autocad-naar-pdf' => 'autocad-to-pdf',
+        'converteer-postscript-naar-pdf' => 'postscript-to-pdf',
+        'converteer-epub-naar-pdf' => 'epub-to-pdf',
+        'converteer-publisher-naar-pdf' => 'pub-to-pdf',
+        'converteer-ebook-naar-pdf' => 'ebook-to-pdf',
+        'converteer-markdown-naar-pdf' => 'md-to-pdf',
+        'converteer-html-naar-pdf' => 'html-to-pdf',
+        'converteer-rtf-naar-pdf' => 'rtf-to-pdf',
+        'converteer-csv-naar-pdf' => 'csv-to-pdf',
+        'converteer-officedocumenten-naar-pdf' => 'office-to-pdf',
+        'converteer-log-naar-pdf' => 'log-to-pdf',
+        'converteer-odg-naar-pdf' => 'odg-to-pdf',
+        'afbeelding-naar-pdf' => 'image-to-pdf', //convert individual
+
+         //convertfrom PDF
+         'pdf-naar-excel' => 'pdf-to-excel',
+         'pdf-naar-word' => 'pdf-to-word',
+         'pdf-naar-powerpoint' => 'pdf-to-powerpoint',
+         'pdf-naar-tekst' => 'pdf-to-text',
+         'pdf-naar-txt' => 'pdf-to-txt',
+         'pdf-naar-afbeeldingen' => 'pdf-to-images',
+         'pdf-naar-html' => 'pdf-to-html',
+         'pdf-naar-csv' => 'pdf-to-csv',
+        //merge
+        'pdf-samenvoegen' => 'pdfs-to-pdf', //merge
+        'afbeeldingen-naar-pdf-samenvoegen' => 'images-to-pdf', //merge
+        'autocad-samenvoegen-naar-pdf' => 'merge-autocad-to-pdf',
+        'word-samenvoegen-naar-pdf' => 'merge-word-to-pdf',
+        'excel-samenvoegen-naar-pdf' => 'merge-excel-to-pdf',
+        'powerpoint-samenvoegen-naar-pdf' => 'merge-powerpoint-to-pdf',
+        'postscript-samenvoegen-naar-pdf' => 'merge-postscript-to-pdf',
+        'ebook-samenvoegen-naar-pdf' => 'merge-ebook-to-pdf',
+        'office-samenvoegen-naar-pdf' => 'merge-office-to-pdf',
+      
+        //organize PDF
+        'pdf-verkleinen' => 'compress-pdf',
+        'pdf-splitsen' => 'pdf-to-split',
+        'pdf-roteren' => 'pdf-to-rotate',
+        'pdf-beveiligen' => 'pdf-to-protect',
+        'pdf-ontgrendelen' => 'pdf-to-unprotect',
+        'pdf-paginas-verwijderen' => 'pdf-to-delete-pages',
+        'repareer-pdf' => 'repair-pdf',
+        'rasterize-pdf' => 'rasterize-pdf',
+        'ocr-pdf' => 'ocr-pdf',
+        'pdfa-pdf' => 'pdfa-pdf',
+        //TODO
+        'pdf-watermark' => 'watermark-pdf', //TODO
+
+   
+    ],
+
+    // Conversion families for endpoint mapping
+    'conversion_families' => [
+        'office' => ['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'],
+        'powerpoint' => ['pptx', 'ppt'],
+        'text' => ['txt', 'log', 'csv'],
+        'images' => ['jpg', 'jpeg', 'png', 'webp', 'tiff', 'heic'],
+        'html' => ['html', 'htm'],
+        'urls' => ['url', 'txt'], // URL files
+        'pdf' => ['pdf'], // General PDF operations
+        'pdf_operations' => ['pdf'],
+        'pdf_reverse' => ['pdf'], // PDF to other formats
+        'web_conversion' => ['html', 'htm', 'url'], // MCP web conversions
+        'autocad' => ['dwf', 'dwfx', 'dwg', 'dxf'],
+        'postscript' => ['eps', 'ps', 'prn'],
+        'csv_excel' => ['csv', 'xls', 'xlsb', 'xltx'], // CSV and Excel variants
+        'publisher' => ['pub'],
+        'rtf_word' => ['rtf', 'dot', 'dotx', 'wpd', 'log'],
+        'ebook' => ['epub', 'mobi', 'djvu'],
+        'visio' => ['vsd', 'vsdx'],
+        'markdown' => ['md'],
+        'opendocument' => ['odg'],
+    ],
+
+    // Landing page definitions
+    'images-to-pdf' => [
+        'slug' => 'images-to-pdf',
+        'title' => 'Merge Images to PDF',
+        'description' => 'Upload multiple images and merge them into a single PDF document.',
+        'action_type' => 'merge',
+        'conversion_type' => 'images_to_pdf',
+        'workflow_preset' => 'images_to_pdf__download',
+        'allowed_mime_groups' => ['images', 'zips'],
+        'show_conversion_options' => true,
+        'limits' => [
+            'max_files' => 20,
+            'max_total_size' => 200 * 1024 * 1024, // 200MB in bytes
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'thumbnails',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'image-to-pdf' => [
+        'slug' => 'image-to-pdf',
+        'title' => 'Convert Images to PDF',
+        'description' => 'Upload image files and convert each image to a separate PDF document.',
+        'action_type' => 'convert',
+        'conversion_type' => 'image_to_pdf',
+        'workflow_preset' => 'image_to_pdf__download',
+        'allowed_mime_groups' => ['images', 'zips'],
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+        ],
+        'reorder_enabled' => false, // No reordering needed for individual conversions
+        'preview_type' => 'thumbnails',
+        'output_mode' => 'multiple_pdfs', // Each image becomes separate PDF
+    ],
+
+    'office-to-pdf' => [
+        'slug' => 'office-to-pdf',
+        'title' => 'Convert Office Documents to PDF',
+        'description' => 'Upload Microsoft Office files (Word, Excel, PowerPoint) and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'office_to_pdf',
+        'workflow_preset' => 'office_to_pdf__download',
+        'allowed_mime_groups' => ['office'],
+        'limits' => [
+            'max_files' => 10,
+            'max_total_size' => 100 * 1024 * 1024, // 100MB in bytes
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'doc-to-pdf' => [
+        'slug' => 'doc-to-pdf',
+        'title' => 'Convert Word to PDF',
+        'description' => 'Upload Microsoft Word documents (.doc, .docx) and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'docx_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['office', 'zips'],
+        'family' => 'office',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 15,
+            'max_total_size' => 150 * 1024 * 1024, // 150MB in bytes
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'excel-to-pdf' => [
+        'slug' => 'excel-to-pdf',
+        'title' => 'Convert Excel to PDF',
+        'description' => 'Upload Microsoft Excel spreadsheets (.xls, .xlsx) and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'excel_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['office', 'zips'],
+        'family' => 'office',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'powerpoint-to-pdf' => [
+        'slug' => 'powerpoint-to-pdf',
+        'title' => 'Convert PowerPoint to PDF',
+        'description' => 'Upload Microsoft PowerPoint presentations (.ppt, .pptx) and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'powerpoint_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['powerpoint', 'zips'],
+        'family' => 'powerpoint',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'log-to-pdf' => [
+        'slug' => 'log-to-pdf',
+        'title' => 'Convert Log Files to PDF',
+        'description' => 'Upload log files (.log, .txt) and convert them to PDF format for easy reading and sharing.',
+        'action_type' => 'convert',
+        'conversion_type' => 'text_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['text'],
+        'family' => 'text',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'pdfs-to-pdf' => [
+        'slug' => 'pdfs-to-pdf',
+        'title' => 'Merge PDFs',
+        'description' => 'Upload multiple PDF files or ZIP archives containing PDF files and merge them into a single PDF document.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_pdfs',
+        'workflow_preset' => 'merge_pdfs__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_merge',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+
+    'pdf-to-word' => [
+        'slug' => 'pdf-to-word',
+        'title' => 'Convert PDF to Word',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and convert them to editable Word documents (DOCX).',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_word',
+        'workflow_preset' => 'pdf_to_word__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_reverse',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-excel' => [
+        'slug' => 'pdf-to-excel',
+        'title' => 'Convert PDF to Excel',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and convert them to editable Excel spreadsheets (XLSX).',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_excel',
+        'workflow_preset' => 'pdf_to_excel__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_reverse',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-powerpoint' => [
+        'slug' => 'pdf-to-powerpoint',
+        'title' => 'Convert PDF to PowerPoint',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and convert them to editable PowerPoint presentations (PPTX).',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_powerpoint',
+        'workflow_preset' => 'pdf_to_powerpoint__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_reverse',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-text' => [
+        'slug' => 'pdf-to-text',
+        'title' => 'Convert PDF to Text',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and extract all text content to plain text files (TXT).',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_text',
+        'workflow_preset' => 'pdf_to_text__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_reverse',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-images' => [
+        'slug' => 'pdf-to-images',
+        'title' => 'Convert PDF to Images',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and convert each page to high-quality images (JPG, PNG).',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_images',
+        'workflow_preset' => 'pdf_to_images__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_reverse',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'autocad-to-pdf' => [
+        'slug' => 'autocad-to-pdf',
+        'title' => 'Convert AutoCAD to PDF',
+        'description' => 'Upload AutoCAD files (DWF, DWFX, DWG, DXF) or ZIP archives and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'autocad_to_pdf',
+        'workflow_preset' => 'autocad-to-pdf',
+        'allowed_mime_groups' => ['autocad', 'zips'],
+        'family' => 'autocad',
+        'show_conversion_options' => true,
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'postscript-to-pdf' => [
+        'slug' => 'postscript-to-pdf',
+        'title' => 'Convert PostScript to PDF',
+        'description' => 'Upload PostScript files (EPS, PS, PRN) or ZIP archives containing PostScript files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'postscript_to_pdf',
+        'workflow_preset' => 'postscript-to-pdf',
+        'allowed_mime_groups' => ['postscript', 'zips'],
+        'family' => 'postscript',
+        'show_conversion_options' => true,
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'ebook-to-pdf' => [
+        'slug' => 'ebook-to-pdf',
+        'title' => 'Convert eBook to PDF',
+        'description' => 'Upload eBook files (EPUB, MOBI, DJVU) or ZIP archives and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'ebook_to_pdf',
+        'workflow_preset' => 'ebook-to-pdf',
+        'allowed_mime_groups' => ['ebook', 'zips'],
+        'family' => 'ebook',
+        'show_conversion_options' => true,
+        'limits' => [
+            'max_files' => 20,
+            'max_total_size' => 200 * 1024 * 1024, // 200MB
+            'max_pages' => 2000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'office-to-pdf' => [
+        'slug' => 'office-to-pdf',
+        'title' => 'Convert Office Documents to PDF',
+        'description' => 'Upload Microsoft Office files (Word, Excel, PowerPoint) or ZIP archives and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'office_to_pdf',
+        'workflow_preset' => 'office-to-pdf',
+        'allowed_mime_groups' => ['office', 'zips'],
+        'family' => 'office',
+        'show_conversion_options' => true,
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-html' => [
+        'slug' => 'pdf-to-html',
+        'title' => 'Convert PDF to HTML',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and convert them to HTML format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_html',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'html-to-pdf' => [
+        'slug' => 'html-to-pdf',
+        'title' => 'Convert HTML to PDF',
+        'description' => 'Upload HTML files or ZIP archives containing HTML files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'html_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['html', 'zips'],
+        'family' => 'html',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-txt' => [
+        'slug' => 'pdf-to-txt',
+        'title' => 'Convert PDF to TXT',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and extract text content.',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_txt',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-csv' => [
+        'slug' => 'pdf-to-csv',
+        'title' => 'Convert PDF to CSV',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and extract tables to CSV format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'pdf_to_csv',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'csv-to-pdf' => [
+        'slug' => 'csv-to-pdf',
+        'title' => 'Convert CSV to PDF',
+        'description' => 'Upload CSV or Excel files (CSV, XLS, XLSB, XLTX) or ZIP archives and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'csv_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['csv_excel', 'zips'],
+        'family' => 'csv_excel',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pub-to-pdf' => [
+        'slug' => 'pub-to-pdf',
+        'title' => 'Convert Publisher to PDF',
+        'description' => 'Upload Microsoft Publisher files or ZIP archives containing Publisher files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'pub_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['publisher', 'zips'],
+        'family' => 'publisher',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'rtf-to-pdf' => [
+        'slug' => 'rtf-to-pdf',
+        'title' => 'Convert RTF to PDF',
+        'description' => 'Upload RTF and word processing files (RTF, DOT, DOTX, WPD, LOG) or ZIP archives and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'rtf_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['rtf_word', 'zips'],
+        'family' => 'rtf_word',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'ebook-to-pdf' => [
+        'slug' => 'ebook-to-pdf',
+        'title' => 'Convert eBook to PDF',
+        'description' => 'Upload eBook files (EPUB, MOBI, DJVU) or ZIP archives containing eBook files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'ebook_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['ebook', 'zips'],
+        'family' => 'ebook',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'epub-to-pdf' => [
+        'slug' => 'epub-to-pdf',
+        'title' => 'Convert EPUB to PDF',
+        'description' => 'Upload EPUB files or ZIP archives containing EPUB files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'epub_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['ebook', 'zips'],
+        'family' => 'ebook',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'vsd-to-pdf' => [
+        'slug' => 'vsd-to-pdf',
+        'title' => 'Convert Visio to PDF',
+        'description' => 'Upload Microsoft Visio diagrams (VSD, VSDX) or ZIP archives containing Visio files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'vsd_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['visio', 'zips'],
+        'family' => 'visio',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'md-to-pdf' => [
+        'slug' => 'md-to-pdf',
+        'title' => 'Convert Markdown to PDF',
+        'description' => 'Upload Markdown files or ZIP archives containing Markdown files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'md_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['markdown', 'zips'],
+        'family' => 'markdown',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'odg-to-pdf' => [
+        'slug' => 'odg-to-pdf',
+        'title' => 'Convert ODG to PDF',
+        'description' => 'Upload OpenDocument Graphics files or ZIP archives containing ODG files and convert them to PDF format.',
+        'action_type' => 'convert',
+        'conversion_type' => 'odg_to_pdf',
+        'workflow_preset' => 'convert_to_pdf__download',
+        'allowed_mime_groups' => ['opendocument', 'zips'],
+        'family' => 'opendocument',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024,
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    // PDF Organization landing pages
+    'pdf-to-split' => [
+        'slug' => 'pdf-to-split',
+        'title' => 'Split PDF',
+        'description' => 'Upload PDF files and extract specific pages or split them into multiple documents.',
+        'action_type' => 'organize',
+        'conversion_type' => 'pdf_to_split',
+        'workflow_preset' => 'pdf_to_split__download',
+        'allowed_mime_groups' => ['pdf'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 10, // Splitting is intensive, limit to 10 PDFs
+            'max_total_size' => 200 * 1024 * 1024, // 200MB in bytes
+            'max_pages' => 1000, // Max 1000 total pages across all files
+        ],
+        'reorder_enabled' => false, // Order doesn't matter for split
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+        'custom_ui' => true, // Uses custom split interface
+    ],
+
+    'pdf-to-rotate' => [
+        'slug' => 'pdf-to-rotate',
+        'title' => 'Rotate PDF',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and rotate pages by 90, 180, or 270 degrees.',
+        'action_type' => 'organize',
+        'conversion_type' => 'pdf_to_rotate',
+        'workflow_preset' => 'pdf-to-rotate',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-protect' => [
+        'slug' => 'pdf-to-protect',
+        'title' => 'Protect PDF',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and add password protection and encryption.',
+        'action_type' => 'organize',
+        'conversion_type' => 'pdf_to_protect',
+        'workflow_preset' => 'pdf-to-protect',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-unprotect' => [
+        'slug' => 'pdf-to-unprotect',
+        'title' => 'Unprotect PDF',
+        'description' => 'Upload password-protected PDF files or ZIP archives and remove the password protection.',
+        'action_type' => 'organize',
+        'conversion_type' => 'pdf_to_unprotect',
+        'workflow_preset' => 'pdf-to-unprotect',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdf-to-delete-pages' => [
+        'slug' => 'pdf-to-delete-pages',
+        'title' => 'Delete PDF Pages',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and delete specific pages from each document.',
+        'action_type' => 'organize',
+        'conversion_type' => 'pdf_to_delete_pages',
+        'workflow_preset' => 'pdf-to-delete-pages',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'compress-pdf' => [
+        'slug' => 'compress-pdf',
+        'title' => 'Compress PDF',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and reduce their file size.',
+        'action_type' => 'optimize',
+        'conversion_type' => 'compress_pdf',
+        'workflow_preset' => 'compress_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'thumbnails',
+        'output_mode' => 'individual_files',
+    ],
+
+    'ocr-pdf' => [
+        'slug' => 'ocr-pdf',
+        'title' => 'OCR PDF',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and add OCR text layer for searchable content.',
+        'action_type' => 'optimize',
+        'conversion_type' => 'ocr_pdf',
+        'workflow_preset' => 'ocr_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'show_conversion_options' => true,
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'pdfa-pdf' => [
+        'slug' => 'pdfa-pdf',
+        'title' => 'Convert to PDF/A',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and convert them to archival PDF/A format.',
+        'action_type' => 'optimize',
+        'conversion_type' => 'pdfa_pdf',
+        'workflow_preset' => 'pdfa_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'show_conversion_options' => true,
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'repair-pdf' => [
+        'slug' => 'repair-pdf',
+        'title' => 'Repair PDF',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and repair corrupted or damaged PDFs.',
+        'action_type' => 'optimize',
+        'conversion_type' => 'repair_pdf',
+        'workflow_preset' => 'repair_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    'rasterize-pdf' => [
+        'slug' => 'rasterize-pdf',
+        'title' => 'Rasterize PDF',
+        'description' => 'Upload PDF files or ZIP archives containing PDF files and convert all content to images for security.',
+        'action_type' => 'optimize',
+        'conversion_type' => 'rasterize_pdf',
+        'workflow_preset' => 'rasterize_pdf__download',
+        'allowed_mime_groups' => ['pdf', 'zips'],
+        'family' => 'pdf_operations',
+        'job' => 'generic_convert_to_pdf',
+        'limits' => [
+            'max_files' => 50,
+            'max_total_size' => 500 * 1024 * 1024, // 500MB in bytes
+            'max_pages' => 5000,
+        ],
+        'reorder_enabled' => true,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'individual_files',
+    ],
+
+    // Merge Conversion landing pages
+    'merge-autocad-to-pdf' => [
+        'slug' => 'merge-autocad-to-pdf',
+        'title' => 'Merge AutoCAD to PDF',
+        'description' => 'Upload multiple AutoCAD files (DWG, DXF, DWF, DWFX) or ZIP archives and merge them into one PDF document. Perfect for bundling complete building projects.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_autocad_to_pdf',
+        'workflow_preset' => 'merge_autocad_to_pdf__download',
+        'allowed_mime_groups' => ['autocad', 'zips'],
+        'family' => 'autocad',
+        'merge_mode' => true,
+        'requires_multiple_files' => true,
+        'show_conversion_options' => true,
+        'limits' => [
+            'min_files' => 2,
+            'max_files' => 20,
+            'max_total_size' => 200 * 1024 * 1024, // 200MB in bytes
+            'max_pages' => 1000,
+        ],
+        'steps' => [
+            [
+                'action' => 'autocad-to-pdf',
+                'action_type' => 'convert',
+                'credits_per_file' => 1,
+            ],
+            [
+                'action' => 'merge-pdfs',
+                'action_type' => 'merge',
+                'credits_total' => 1,
+            ]
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'merge-word-to-pdf' => [
+        'slug' => 'merge-word-to-pdf',
+        'title' => 'Merge Word to PDF',
+        'description' => 'Upload multiple Word documents (DOCX, DOC) or ZIP archives and merge them into one PDF. Ideal for combining chapters into complete reports.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_word_to_pdf',
+        'workflow_preset' => 'merge_word_to_pdf__download',
+        'allowed_mime_groups' => ['office', 'zips'],
+        'family' => 'office',
+        'merge_mode' => true,
+        'requires_multiple_files' => true,
+        'show_conversion_options' => true,
+        'limits' => [
+            'min_files' => 2,
+            'max_files' => 20,
+            'max_total_size' => 200 * 1024 * 1024, // 200MB in bytes
+            'max_pages' => 1000,
+        ],
+        'steps' => [
+            [
+                'action' => 'word-to-pdf',
+                'action_type' => 'convert',
+                'credits_per_file' => 1,
+            ],
+            [
+                'action' => 'merge-pdfs',
+                'action_type' => 'merge',
+                'credits_total' => 1,
+            ]
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'merge-excel-to-pdf' => [
+        'slug' => 'merge-excel-to-pdf',
+        'title' => 'Merge Excel to PDF',
+        'description' => 'Upload multiple Excel spreadsheets (XLSX, XLS) or ZIP archives and merge them into one PDF. Perfect for consolidating financial reports.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_excel_to_pdf',
+        'workflow_preset' => 'merge_excel_to_pdf__download',
+        'allowed_mime_groups' => ['office', 'zips'],
+        'family' => 'office',
+        'merge_mode' => true,
+        'requires_multiple_files' => true,
+        'show_conversion_options' => true,
+        'limits' => [
+            'min_files' => 2,
+            'max_files' => 20,
+            'max_total_size' => 200 * 1024 * 1024, // 200MB in bytes
+            'max_pages' => 1000,
+        ],
+        'steps' => [
+            [
+                'action' => 'excel-to-pdf',
+                'action_type' => 'convert',
+                'credits_per_file' => 1,
+            ],
+            [
+                'action' => 'merge-pdfs',
+                'action_type' => 'merge',
+                'credits_total' => 1,
+            ]
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'merge-powerpoint-to-pdf' => [
+        'slug' => 'merge-powerpoint-to-pdf',
+        'title' => 'Merge PowerPoint to PDF',
+        'description' => 'Upload multiple PowerPoint presentations (PPTX, PPT) or ZIP archives and merge them into one PDF. Great for combining presentation decks.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_powerpoint_to_pdf',
+        'workflow_preset' => 'merge_powerpoint_to_pdf__download',
+        'allowed_mime_groups' => ['powerpoint', 'zips'],
+        'family' => 'powerpoint',
+        'merge_mode' => true,
+        'requires_multiple_files' => true,
+        'show_conversion_options' => true,
+        'limits' => [
+            'min_files' => 2,
+            'max_files' => 20,
+            'max_total_size' => 200 * 1024 * 1024, // 200MB in bytes
+            'max_pages' => 1000,
+        ],
+        'steps' => [
+            [
+                'action' => 'powerpoint-to-pdf',
+                'action_type' => 'convert',
+                'credits_per_file' => 1,
+            ],
+            [
+                'action' => 'merge-pdfs',
+                'action_type' => 'merge',
+                'credits_total' => 1,
+            ]
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'merge-postscript-to-pdf' => [
+        'slug' => 'merge-postscript-to-pdf',
+        'title' => 'Merge PostScript to PDF',
+        'description' => 'Upload multiple PostScript files (EPS, PS, PRN) or ZIP archives and merge them into one PDF. Perfect for combining design files.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_postscript_to_pdf',
+        'workflow_preset' => 'merge_postscript_to_pdf__download',
+        'allowed_mime_groups' => ['postscript', 'zips'],
+        'family' => 'postscript',
+        'merge_mode' => true,
+        'requires_multiple_files' => true,
+        'show_conversion_options' => true,
+        'limits' => [
+            'min_files' => 2,
+            'max_files' => 20,
+            'max_total_size' => 200 * 1024 * 1024,
+            'max_pages' => 1000,
+        ],
+        'steps' => [
+            [
+                'action' => 'postscript-to-pdf',
+                'action_type' => 'convert',
+                'credits_per_file' => 1,
+            ],
+            [
+                'action' => 'merge-pdfs',
+                'action_type' => 'merge',
+                'credits_total' => 1,
+            ]
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'merge-ebook-to-pdf' => [
+        'slug' => 'merge-ebook-to-pdf',
+        'title' => 'Merge eBook to PDF',
+        'description' => 'Upload multiple eBook files (EPUB, MOBI, DJVU) or ZIP archives and merge them into one PDF. Ideal for combining book chapters.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_ebook_to_pdf',
+        'workflow_preset' => 'merge_ebook_to_pdf__download',
+        'allowed_mime_groups' => ['ebook', 'zips'],
+        'family' => 'ebook',
+        'merge_mode' => true,
+        'requires_multiple_files' => true,
+        'show_conversion_options' => true,
+        'limits' => [
+            'min_files' => 2,
+            'max_files' => 15,
+            'max_total_size' => 150 * 1024 * 1024,
+            'max_pages' => 800,
+        ],
+        'steps' => [
+            [
+                'action' => 'ebook-to-pdf',
+                'action_type' => 'convert',
+                'credits_per_file' => 1,
+            ],
+            [
+                'action' => 'merge-pdfs',
+                'action_type' => 'merge',
+                'credits_total' => 1,
+            ]
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+    'merge-office-to-pdf' => [
+        'slug' => 'merge-office-to-pdf',
+        'title' => 'Merge Office Documents to PDF',
+        'description' => 'Upload multiple Microsoft Office files (Word, Excel, PowerPoint) or ZIP archives and merge them into one PDF. Great for combining mixed document types.',
+        'action_type' => 'merge',
+        'conversion_type' => 'merge_office_to_pdf',
+        'workflow_preset' => 'merge_office_to_pdf__download',
+        'allowed_mime_groups' => ['office', 'zips'],
+        'family' => 'office',
+        'merge_mode' => true,
+        'requires_multiple_files' => true,
+        'show_conversion_options' => true,
+        'limits' => [
+            'min_files' => 2,
+            'max_files' => 25,
+            'max_total_size' => 250 * 1024 * 1024,
+            'max_pages' => 1500,
+        ],
+        'steps' => [
+            [
+                'action' => 'office-to-pdf',
+                'action_type' => 'convert',
+                'credits_per_file' => 1,
+            ],
+            [
+                'action' => 'merge-pdfs',
+                'action_type' => 'merge',
+                'credits_total' => 1,
+            ]
+        ],
+        'reorder_enabled' => false,
+        'preview_type' => 'icons_only',
+        'output_mode' => 'single_pdf',
+    ],
+
+];

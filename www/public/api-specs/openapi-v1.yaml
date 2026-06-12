@@ -1,0 +1,583 @@
+openapi: 3.0.3
+info:
+  title: API v1
+  description: |
+    REST API for programmatic access to the platform.
+
+    ## Authentication
+
+    All API requests require authentication using a Bearer token.
+    Generate your API token in your [profile settings](/profile/api-tokens).
+
+    ```
+    Authorization: Bearer YOUR_API_TOKEN
+    ```
+
+    ## Rate Limiting
+
+    API requests are rate limited to 100 requests per minute per user.
+    When you exceed the rate limit, you'll receive a 429 response.
+
+    ## Credits
+
+    Most API operations consume credits from your account balance.
+    Check your credit balance via the `/user/credits` endpoint.
+
+  version: 1.0.0
+  contact:
+    name: Support
+    email: support@example.com
+
+servers:
+  - url: /api/v1
+    description: Current server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: User
+    description: User information and credits
+  - name: Tokens
+    description: API token management
+  - name: Webhooks
+    description: Webhook management for real-time notifications
+
+paths:
+  /user:
+    get:
+      tags:
+        - User
+      summary: Get current user info
+      description: Returns information about the authenticated user.
+      responses:
+        '200':
+          description: User information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /user/credits:
+    get:
+      tags:
+        - User
+      summary: Get credit balance
+      description: |
+        Returns the credit balance breakdown for the authenticated user.
+        Shows both personal credits and organization credits (if applicable).
+      responses:
+        '200':
+          description: Credit balance information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditBalance'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tokens:
+    get:
+      tags:
+        - Tokens
+      summary: List API tokens
+      description: Returns all active API tokens for the authenticated user.
+      responses:
+        '200':
+          description: List of tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Token'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - Tokens
+      summary: Create API token
+      description: |
+        Creates a new API token for the authenticated user.
+        The token value is only returned once upon creation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Human-readable name for the token
+                  example: "My Application"
+      responses:
+        '201':
+          description: Token created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: The token value (only shown once)
+                    example: "1|abc123def456..."
+                  name:
+                    type: string
+                    example: "My Application"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /tokens/{id}:
+    delete:
+      tags:
+        - Tokens
+      summary: Revoke API token
+      description: Revokes (deletes) an API token.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Token ID
+      responses:
+        '200':
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Token revoked successfully"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks:
+    get:
+      tags:
+        - Webhooks
+      summary: List webhooks
+      description: Returns all webhooks for the authenticated user.
+      responses:
+        '200':
+          description: List of webhooks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Webhook'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - Webhooks
+      summary: Create webhook
+      description: Creates a new webhook endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+                - events
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: The webhook endpoint URL (must be HTTPS)
+                  example: "https://example.com/webhook"
+                events:
+                  type: array
+                  items:
+                    type: string
+                  description: Events to subscribe to
+                  example: ["payment.completed", "user.updated"]
+                secret:
+                  type: string
+                  description: Secret for HMAC signature verification (auto-generated if not provided)
+      responses:
+        '201':
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /webhooks/{id}:
+    get:
+      tags:
+        - Webhooks
+      summary: Get webhook
+      description: Returns a specific webhook.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Webhook ID
+      responses:
+        '200':
+          description: Webhook details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      tags:
+        - Webhooks
+      summary: Update webhook
+      description: Updates an existing webhook.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Webhook ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                events:
+                  type: array
+                  items:
+                    type: string
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Webhook updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags:
+        - Webhooks
+      summary: Delete webhook
+      description: Deletes a webhook.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Webhook ID
+      responses:
+        '200':
+          description: Webhook deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Webhook deleted successfully"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks/{id}/test:
+    post:
+      tags:
+        - Webhooks
+      summary: Test webhook
+      description: Sends a test payload to the webhook endpoint.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Webhook ID
+      responses:
+        '200':
+          description: Test sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  response_code:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: "Test webhook delivered successfully"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "Sanctum Token"
+      description: |
+        API token authentication. Generate tokens in your profile settings.
+
+        Example: `Authorization: Bearer 1|abc123def456...`
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        email_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        organization:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            role:
+              type: string
+              enum: [admin, member]
+
+    CreditBalance:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total available credits
+          example: 500
+        personal:
+          type: integer
+          description: Personal credit balance
+          example: 100
+        organization:
+          type: integer
+          description: Organization credit balance (if member of organization)
+          example: 400
+        organization_name:
+          type: string
+          nullable: true
+          description: Name of the organization (if applicable)
+          example: "Acme Inc."
+
+    Token:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "My Application"
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        url:
+          type: string
+          format: uri
+          example: "https://example.com/webhook"
+        events:
+          type: array
+          items:
+            type: string
+          example: ["payment.completed", "user.updated"]
+        enabled:
+          type: boolean
+          example: true
+        secret:
+          type: string
+          description: HMAC secret for signature verification (only shown on creation)
+        created_at:
+          type: string
+          format: date-time
+        last_triggered_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+        message:
+          type: string
+          example: "Invalid or missing API token"
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "The given data was invalid."
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            name:
+              - "The name field is required."
+
+    InsufficientCreditsError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Insufficient credits"
+        message:
+          type: string
+          example: "You need 10 credits but only have 5 available"
+        credits_required:
+          type: integer
+          example: 10
+        credits_available:
+          type: integer
+          example: 5

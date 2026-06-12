@@ -1,0 +1,478 @@
+/**
+ * Klaro! Consent Manager - Application Branded Styling
+ *
+ * Custom CSS to match application brand identity.
+ * Based on Klaro default styles with application color overrides.
+ *
+ * Color palette (Tailwind):
+ * - Primary: teal-600 (#0d9488)
+ * - Primary hover: teal-700 (#0f766e)
+ * - Secondary: slate-600 (#475569)
+ * - Background: white (#ffffff)
+ * - Text: slate-800 (#1e293b)
+ * - Border: slate-200 (#e2e8f0)
+ */
+
+/* ==========================================================================
+   CSS Variables (Klaro theme overrides)
+   ========================================================================== */
+.klaro {
+    --green1: #0d9488;    /* teal-600 - primary */
+    --green2: #0f766e;    /* teal-700 - primary hover */
+    --green3: #14b8a6;    /* teal-500 - accent */
+    --blue1: #3b82f6;     /* blue-500 - links */
+    --blue2: #2563eb;     /* blue-600 - link hover */
+    --white1: #ffffff;
+    --white2: #f8fafc;    /* slate-50 */
+    --white3: #f1f5f9;    /* slate-100 */
+    --dark1: #1e293b;     /* slate-800 - text */
+    --dark2: #334155;     /* slate-700 - secondary text */
+    --dark3: #475569;     /* slate-600 */
+    --light1: #e2e8f0;    /* slate-200 - borders */
+    --light2: #cbd5e1;    /* slate-300 */
+    --light3: #94a3b8;    /* slate-400 */
+    --border-radius: 0.5rem;
+    --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    --font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* ==========================================================================
+   Base styles
+   ========================================================================== */
+.klaro {
+    font-family: var(--font-family);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.klaro * {
+    box-sizing: border-box;
+}
+
+/* ==========================================================================
+   Consent Notice (Bottom banner)
+   ========================================================================== */
+.klaro .cookie-notice {
+    background: var(--white1);
+    border-top: 1px solid var(--light1);
+    box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+    padding: 1rem 1.5rem;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.klaro .cookie-notice .cn-body {
+    flex: 1;
+    min-width: 280px;
+    color: var(--dark1);
+}
+
+.klaro .cookie-notice .cn-body p {
+    margin: 0;
+    font-size: 0.875rem;
+}
+
+.klaro .cookie-notice .cn-body a {
+    color: var(--blue1);
+    text-decoration: none;
+}
+
+.klaro .cookie-notice .cn-body a:hover {
+    color: var(--blue2);
+    text-decoration: underline;
+}
+
+.klaro .cookie-notice .cn-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+.klaro .cn-buttons button,
+.klaro .cm-btn {
+    font-family: var(--font-family);
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+/* Primary button (Accept All) */
+.klaro .cm-btn-success,
+.klaro .cn-buttons .cm-btn-success {
+    background: var(--green1);
+    color: var(--white1);
+}
+
+.klaro .cm-btn-success:hover,
+.klaro .cn-buttons .cm-btn-success:hover {
+    background: var(--green2);
+}
+
+/* Secondary button (Decline All) */
+.klaro .cm-btn-decline,
+.klaro .cn-buttons .cm-btn-decline {
+    background: var(--white3);
+    color: var(--dark2);
+    border: 1px solid var(--light1);
+}
+
+.klaro .cm-btn-decline:hover,
+.klaro .cn-buttons .cm-btn-decline:hover {
+    background: var(--light1);
+}
+
+/* Info/Learn more button */
+.klaro .cm-btn-info,
+.klaro .cn-buttons .cm-btn-info {
+    background: transparent;
+    color: var(--dark3);
+    padding: 0.5rem 0.75rem;
+}
+
+.klaro .cm-btn-info:hover,
+.klaro .cn-buttons .cm-btn-info:hover {
+    background: var(--white3);
+}
+
+/* ==========================================================================
+   Consent Modal
+   ========================================================================== */
+.klaro .cookie-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.klaro .cookie-modal .cm-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.klaro .cookie-modal .cm-modal {
+    position: relative;
+    background: var(--white1);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    max-width: 640px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+/* Modal Header */
+.klaro .cookie-modal .cm-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--light1);
+}
+
+.klaro .cookie-modal .cm-header h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--dark1);
+}
+
+/* Modal Body */
+.klaro .cookie-modal .cm-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.klaro .cookie-modal .cm-body p {
+    margin: 0 0 1rem;
+    color: var(--dark2);
+    font-size: 0.875rem;
+}
+
+/* Service list */
+.klaro .cookie-modal .cm-services {
+    margin: 1rem 0 0;
+}
+
+.klaro .cookie-modal .cm-service {
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    background: var(--white2);
+    border: 1px solid var(--light1);
+    border-radius: var(--border-radius);
+}
+
+.klaro .cookie-modal .cm-service:last-child {
+    margin-bottom: 0;
+}
+
+.klaro .cookie-modal .cm-service .cm-service-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+
+.klaro .cookie-modal .cm-service .cm-service-title label {
+    font-weight: 600;
+    color: var(--dark1);
+    font-size: 0.9375rem;
+}
+
+.klaro .cookie-modal .cm-service .cm-service-description {
+    font-size: 0.8125rem;
+    color: var(--dark3);
+    line-height: 1.4;
+}
+
+/* Toggle switch */
+.klaro .cm-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.klaro .cm-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.klaro .cm-switch .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--light2);
+    border-radius: 24px;
+    transition: 0.2s;
+}
+
+.klaro .cm-switch .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--white1);
+    border-radius: 50%;
+    transition: 0.2s;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.klaro .cm-switch input:checked + .slider {
+    background: var(--green1);
+}
+
+.klaro .cm-switch input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.klaro .cm-switch input:disabled + .slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Modal Footer */
+.klaro .cookie-modal .cm-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--light1);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    background: var(--white2);
+}
+
+/* ==========================================================================
+   Purposes
+   ========================================================================== */
+.klaro .cm-purpose {
+    display: inline-block;
+    background: var(--white3);
+    color: var(--dark3);
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    margin-right: 0.25rem;
+}
+
+/* ==========================================================================
+   Links
+   ========================================================================== */
+.klaro a {
+    color: var(--blue1);
+    text-decoration: none;
+}
+
+.klaro a:hover {
+    color: var(--blue2);
+    text-decoration: underline;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+@media (max-width: 640px) {
+    .klaro .cookie-notice {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+    }
+
+    .klaro .cookie-notice .cn-buttons {
+        justify-content: center;
+    }
+
+    .klaro .cookie-modal .cm-modal {
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .klaro .cookie-modal .cm-footer {
+        flex-direction: column;
+    }
+
+    .klaro .cookie-modal .cm-footer button {
+        width: 100%;
+    }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+.klaro button:focus-visible,
+.klaro a:focus-visible,
+.klaro input:focus-visible {
+    outline: 2px solid var(--green3);
+    outline-offset: 2px;
+}
+
+/* Remove outline from close button unless keyboard focused */
+.klaro .cm-header button.hide {
+    outline: none;
+}
+
+.klaro .cm-header button.hide:focus-visible {
+    outline: 2px solid var(--green3);
+    outline-offset: 2px;
+}
+
+.klaro .cm-switch input:focus + .slider {
+    box-shadow: 0 0 0 2px var(--white1), 0 0 0 4px var(--green3);
+}
+
+/* ==========================================================================
+   Animation
+   ========================================================================== */
+.klaro .cookie-notice {
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.klaro .cookie-modal .cm-modal {
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* ==========================================================================
+   Required services (hide toggle, show as always enabled)
+   ========================================================================== */
+
+/* Hide the toggle switch for required purposes and services */
+.klaro .cm-purpose .cm-list-label .cm-switch,
+.klaro .cm-service .cm-list-label .cm-switch {
+    display: none;
+}
+
+/* Style the "(altijd nodig)" text that Klaro adds */
+.klaro .cm-required {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.125rem 0.5rem;
+    background: var(--green1);
+    color: var(--white1);
+    font-size: 0.7rem;
+    font-weight: 500;
+    border-radius: 0.25rem;
+}
+
+/* Hide the entire functional purpose section in the modal
+   (it's only required cookies, no need to show in settings) */
+.klaro .cm-purpose:has(.cm-list-input.required):not(:has(.cm-list-input:not(.required))) {
+    display: none;
+}
+
+/* Hide purposes list when empty (all purposes hidden) */
+.klaro .cm-purposes:has(> li:only-child:has(.cm-list-input.required)) {
+    display: none;
+}
+
+/* Hide any stray checkboxes for required services */
+.klaro .cm-list-input.required {
+    display: none !important;
+}
+
+/* If the above :has() doesn't work in all browsers, hide functional specifically */
+.klaro #purpose-item-functional:checked:disabled ~ .cm-list-label,
+.klaro li.cm-purpose:only-child {
+    /* Alternative: just style it nicely if we can't hide it */
+}
+
+/* Hide the "1 service" expandable when there's only required services */
+.klaro .cm-purpose .cm-caret {
+    display: none;
+}
+
+/* Hide nested required services list since purpose already shows it */
+.klaro .cm-purpose .cm-services .cm-content {
+    display: none;
+}

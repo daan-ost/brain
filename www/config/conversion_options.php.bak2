@@ -1,0 +1,2962 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Conversion Options Configuration
+    |--------------------------------------------------------------------------
+    |
+    | This configuration defines conversion options for each conversion type.
+    | Designed for easy migration to database-driven configuration in the future.
+    |
+    | Structure is database-ready:
+    | - conversion_types: Core conversion definitions
+    | - options: Available options per conversion type
+    | - provider_mappings: Map internal options to provider API parameters
+    |
+    */
+
+    'conversion_types' => [
+        'images_to_pdf' => [
+            'name_key' => 'conversions.images_to_pdf.name',
+            'slug' => 'images-to-pdf',
+            'description_key' => 'conversions.images_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'image_to_pdf' => [
+            'name_key' => 'conversions.image_to_pdf.name',
+            'slug' => 'image-to-pdf',
+            'description_key' => 'conversions.image_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'docx_to_pdf' => [
+            'name_key' => 'conversions.docx_to_pdf.name',
+            'slug' => 'doc-to-pdf',
+            'description_key' => 'conversions.docx_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'excel_to_pdf' => [
+            'name_key' => 'conversions.excel_to_pdf.name',
+            'slug' => 'excel-to-pdf',
+            'description_key' => 'conversions.excel_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'powerpoint_to_pdf' => [
+            'name_key' => 'conversions.powerpoint_to_pdf.name',
+            'slug' => 'powerpoint-to-pdf',
+            'description_key' => 'conversions.powerpoint_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'pdf_to_word' => [
+            'name_key' => 'conversions.pdf_to_word.name',
+            'slug' => 'pdf-to-word',
+            'description_key' => 'conversions.pdf_to_word.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+            'workflow_constraints' => [
+                'allowed_next_steps' => ['zip_output'],
+                'reason' => 'Word documents can only be packaged, not further converted',
+                'is_output_conversion' => true,
+            ],
+        ],
+
+        'pdf_to_excel' => [
+            'name_key' => 'conversions.pdf_to_excel.name',
+            'slug' => 'pdf-to-excel',
+            'description_key' => 'conversions.pdf_to_excel.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+            'workflow_constraints' => [
+                'allowed_next_steps' => ['zip_output'],
+                'reason' => 'Excel documents can only be packaged, not further converted',
+                'is_output_conversion' => true,
+            ],
+        ],
+
+        'pdf_to_powerpoint' => [
+            'name_key' => 'conversions.pdf_to_powerpoint.name',
+            'slug' => 'pdf-to-powerpoint',
+            'description_key' => 'conversions.pdf_to_powerpoint.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+            'workflow_constraints' => [
+                'allowed_next_steps' => ['zip_output'],
+                'reason' => 'PowerPoint documents can only be packaged, not further converted',
+                'is_output_conversion' => true,
+            ],
+        ],
+
+        'pdf_to_text' => [
+            'name_key' => 'conversions.pdf_to_text.name',
+            'slug' => 'pdf-to-text',
+            'description_key' => 'conversions.pdf_to_text.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+            'workflow_constraints' => [
+                'allowed_next_steps' => ['zip_output'],
+                'reason' => 'Text files can only be packaged, not further converted',
+                'is_output_conversion' => true,
+            ],
+        ],
+
+        'pdf_to_images' => [
+            'name_key' => 'conversions.pdf_to_images.name',
+            'slug' => 'pdf-to-images',
+            'description_key' => 'conversions.pdf_to_images.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+            'workflow_constraints' => [
+                'allowed_next_steps' => ['zip_output'],
+                'reason' => 'Image files can only be packaged, not further converted',
+                'is_output_conversion' => true,
+            ],
+        ],
+
+        'autocad_to_pdf' => [
+            'name_key' => 'conversions.autocad_to_pdf.name',
+            'slug' => 'autocad-to-pdf',
+            'description_key' => 'conversions.autocad_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'postscript_to_pdf' => [
+            'name_key' => 'conversions.postscript_to_pdf.name',
+            'slug' => 'postscript-to-pdf',
+            'description_key' => 'conversions.postscript_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'ebook_to_pdf' => [
+            'name_key' => 'conversions.ebook_to_pdf.name',
+            'slug' => 'ebook-to-pdf',
+            'description_key' => 'conversions.ebook_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'email_to_pdf' => [
+            'name_key' => 'conversions.email_to_pdf.name',
+            'slug' => 'email-to-pdf',
+            'description_key' => 'conversions.email_to_pdf.description',
+            'provider' => 'hybrid', // Self-hosted hybrid service (JAR for body, ConvertAPI for attachments)
+            'service_class' => \App\Services\HybridEmlToPdfService::class,
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'office_to_pdf' => [
+            'name_key' => 'conversions.office_to_pdf.name',
+            'slug' => 'office-to-pdf',
+            'description_key' => 'conversions.office_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'generic_to_pdf' => [
+            'name_key' => 'conversions.generic_to_pdf.name',
+            'slug' => 'generic-to-pdf',
+            'description_key' => 'conversions.generic_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        // Merge Conversions
+        'merge_autocad_to_pdf' => [
+            'name_key' => 'conversions.merge_autocad_to_pdf.name',
+            'slug' => 'merge-autocad-to-pdf',
+            'description_key' => 'conversions.merge_autocad_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'merge_word_to_pdf' => [
+            'name_key' => 'conversions.merge_word_to_pdf.name',
+            'slug' => 'merge-word-to-pdf',
+            'description_key' => 'conversions.merge_word_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'merge_excel_to_pdf' => [
+            'name_key' => 'conversions.merge_excel_to_pdf.name',
+            'slug' => 'merge-excel-to-pdf',
+            'description_key' => 'conversions.merge_excel_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'merge_powerpoint_to_pdf' => [
+            'name_key' => 'conversions.merge_powerpoint_to_pdf.name',
+            'slug' => 'merge-powerpoint-to-pdf',
+            'description_key' => 'conversions.merge_powerpoint_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'merge_postscript_to_pdf' => [
+            'name_key' => 'conversions.merge_postscript_to_pdf.name',
+            'slug' => 'merge-postscript-to-pdf',
+            'description_key' => 'conversions.merge_postscript_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'merge_ebook_to_pdf' => [
+            'name_key' => 'conversions.merge_ebook_to_pdf.name',
+            'slug' => 'merge-ebook-to-pdf',
+            'description_key' => 'conversions.merge_ebook_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'merge_office_to_pdf' => [
+            'name_key' => 'conversions.merge_office_to_pdf.name',
+            'slug' => 'merge-office-to-pdf',
+            'description_key' => 'conversions.merge_office_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'merge',
+            'is_active' => true,
+        ],
+
+        'pdf_to_html' => [
+            'name_key' => 'conversions.pdf_to_html.name',
+            'slug' => 'pdf-to-html',
+            'description_key' => 'conversions.pdf_to_html.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+            'workflow_constraints' => [
+                'allowed_next_steps' => ['zip_output'],
+                'reason' => 'HTML files can only be packaged, not further converted',
+                'is_output_conversion' => true,
+            ],
+        ],
+
+        'html_to_pdf' => [
+            'name_key' => 'conversions.html_to_pdf.name',
+            'slug' => 'html-to-pdf',
+            'description_key' => 'conversions.html_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'pdf_to_csv' => [
+            'name_key' => 'conversions.pdf_to_csv.name',
+            'slug' => 'pdf-to-csv',
+            'description_key' => 'conversions.pdf_to_csv.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+            'workflow_constraints' => [
+                'allowed_next_steps' => ['zip_output'],
+                'reason' => 'CSV files can only be packaged, not further converted',
+                'is_output_conversion' => true,
+            ],
+        ],
+
+        'csv_to_pdf' => [
+            'name_key' => 'conversions.csv_to_pdf.name',
+            'slug' => 'csv-to-pdf',
+            'description_key' => 'conversions.csv_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'pub_to_pdf' => [
+            'name_key' => 'conversions.pub_to_pdf.name',
+            'slug' => 'pub-to-pdf',
+            'description_key' => 'conversions.pub_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'rtf_to_pdf' => [
+            'name_key' => 'conversions.rtf_to_pdf.name',
+            'slug' => 'rtf-to-pdf',
+            'description_key' => 'conversions.rtf_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'ebook_to_pdf' => [
+            'name_key' => 'conversions.ebook_to_pdf.name',
+            'slug' => 'ebook-to-pdf',
+            'description_key' => 'conversions.ebook_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'vsd_to_pdf' => [
+            'name_key' => 'conversions.vsd_to_pdf.name',
+            'slug' => 'vsd-to-pdf',
+            'description_key' => 'conversions.vsd_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'md_to_pdf' => [
+            'name_key' => 'conversions.md_to_pdf.name',
+            'slug' => 'md-to-pdf',
+            'description_key' => 'conversions.md_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        'odg_to_pdf' => [
+            'name_key' => 'conversions.odg_to_pdf.name',
+            'slug' => 'odg-to-pdf',
+            'description_key' => 'conversions.odg_to_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'convert',
+            'is_active' => true,
+        ],
+
+        // PDF Organization conversions
+        'pdf_to_split' => [
+            'name_key' => 'conversions.pdf_to_split.name',
+            'slug' => 'pdf-to-split',
+            'description_key' => 'conversions.pdf_to_split.description',
+            'provider' => 'convertapi',
+            'action_type' => 'organize',
+            'is_active' => true,
+        ],
+
+        'pdf_to_rotate' => [
+            'name_key' => 'conversions.pdf_to_rotate.name',
+            'slug' => 'pdf-to-rotate',
+            'description_key' => 'conversions.pdf_to_rotate.description',
+            'provider' => 'convertapi',
+            'action_type' => 'organize',
+            'is_active' => true,
+        ],
+
+        'pdf_to_protect' => [
+            'name_key' => 'conversions.pdf_to_protect.name',
+            'slug' => 'pdf-to-protect',
+            'description_key' => 'conversions.pdf_to_protect.description',
+            'provider' => 'convertapi',
+            'action_type' => 'organize',
+            'is_active' => true,
+        ],
+
+        'pdf_to_unprotect' => [
+            'name_key' => 'conversions.pdf_to_unprotect.name',
+            'slug' => 'pdf-to-unprotect',
+            'description_key' => 'conversions.pdf_to_unprotect.description',
+            'provider' => 'convertapi',
+            'action_type' => 'organize',
+            'is_active' => true,
+        ],
+
+        'pdf_to_delete_pages' => [
+            'name_key' => 'conversions.pdf_to_delete_pages.name',
+            'slug' => 'pdf-to-delete-pages',
+            'description_key' => 'conversions.pdf_to_delete_pages.description',
+            'provider' => 'convertapi',
+            'action_type' => 'organize',
+            'is_active' => true,
+        ],
+
+        // PDF Optimization conversions
+        'compress_pdf' => [
+            'name_key' => 'conversions.compress_pdf.name',
+            'slug' => 'compress-pdf',
+            'description_key' => 'conversions.compress_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'optimize',
+            'is_active' => true,
+        ],
+
+        'ocr_pdf' => [
+            'name_key' => 'conversions.ocr_pdf.name',
+            'slug' => 'ocr-pdf',
+            'description_key' => 'conversions.ocr_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'optimize',
+            'is_active' => true,
+        ],
+
+        'pdfa_pdf' => [
+            'name_key' => 'conversions.pdfa_pdf.name',
+            'slug' => 'pdfa-pdf',
+            'description_key' => 'conversions.pdfa_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'optimize',
+            'is_active' => true,
+        ],
+
+        'repair_pdf' => [
+            'name_key' => 'conversions.repair_pdf.name',
+            'slug' => 'repair-pdf',
+            'description_key' => 'conversions.repair_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'optimize',
+            'is_active' => true,
+        ],
+
+        'rasterize_pdf' => [
+            'name_key' => 'conversions.rasterize_pdf.name',
+            'slug' => 'rasterize-pdf',
+            'description_key' => 'conversions.rasterize_pdf.description',
+            'provider' => 'convertapi',
+            'action_type' => 'optimize',
+            'is_active' => true,
+        ],
+    ],
+
+    'options' => [
+
+        // Images to PDF Options
+        'images_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'a4',
+                'choices' => ['default', 'a4', 'a3', 'a5', 'letter', 'legal'],
+                'validation_rules' => 'required|in:default,a4,a3,a5,letter,legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'default',
+                'choices' => ['default', 'portrait', 'landscape'],
+                'validation_rules' => 'required|in:default,portrait,landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'margin_horizontal' => [
+                'name_key' => 'options.margin_horizontal.name',
+                'slug' => 'margin_horizontal',
+                'data_type' => 'number',
+                'default_value' => '0',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:200',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description_key' => 'options.margin_horizontal.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'margin_vertical' => [
+                'name_key' => 'options.margin_vertical.name',
+                'slug' => 'margin_vertical',
+                'data_type' => 'number',
+                'default_value' => '0',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:200',
+                'is_basic' => false,
+                'display_order' => 4,
+                'description_key' => 'options.margin_vertical.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            // NOTE: Resolution will be replaced with image_width/image_height in Phase 2
+            // Currently kept for backwards compatibility
+            'resolution' => [
+                'name_key' => 'options.resolution.name',
+                'slug' => 'resolution',
+                'data_type' => 'select',
+                'default_value' => '150',
+                'choices' => ['72', '96', '150', '300', '600'],
+                'validation_rules' => 'required|in:72,96,150,300,600',
+                'is_basic' => false,
+                'display_order' => 5,
+                'description_key' => 'options.resolution.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // Individual image to PDF conversion (same options as merge)
+        'image_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal', 'Tabloid'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal,Tabloid',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+            ],
+            'image_fit_mode' => [
+                'name_key' => 'options.image_fit_mode.name',
+                'slug' => 'image_fit_mode',
+                'data_type' => 'select',
+                'default_value' => 'Auto',
+                'choices' => ['Auto', 'Fit', 'Fill', 'Center'],
+                'validation_rules' => 'required|in:Auto,Fit,Fill,Center',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description_key' => 'options.image_fit_mode.description',
+            ],
+            'margin_horizontal' => [
+                'name_key' => 'options.margin_horizontal.name',
+                'slug' => 'margin_horizontal',
+                'data_type' => 'number',
+                'default_value' => '0',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:200',
+                'is_basic' => false,
+                'display_order' => 4,
+                'description_key' => 'options.margin_horizontal.description',
+            ],
+            'margin_vertical' => [
+                'name_key' => 'options.margin_vertical.name',
+                'slug' => 'margin_vertical',
+                'data_type' => 'number',
+                'default_value' => '0',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:200',
+                'is_basic' => false,
+                'display_order' => 5,
+                'description_key' => 'options.margin_vertical.description',
+            ],
+            'color_space' => [
+                'name_key' => 'options.color_space.name',
+                'slug' => 'color_space',
+                'data_type' => 'select',
+                'default_value' => 'RGB',
+                'choices' => ['RGB', 'CMYK', 'Grayscale'],
+                'validation_rules' => 'required|in:RGB,CMYK,Grayscale',
+                'is_basic' => false,
+                'display_order' => 6,
+                'description_key' => 'options.color_space.description',
+            ],
+            'resolution' => [
+                'name_key' => 'options.resolution.name',
+                'slug' => 'resolution',
+                'data_type' => 'select',
+                'default_value' => '150',
+                'choices' => ['72', '96', '150', '300', '600'],
+                'validation_rules' => 'required|in:72,96,150,300,600',
+                'is_basic' => false,
+                'display_order' => 7,
+                'description_key' => 'options.resolution.description',
+            ],
+        ],
+
+        // Word to PDF Options
+        'docx_to_pdf' => [
+            // Free tier options - Document structure preservation
+            'convert_headings' => [
+                'name_key' => 'options.convert_headings.name',
+                'slug' => 'convert_headings',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 1,
+                'description' => 'Convert Word headings to PDF bookmarks for easy navigation',
+            ],
+            'convert_metadata' => [
+                'name_key' => 'options.convert_metadata.name',
+                'slug' => 'convert_metadata',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 2,
+                'description' => 'Include document metadata (Title, Author, Keywords) in PDF',
+            ],
+
+            // Premium tier options
+            'page_range' => [
+                'name_key' => 'options.page_range.name',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 3,
+                'description' => 'Convert specific pages (e.g., "1-10" or "1,3,5")',
+            ],
+            'convert_bookmarks' => [
+                'name_key' => 'options.convert_bookmarks.name',
+                'slug' => 'convert_bookmarks',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 4,
+                'description' => 'Convert Word bookmarks to PDF bookmarks',
+            ],
+            'pdfa' => [
+                'name_key' => 'options.pdfa.name',
+                'slug' => 'pdfa',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 5,
+                'description' => 'Create PDF/A-3b compliant document for long-term archiving',
+            ],
+            'compress_pdf' => [
+                'name_key' => 'options.compress_pdf.name',
+                'slug' => 'compress_pdf',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 6,
+                'description' => 'Compress PDF for smaller file size (requires Adobe Reader 6+)',
+            ],
+            'password' => [
+                'name_key' => 'options.password.name',
+                'slug' => 'password',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 7,
+                'description' => 'Password for password-protected Word files',
+            ],
+        ],
+
+        // Excel to PDF Options
+        'excel_to_pdf' => [
+            // Free tier options
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'a4',
+                'choices' => ['a4', 'a3', 'a5', 'letter', 'legal'],
+                'validation_rules' => 'required|in:a4,a3,a5,letter,legal',
+                'is_basic' => true,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 1,
+                'description' => 'Paper size for the PDF',
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'default',
+                'choices' => ['default', 'portrait', 'landscape'],
+                'validation_rules' => 'required|in:default,portrait,landscape',
+                'is_basic' => true,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+            'fit_to_page' => [
+                'name_key' => 'options.fit_to_page.name',
+                'slug' => 'fit_to_page',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 3,
+                'description' => 'Scale content to fit page width',
+            ],
+
+            // Premium tier options (onetime credit packs and premium subscriptions)
+            'worksheet_index' => [
+                'name_key' => 'options.worksheet_index.name',
+                'slug' => 'worksheet_index',
+                'data_type' => 'number',
+                'default_value' => null,
+                'choices' => null,
+                'validation_rules' => 'nullable|integer|min:1|max:100',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 4,
+                'description' => 'Convert specific worksheet by number (1-100)',
+            ],
+            'autofit' => [
+                'name_key' => 'options.autofit.name',
+                'slug' => 'autofit',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 5,
+                'description' => 'Automatically fit columns and rows to content',
+            ],
+            'convert_metadata' => [
+                'name_key' => 'options.convert_metadata.name',
+                'description_key' => 'options.convert_metadata.description',
+                'slug' => 'convert_metadata',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 6,
+                'description' => 'Convert document metadata (Title, Author, Keywords) to PDF metadata',
+            ],
+            'password' => [
+                'name_key' => 'options.password.name',
+                'slug' => 'password',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 7,
+                'description' => 'Password for password-protected Excel files',
+            ],
+        ],
+
+        // PowerPoint to PDF Options
+        'powerpoint_to_pdf' => [
+            // Premium tier options
+            'slide_range' => [
+                'name_key' => 'options.slide_range.name',
+                'slug' => 'slide_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 1,
+                'description' => 'Convert specific slides (e.g., 1,3,5-10)',
+            ],
+            'convert_speaker_notes' => [
+                'name_key' => 'options.convert_speaker_notes.name',
+                'description_key' => 'options.convert_speaker_notes.description',
+                'slug' => 'convert_speaker_notes',
+                'data_type' => 'select',
+                'default_value' => 'Disabled',
+                'choices' => [
+                    'Disabled' => 'options.convert_speaker_notes.choices.Disabled',
+                    'SeparatePage' => 'options.convert_speaker_notes.choices.SeparatePage',
+                    'PageComments' => 'options.convert_speaker_notes.choices.PageComments',
+                ],
+                'validation_rules' => 'required|in:Disabled,SeparatePage,PageComments',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 2,
+                'description' => 'How to convert speaker notes to PDF',
+            ],
+            'include_hidden_slides' => [
+                'name_key' => 'options.include_hidden_slides.name',
+                'slug' => 'include_hidden_slides',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 3,
+                'description' => 'Include hidden slides in the PDF',
+            ],
+            'convert_metadata' => [
+                'name_key' => 'options.convert_metadata.name',
+                'description_key' => 'options.convert_metadata.description',
+                'slug' => 'convert_metadata',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 4,
+                'description' => 'Convert document metadata (Title, Author, Keywords) to PDF metadata',
+            ],
+            'password' => [
+                'name_key' => 'options.password.name',
+                'slug' => 'password',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 5,
+                'description' => 'Password for password-protected PowerPoint files',
+            ],
+        ],
+
+        // PDF to Images Options
+        'pdf_to_images' => [
+            'image_format' => [
+                'name_key' => 'options.image_format.name',
+                'description_key' => 'options.image_format.description',
+                'slug' => 'image_format',
+                'data_type' => 'select',
+                'default_value' => 'jpg',
+                'choices' => ['jpg', 'png', 'webp', 'tiff'],
+                'validation_rules' => 'required|in:jpg,png,webp,tiff',
+                'is_basic' => true,
+                'display_order' => 1,
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'resolution' => [
+                'name_key' => 'options.resolution.name',
+                'description_key' => 'options.resolution.description',
+                'slug' => 'resolution',
+                'data_type' => 'select',
+                'default_value' => '150',
+                'choices' => ['72', '96', '150', '300', '600'],
+                'validation_rules' => 'required|in:72,96,150,300,600',
+                'is_basic' => true,
+                'display_order' => 2,
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'page_range' => [
+                'name_key' => 'options.page_range.name',
+                'description_key' => 'options.page_range.description',
+                'help_key' => 'options.page_range.help',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:100',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'quality' => [
+                'name_key' => 'options.image_quality.name',
+                'description_key' => 'options.image_quality.description',
+                'slug' => 'quality',
+                'data_type' => 'number',
+                'default_value' => '90',
+                'choices' => null,
+                'validation_rules' => 'integer|min:1|max:100',
+                'is_basic' => false,
+                'display_order' => 4,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'color_space' => [
+                'name_key' => 'options.color_space.name',
+                'description_key' => 'options.color_space.description',
+                'slug' => 'color_space',
+                'data_type' => 'select',
+                'default_value' => 'RGB',
+                'choices' => ['RGB', 'CMYK', 'Grayscale'],
+                'validation_rules' => 'required|in:RGB,CMYK,Grayscale',
+                'is_basic' => false,
+                'display_order' => 5,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'image_width' => [
+                'name_key' => 'options.image_width.name',
+                'description_key' => 'options.image_width.description',
+                'slug' => 'image_width',
+                'data_type' => 'number',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|integer|min:10|max:10000',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 6,
+                'description' => 'Image width in pixels (10-10000). Overrides resolution if specified.',
+            ],
+            'image_height' => [
+                'name_key' => 'options.image_height.name',
+                'description_key' => 'options.image_height.description',
+                'slug' => 'image_height',
+                'data_type' => 'number',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|integer|min:10|max:10000',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => 'onetime',
+                'display_order' => 7,
+                'description' => 'Image height in pixels (10-10000). Overrides resolution if specified.',
+            ],
+            'password' => [
+                'name_key' => 'options.password_pdf.name',
+                'description_key' => 'options.password_pdf.description',
+                'slug' => 'password',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 8,
+                'description' => 'Password to open password-protected PDF files',
+            ],
+        ],
+
+        // PDF to Word Options
+        'pdf_to_word' => [
+            'output_format' => [
+                'name_key' => 'options.output_format_word.name',
+                'description_key' => 'options.output_format_word.description',
+                'slug' => 'output_format',
+                'data_type' => 'select',
+                'default_value' => 'docx',
+                'choices' => ['docx', 'doc', 'rtf'],
+                'validation_rules' => 'required|in:docx,doc,rtf',
+                'is_basic' => true,
+                'display_order' => 1,
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'page_range' => [
+                'name_key' => 'options.page_range.name',
+                'description_key' => 'options.page_range.description',
+                'help_key' => 'options.page_range.help',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:100',
+                'is_basic' => false,
+                'display_order' => 2,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'ocr_enabled' => [
+                'name_key' => 'options.ocr_enabled.name',
+                'description_key' => 'options.ocr_enabled.description',
+                'slug' => 'ocr_enabled',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'ocr_language' => [
+                'name_key' => 'options.ocr_language.name',
+                'description_key' => 'options.ocr_language.description',
+                'slug' => 'ocr_language',
+                'data_type' => 'select',
+                'default_value' => 'eng',
+                'choices' => [
+                    'eng' => 'options.ocr_language.choices.eng',
+                    'nld' => 'options.ocr_language.choices.nld',
+                    'deu' => 'options.ocr_language.choices.deu',
+                    'fra' => 'options.ocr_language.choices.fra',
+                    'spa' => 'options.ocr_language.choices.spa',
+                    'ita' => 'options.ocr_language.choices.ita',
+                    'por' => 'options.ocr_language.choices.por',
+                    'rus' => 'options.ocr_language.choices.rus',
+                    'chi_sim' => 'options.ocr_language.choices.chi_sim',
+                    'jpn' => 'options.ocr_language.choices.jpn',
+                ],
+                'validation_rules' => 'required|in:eng,nld,deu,fra,spa,ita,por,rus,chi_sim,jpn',
+                'is_basic' => false,
+                'display_order' => 4,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'password' => [
+                'name_key' => 'options.password_pdf.name',
+                'description_key' => 'options.password_pdf.description',
+                'slug' => 'password',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 5,
+                'description' => 'Password to open password-protected PDF files',
+            ],
+        ],
+
+        // PDF to Excel Options
+        'pdf_to_excel' => [
+            'output_format' => [
+                'name_key' => 'options.output_format_excel.name',
+                'description_key' => 'options.output_format_excel.description',
+                'slug' => 'output_format',
+                'data_type' => 'select',
+                'default_value' => 'xlsx',
+                'choices' => ['xlsx', 'xls', 'csv'],
+                'validation_rules' => 'required|in:xlsx,xls,csv',
+                'is_basic' => true,
+                'display_order' => 1,
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'page_range' => [
+                'name_key' => 'options.page_range.name',
+                'description_key' => 'options.page_range.description',
+                'help_key' => 'options.page_range.help',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:100',
+                'is_basic' => false,
+                'display_order' => 2,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'ocr_enabled' => [
+                'name_key' => 'options.ocr_enabled.name',
+                'description_key' => 'options.ocr_enabled.description',
+                'slug' => 'ocr_enabled',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'ocr_language' => [
+                'name_key' => 'options.ocr_language.name',
+                'description_key' => 'options.ocr_language.description',
+                'slug' => 'ocr_language',
+                'data_type' => 'select',
+                'default_value' => 'eng',
+                'choices' => [
+                    'eng' => 'options.ocr_language.choices.eng',
+                    'nld' => 'options.ocr_language.choices.nld',
+                    'deu' => 'options.ocr_language.choices.deu',
+                    'fra' => 'options.ocr_language.choices.fra',
+                    'spa' => 'options.ocr_language.choices.spa',
+                    'ita' => 'options.ocr_language.choices.ita',
+                    'por' => 'options.ocr_language.choices.por',
+                    'rus' => 'options.ocr_language.choices.rus',
+                    'chi_sim' => 'options.ocr_language.choices.chi_sim',
+                    'jpn' => 'options.ocr_language.choices.jpn',
+                ],
+                'validation_rules' => 'required|in:eng,nld,deu,fra,spa,ita,por,rus,chi_sim,jpn',
+                'is_basic' => false,
+                'display_order' => 4,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'password' => [
+                'name_key' => 'options.password_pdf.name',
+                'description_key' => 'options.password_pdf.description',
+                'slug' => 'password',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:255',
+                'is_basic' => false,
+                'show_in_frontend' => true,
+                'required_tier' => null,
+                'display_order' => 5,
+                'description' => 'Password to open password-protected PDF files',
+            ],
+        ],
+
+        // PDF to PowerPoint Options
+        'pdf_to_powerpoint' => [
+            'output_format' => [
+                'name_key' => 'options.output_format.name',
+                'description_key' => 'options.output_format.description',
+                'slug' => 'output_format',
+                'data_type' => 'select',
+                'default_value' => 'pptx',
+                'choices' => ['pptx', 'ppt'],
+                'validation_rules' => 'required|in:pptx,ppt',
+                'is_basic' => true,
+                'display_order' => 1,
+            ],
+            'slides_layout' => [
+                'name_key' => 'options.slides_layout.name',
+                'description_key' => 'options.slides_layout.description',
+                'slug' => 'slides_layout',
+                'data_type' => 'select',
+                'default_value' => 'auto',
+                'choices' => ['auto', 'single_image', 'text_and_image'],
+                'validation_rules' => 'required|in:auto,single_image,text_and_image',
+                'is_basic' => true,
+                'display_order' => 2,
+            ],
+            'ocr_enabled' => [
+                'name_key' => 'options.ocr_enabled.name',
+                'description_key' => 'options.ocr_enabled.description',
+                'slug' => 'ocr_enabled',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 3,
+            ],
+        ],
+
+        // PDF to Text Options
+        'pdf_to_text' => [
+            'preserve_formatting' => [
+                'name_key' => 'options.preserve_formatting.name',
+                'description_key' => 'options.preserve_formatting.description',
+                'slug' => 'preserve_formatting',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 1,
+            ],
+            'ocr_enabled' => [
+                'name_key' => 'options.ocr_enabled.name',
+                'description_key' => 'options.ocr_enabled.description',
+                'slug' => 'ocr_enabled',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 2,
+            ],
+            'include_page_breaks' => [
+                'name_key' => 'options.include_page_breaks.name',
+                'description_key' => 'options.include_page_breaks.description',
+                'slug' => 'include_page_breaks',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 3,
+            ],
+        ],
+
+        // AutoCAD to PDF Options
+        'autocad_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A2', 'A1', 'A0', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A2,A1,A0,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Paper size for the PDF',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Landscape',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+            'layout' => [
+                'name' => 'Layout',
+                'slug' => 'layout',
+                'data_type' => 'select',
+                'default_value' => 'Model',
+                'choices' => ['Model', 'Layout'],
+                'validation_rules' => 'required|in:Model,Layout',
+                'is_basic' => true,
+                'display_order' => 3,
+                'description' => 'Convert model space or layout',
+            ],
+            'color_mode' => [
+                'name' => 'Color Mode',
+                'slug' => 'color_mode',
+                'data_type' => 'select',
+                'default_value' => 'Color',
+                'choices' => ['Color', 'Grayscale', 'Monochrome'],
+                'validation_rules' => 'required|in:Color,Grayscale,Monochrome',
+                'is_basic' => false,
+                'display_order' => 4,
+                'description' => 'Color mode for the output PDF',
+            ],
+            'resolution' => [
+                'name' => 'Resolution (DPI)',
+                'slug' => 'resolution',
+                'data_type' => 'select',
+                'default_value' => '300',
+                'choices' => ['150', '300', '600', '1200'],
+                'validation_rules' => 'required|in:150,300,600,1200',
+                'is_basic' => false,
+                'display_order' => 5,
+                'description' => 'Output resolution in dots per inch',
+            ],
+            'scale_factor' => [
+                'name' => 'Scale Factor',
+                'slug' => 'scale_factor',
+                'data_type' => 'select',
+                'default_value' => '1.0',
+                'choices' => ['0.5', '0.75', '1.0', '1.25', '1.5', '2.0'],
+                'validation_rules' => 'required|in:0.5,0.75,1.0,1.25,1.5,2.0',
+                'is_basic' => false,
+                'display_order' => 6,
+                'description' => 'Scale the drawing in the PDF',
+            ],
+            'include_layers' => [
+                'name' => 'Include All Layers',
+                'slug' => 'include_layers',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 7,
+                'description' => 'Include all layers in the output',
+            ],
+            'background_color' => [
+                'name' => 'Background Color',
+                'slug' => 'background_color',
+                'data_type' => 'select',
+                'default_value' => 'White',
+                'choices' => ['White', 'Black', 'Transparent'],
+                'validation_rules' => 'required|in:White,Black,Transparent',
+                'is_basic' => false,
+                'display_order' => 8,
+                'description' => 'Background color for the PDF',
+            ],
+        ],
+
+        // Merge AutoCAD to PDF Options (same as individual AutoCAD conversion)
+        'merge_autocad_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A2', 'A1', 'A0', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A2,A1,A0,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Paper size for the PDF',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Landscape',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+            'layout' => [
+                'name' => 'Layout',
+                'slug' => 'layout',
+                'data_type' => 'select',
+                'default_value' => 'Model',
+                'choices' => ['Model', 'Layout'],
+                'validation_rules' => 'required|in:Model,Layout',
+                'is_basic' => true,
+                'display_order' => 3,
+                'description' => 'Convert model space or layout',
+            ],
+            'color_mode' => [
+                'name' => 'Color Mode',
+                'slug' => 'color_mode',
+                'data_type' => 'select',
+                'default_value' => 'Color',
+                'choices' => ['Color', 'Grayscale', 'Monochrome'],
+                'validation_rules' => 'required|in:Color,Grayscale,Monochrome',
+                'is_basic' => false,
+                'display_order' => 4,
+                'description' => 'Color mode for the output PDF',
+            ],
+        ],
+
+        // Merge Word to PDF Options (same as individual DOCX conversion)
+        'merge_word_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Override document orientation',
+            ],
+        ],
+
+        // Merge Excel to PDF Options (same as individual Excel conversion)
+        'merge_excel_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Paper size for the PDF',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+            'fit_to_page' => [
+                'name' => 'Fit to Page',
+                'slug' => 'fit_to_page',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Scale content to fit page width',
+            ],
+        ],
+
+        // Merge PowerPoint to PDF Options (same as individual PowerPoint conversion)
+        'merge_powerpoint_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Paper size for the PDF',
+            ],
+            'slides_per_page' => [
+                'name' => 'Slides per Page',
+                'slug' => 'slides_per_page',
+                'data_type' => 'select',
+                'default_value' => '1',
+                'choices' => ['1', '2', '4', '6', '9'],
+                'validation_rules' => 'required|in:1,2,4,6,9',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Number of slides to fit on each page',
+            ],
+        ],
+
+        // Merge PostScript to PDF Options (same as individual PostScript conversion)
+        'merge_postscript_to_pdf' => [
+            'embed_fonts' => [
+                'name' => 'Embed Fonts',
+                'slug' => 'embed_fonts',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Embed fonts in the PDF output',
+            ],
+            'subset_fonts' => [
+                'name' => 'Subset Fonts',
+                'slug' => 'subset_fonts',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Include only used font characters',
+            ],
+            'pdf_version' => [
+                'name' => 'PDF Version',
+                'slug' => 'pdf_version',
+                'data_type' => 'select',
+                'default_value' => 'PDF 1.7',
+                'choices' => ['PDF 1.2', 'PDF 1.3', 'PDF 1.4', 'PDF 1.5', 'PDF 1.6', 'PDF 1.7', 'PDF 2.0'],
+                'validation_rules' => 'required|in:PDF 1.2,PDF 1.3,PDF 1.4,PDF 1.5,PDF 1.6,PDF 1.7,PDF 2.0',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Target PDF version for output',
+            ],
+        ],
+
+        // Merge eBook to PDF Options (same as individual eBook conversion)
+        'merge_ebook_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Page size for the PDF output',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+            'margin' => [
+                'name' => 'Margin (points)',
+                'slug' => 'margin',
+                'data_type' => 'number',
+                'default_value' => '36',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:144',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Page margin size in points (72 points = 1 inch)',
+            ],
+        ],
+
+        // Merge Office to PDF Options (same as individual Office conversion)
+        'merge_office_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'Auto',
+                'choices' => ['Auto', 'A4', 'A3', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:Auto,A4,A3,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Page size for the PDF output (Auto uses document settings)',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Auto',
+                'choices' => ['Auto', 'Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Auto,Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation (Auto uses document settings)',
+            ],
+        ],
+
+        // PostScript to PDF Options
+        'postscript_to_pdf' => [
+            'embed_fonts' => [
+                'name' => 'Embed Fonts',
+                'slug' => 'embed_fonts',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Embed fonts in the PDF output',
+            ],
+            'subset_fonts' => [
+                'name' => 'Subset Fonts',
+                'slug' => 'subset_fonts',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Include only used font characters',
+            ],
+            'pdf_version' => [
+                'name' => 'PDF Version',
+                'slug' => 'pdf_version',
+                'data_type' => 'select',
+                'default_value' => 'PDF 1.7',
+                'choices' => ['PDF 1.2', 'PDF 1.3', 'PDF 1.4', 'PDF 1.5', 'PDF 1.6', 'PDF 1.7', 'PDF 2.0'],
+                'validation_rules' => 'required|in:PDF 1.2,PDF 1.3,PDF 1.4,PDF 1.5,PDF 1.6,PDF 1.7,PDF 2.0',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Target PDF version for output',
+            ],
+        ],
+
+        // eBook to PDF Options
+        'ebook_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Page size for the PDF output',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+            'margin' => [
+                'name' => 'Margin (mm)',
+                'slug' => 'margin',
+                'data_type' => 'number',
+                'default_value' => '10',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:50',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Page margins in millimeters',
+            ],
+        ],
+
+        // Email to PDF Options
+        // Note: Mail part selection (Body/Attachments/Both) is handled via UI, not conversion options
+        'email_to_pdf' => [
+            // No conversion options - mail_part is passed via conversion_options.mail_part from UI
+        ],
+
+        // Office to PDF Options (applies to Word, Excel, PowerPoint)
+        'office_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Auto',
+                'choices' => ['Auto', 'Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Auto,Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation (Auto uses document settings)',
+            ],
+        ],
+
+        // Compress PDF Options
+        'compress_pdf' => [
+            'level' => [
+                'name_key' => 'options.compression_level.name',
+                'description_key' => 'options.compression_level.description',
+                'slug' => 'level',
+                'data_type' => 'select',
+                'default_value' => 'medium',
+                'choices' => ['low', 'medium', 'high', 'extreme'],
+                'validation_rules' => 'required|in:low,medium,high,extreme',
+                'is_basic' => true,
+                'display_order' => 1,
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'image_quality' => [
+                'name_key' => 'options.compress_image_quality.name',
+                'description_key' => 'options.compress_image_quality.description',
+                'slug' => 'image_quality',
+                'data_type' => 'select',
+                'default_value' => 'medium',
+                'choices' => ['low', 'medium', 'high', 'maximum'],
+                'validation_rules' => 'required|in:low,medium,high,maximum',
+                'is_basic' => false,
+                'display_order' => 2,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'image_resolution' => [
+                'name_key' => 'options.compress_image_resolution.name',
+                'description_key' => 'options.compress_image_resolution.description',
+                'slug' => 'image_resolution',
+                'data_type' => 'select',
+                'default_value' => '150',
+                'choices' => ['72', '96', '150', '300'],
+                'validation_rules' => 'required|in:72,96,150,300',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // Generic to PDF Options (for text, log, csv files)
+        'generic_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Page size for PDF output',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+        ],
+
+        // OCR PDF Options
+        'ocr_pdf' => [
+            'ocr_languages' => [
+                'name_key' => 'options.ocr_languages.name',
+                'description_key' => 'options.ocr_languages.description',
+                'slug' => 'ocr_languages',
+                'data_type' => 'select',
+                'default_value' => 'eng',
+                'choices' => [
+                    'eng' => 'options.ocr_languages.choices.eng',
+                    'nld' => 'options.ocr_languages.choices.nld',
+                    'deu' => 'options.ocr_languages.choices.deu',
+                    'fra' => 'options.ocr_languages.choices.fra',
+                    'spa' => 'options.ocr_languages.choices.spa',
+                    'ita' => 'options.ocr_languages.choices.ita',
+                    'por' => 'options.ocr_languages.choices.por',
+                    'pol' => 'options.ocr_languages.choices.pol',
+                    'rus' => 'options.ocr_languages.choices.rus',
+                    'chi_sim' => 'options.ocr_languages.choices.chi_sim',
+                    'jpn' => 'options.ocr_languages.choices.jpn',
+                    'ara' => 'options.ocr_languages.choices.ara',
+                ],
+                'validation_rules' => 'required|in:eng,nld,deu,fra,spa,ita,por,pol,rus,chi_sim,jpn,ara',
+                'is_basic' => true,
+                'display_order' => 1,
+            ],
+            'ocr_settings' => [
+                'name_key' => 'options.ocr_settings.name',
+                'description_key' => 'options.ocr_settings.description',
+                'slug' => 'ocr_settings',
+                'data_type' => 'select',
+                'default_value' => 'balanced',
+                'choices' => [
+                    'speed' => 'options.ocr_settings.choices.speed',
+                    'balanced' => 'options.ocr_settings.choices.balanced',
+                    'quality' => 'options.ocr_settings.choices.quality',
+                ],
+                'validation_rules' => 'required|in:speed,balanced,quality',
+                'is_basic' => true,
+                'display_order' => 2,
+            ],
+            'text_positioning' => [
+                'name_key' => 'options.text_positioning.name',
+                'description_key' => 'options.text_positioning.description',
+                'slug' => 'text_positioning',
+                'data_type' => 'select',
+                'default_value' => 'exact',
+                'choices' => [
+                    'exact' => 'options.text_positioning.choices.exact',
+                    'auto' => 'options.text_positioning.choices.auto',
+                ],
+                'validation_rules' => 'required|in:exact,auto',
+                'is_basic' => false,
+                'display_order' => 3,
+            ],
+        ],
+
+        // PDF/A Conversion Options
+        'pdfa_pdf' => [
+            'flavor' => [
+                'name' => 'PDF/A Flavor',
+                'slug' => 'flavor',
+                'data_type' => 'select',
+                'default_value' => '1b',
+                'choices' => ['1b', '2b', '2u', '3b'],
+                'validation_rules' => 'required|in:1b,2b,2u,3b',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'PDF/A standard version - 1b is most compatible, 3b allows embedded files',
+            ],
+        ],
+
+        // Repair PDF Options
+        'repair_pdf' => [
+            // No user-facing options for repair - ConvertAPI handles it automatically
+        ],
+
+        // Rasterize PDF Options
+        'rasterize_pdf' => [
+            // No user-facing options for rasterization - ConvertAPI handles it automatically
+        ],
+
+        // PDF to HTML Options
+        'pdf_to_html' => [
+            'extract_mode' => [
+                'name' => 'Extract Mode',
+                'slug' => 'extract_mode',
+                'data_type' => 'select',
+                'default_value' => 'default',
+                'choices' => ['default', 'preserve_layout', 'simple'],
+                'validation_rules' => 'required|in:default,preserve_layout,simple',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'How to extract content from PDF',
+            ],
+            'include_images' => [
+                'name' => 'Include Images',
+                'slug' => 'include_images',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Extract and include images',
+            ],
+            'image_format' => [
+                'name' => 'Image Format',
+                'slug' => 'image_format',
+                'data_type' => 'select',
+                'default_value' => 'png',
+                'choices' => ['png', 'jpg'],
+                'validation_rules' => 'required|in:png,jpg',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Format for extracted images',
+            ],
+        ],
+
+        // HTML to PDF Options (All options enabled)
+        'html_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal', 'Tabloid'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal,Tabloid',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+            'margin_top' => [
+                'name' => 'Top Margin (mm)',
+                'slug' => 'margin_top',
+                'data_type' => 'number',
+                'default_value' => '10',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:100',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Top margin in millimeters',
+            ],
+            'margin_bottom' => [
+                'name' => 'Bottom Margin (mm)',
+                'slug' => 'margin_bottom',
+                'data_type' => 'number',
+                'default_value' => '10',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:100',
+                'is_basic' => false,
+                'display_order' => 4,
+                'description' => 'Bottom margin in millimeters',
+            ],
+            'margin_left' => [
+                'name' => 'Left Margin (mm)',
+                'slug' => 'margin_left',
+                'data_type' => 'number',
+                'default_value' => '10',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:100',
+                'is_basic' => false,
+                'display_order' => 5,
+                'description' => 'Left margin in millimeters',
+            ],
+            'margin_right' => [
+                'name' => 'Right Margin (mm)',
+                'slug' => 'margin_right',
+                'data_type' => 'number',
+                'default_value' => '10',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:100',
+                'is_basic' => false,
+                'display_order' => 6,
+                'description' => 'Right margin in millimeters',
+            ],
+            'enable_javascript' => [
+                'name' => 'Enable JavaScript',
+                'slug' => 'enable_javascript',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 7,
+                'description' => 'Execute JavaScript in HTML',
+            ],
+            'wait_time' => [
+                'name' => 'Wait Time (seconds)',
+                'slug' => 'wait_time',
+                'data_type' => 'number',
+                'default_value' => '0',
+                'choices' => null,
+                'validation_rules' => 'integer|min:0|max:30',
+                'is_basic' => false,
+                'display_order' => 8,
+                'description' => 'Wait before capturing page',
+            ],
+            'scale' => [
+                'name' => 'Scale Factor',
+                'slug' => 'scale',
+                'data_type' => 'number',
+                'default_value' => '1',
+                'choices' => null,
+                'validation_rules' => 'numeric|min:0.1|max:3',
+                'is_basic' => false,
+                'display_order' => 9,
+                'description' => 'Page scale factor (0.1-3)',
+            ],
+            'print_background' => [
+                'name' => 'Print Background',
+                'slug' => 'print_background',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 10,
+                'description' => 'Include background graphics',
+            ],
+            'display_header_footer' => [
+                'name' => 'Display Header/Footer',
+                'slug' => 'display_header_footer',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 11,
+                'description' => 'Show header and footer',
+            ],
+        ],
+
+        // PDF to TXT Options
+        'pdf_to_txt' => [
+            'preserve_layout' => [
+                'name' => 'Preserve Layout',
+                'slug' => 'preserve_layout',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Maintain original text layout',
+            ],
+        ],
+
+        // PDF to CSV Options
+        'pdf_to_csv' => [
+            'delimiter' => [
+                'name' => 'Delimiter',
+                'slug' => 'delimiter',
+                'data_type' => 'select',
+                'default_value' => 'comma',
+                'choices' => ['comma', 'semicolon', 'tab'],
+                'validation_rules' => 'required|in:comma,semicolon,tab',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'CSV column delimiter',
+            ],
+            'extract_all_tables' => [
+                'name' => 'Extract All Tables',
+                'slug' => 'extract_all_tables',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Extract all tables from PDF',
+            ],
+        ],
+
+        // CSV to PDF Options
+        'csv_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'fit_to_page' => [
+                'name_key' => 'options.fit_to_page.name',
+                'slug' => 'fit_to_page',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description_key' => 'options.fit_to_page.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'delimiter' => [
+                'name_key' => 'options.csv_delimiter.name',
+                'description_key' => 'options.csv_delimiter.description',
+                'slug' => 'delimiter',
+                'data_type' => 'select',
+                'default_value' => 'comma',
+                'choices' => ['comma', 'semicolon', 'tab', 'pipe', 'space'],
+                'validation_rules' => 'required|in:comma,semicolon,tab,pipe,space',
+                'is_basic' => false,
+                'display_order' => 4,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'text_encoding' => [
+                'name_key' => 'options.text_encoding.name',
+                'description_key' => 'options.text_encoding.description',
+                'slug' => 'text_encoding',
+                'data_type' => 'select',
+                'default_value' => 'UTF-8',
+                'choices' => ['UTF-8', 'ASCII', 'ISO-8859-1', 'Windows-1252'],
+                'validation_rules' => 'required|in:UTF-8,ASCII,ISO-8859-1,Windows-1252',
+                'is_basic' => false,
+                'display_order' => 5,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'has_header_row' => [
+                'name_key' => 'options.has_header_row.name',
+                'description_key' => 'options.has_header_row.description',
+                'slug' => 'has_header_row',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 6,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // Publisher to PDF Options
+        'pub_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'print_quality' => [
+                'name_key' => 'options.print_quality.name',
+                'description_key' => 'options.print_quality.description',
+                'slug' => 'print_quality',
+                'data_type' => 'select',
+                'default_value' => 'High',
+                'choices' => ['High', 'Medium', 'Low'],
+                'validation_rules' => 'required|in:High,Medium,Low',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // RTF to PDF Options
+        'rtf_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'margin_top' => [
+                'name_key' => 'options.margin_top.name',
+                'description_key' => 'options.margin_top.description',
+                'help_key' => 'options.margin_top.help',
+                'slug' => 'margin_top',
+                'data_type' => 'number',
+                'default_value' => '2.5',
+                'choices' => null,
+                'validation_rules' => 'numeric|min:0|max:10',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'margin_bottom' => [
+                'name_key' => 'options.margin_bottom.name',
+                'description_key' => 'options.margin_bottom.description',
+                'help_key' => 'options.margin_bottom.help',
+                'slug' => 'margin_bottom',
+                'data_type' => 'number',
+                'default_value' => '2.5',
+                'choices' => null,
+                'validation_rules' => 'numeric|min:0|max:10',
+                'is_basic' => false,
+                'display_order' => 4,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'margin_left' => [
+                'name_key' => 'options.margin_left.name',
+                'description_key' => 'options.margin_left.description',
+                'help_key' => 'options.margin_left.help',
+                'slug' => 'margin_left',
+                'data_type' => 'number',
+                'default_value' => '2.5',
+                'choices' => null,
+                'validation_rules' => 'numeric|min:0|max:10',
+                'is_basic' => false,
+                'display_order' => 5,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'margin_right' => [
+                'name_key' => 'options.margin_right.name',
+                'description_key' => 'options.margin_right.description',
+                'help_key' => 'options.margin_right.help',
+                'slug' => 'margin_right',
+                'data_type' => 'number',
+                'default_value' => '2.5',
+                'choices' => null,
+                'validation_rules' => 'numeric|min:0|max:10',
+                'is_basic' => false,
+                'display_order' => 6,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'password' => [
+                'name_key' => 'options.password.name',
+                'description_key' => 'options.password.description',
+                'help_key' => 'options.password.help',
+                'slug' => 'password',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:100',
+                'is_basic' => false,
+                'display_order' => 7,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // eBook to PDF Options
+        'ebook_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A5', 'Letter'],
+                'validation_rules' => 'required|in:A4,A5,Letter',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'chapter_range' => [
+                'name_key' => 'options.chapter_range.name',
+                'description_key' => 'options.chapter_range.description',
+                'help_key' => 'options.chapter_range.help',
+                'slug' => 'chapter_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:100',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'include_toc' => [
+                'name_key' => 'options.include_toc.name',
+                'description_key' => 'options.include_toc.description',
+                'slug' => 'include_toc',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 4,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // Visio to PDF Options
+        'vsd_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'page_range' => [
+                'name_key' => 'options.page_range.name',
+                'description_key' => 'options.page_range.description',
+                'help_key' => 'options.page_range.help',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:100',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+            'include_background' => [
+                'name_key' => 'options.include_background.name',
+                'description_key' => 'options.include_background.description',
+                'slug' => 'include_background',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 4,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // Markdown to PDF Options
+        'md_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A5', 'Letter'],
+                'validation_rules' => 'required|in:A4,A5,Letter',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'orientation' => [
+                'name_key' => 'options.orientation.name',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.orientation.description',
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'code_highlighting' => [
+                'name_key' => 'options.code_highlighting.name',
+                'description_key' => 'options.code_highlighting.description',
+                'slug' => 'code_highlighting',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 3,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // ODG to PDF Options
+        'odg_to_pdf' => [
+            'page_size' => [
+                'name_key' => 'options.page_size.name',
+                'slug' => 'page_size',
+                'data_type' => 'select',
+                'default_value' => 'A4',
+                'choices' => ['A4', 'A3', 'A5', 'Letter', 'Legal'],
+                'validation_rules' => 'required|in:A4,A3,A5,Letter,Legal',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.page_size.description',
+            ],
+            'orientation' => [
+                'name' => 'Orientation',
+                'slug' => 'orientation',
+                'data_type' => 'select',
+                'default_value' => 'Portrait',
+                'choices' => ['Portrait', 'Landscape'],
+                'validation_rules' => 'required|in:Portrait,Landscape',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description' => 'Page orientation',
+            ],
+        ],
+
+        // PDF Split Options (Custom UI component handles the actual interface)
+        'pdf_to_split' => [
+            'split_mode' => [
+                'name_key' => 'options.split_mode.name',
+                'slug' => 'split_mode',
+                'data_type' => 'select',
+                'default_value' => 'pages',
+                'choices' => ['pages', 'ranges'],
+                'validation_rules' => 'required|in:pages,ranges',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description_key' => 'options.split_mode.description',
+            ],
+            'page_range' => [
+                'name_key' => 'options.page_range.name',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string',
+                'is_basic' => true,
+                'display_order' => 2,
+                'description_key' => 'options.page_range.description',
+            ],
+            'output_mode' => [
+                'name_key' => 'options.output_mode.name',
+                'slug' => 'output_mode',
+                'data_type' => 'radio',
+                'default_value' => 'split',
+                'choices' => [
+                    'split' => 'options.output_mode.split',
+                    'merge' => 'options.output_mode.merge'
+                ],
+                'validation_rules' => 'required|in:split,merge',
+                'is_basic' => true,  // Rendered by vanilla upload JavaScript
+                'display_order' => 3,
+                'description_key' => 'options.output_mode.description',
+            ],
+            // Legacy fields kept for backwards compatibility (handled in WorkflowRunner)
+            // 'separate_files' and 'merge_output' are deprecated in favor of 'output_mode'
+        ],
+
+        // PDF Rotate Options
+        'pdf_to_rotate' => [
+            'rotation_angle' => [
+                'name_key' => 'options.rotation_angle.name',
+                'description_key' => 'options.rotation_angle.description',
+                'slug' => 'rotation_angle',
+                'data_type' => 'select',
+                'default_value' => '90',
+                'choices' => ['90', '180', '270'],
+                'validation_rules' => 'required|in:90,180,270',
+                'is_basic' => true,
+                'display_order' => 1,
+                'required_tier' => null,
+                'show_in_frontend' => true,
+            ],
+            'page_range' => [
+                'name_key' => 'options.page_range.name',
+                'description_key' => 'options.page_range.description',
+                'help_key' => 'options.page_range.help',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|max:100',
+                'is_basic' => false,
+                'display_order' => 2,
+                'required_tier' => 'onetime',
+                'show_in_frontend' => true,
+            ],
+        ],
+
+        // PDF Protect Options
+        'pdf_to_protect' => [
+            'user_password' => [
+                'name' => 'User Password',
+                'slug' => 'user_password',
+                'data_type' => 'password',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'required|string|min:6',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Password to open the PDF (required)',
+            ],
+            'owner_password' => [
+                'name' => 'Owner Password',
+                'slug' => 'owner_password',
+                'data_type' => 'password',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'nullable|string|min:6',
+                'is_basic' => false,
+                'display_order' => 2,
+                'description' => 'Password for permission controls (optional)',
+            ],
+            'encryption_level' => [
+                'name' => 'Encryption Level',
+                'slug' => 'encryption_level',
+                'data_type' => 'select',
+                'default_value' => '128',
+                'choices' => ['40', '128', '256'],
+                'validation_rules' => 'required|in:40,128,256',
+                'is_basic' => false,
+                'display_order' => 3,
+                'description' => 'Encryption strength (256-bit is most secure)',
+            ],
+            'allow_printing' => [
+                'name' => 'Allow Printing',
+                'slug' => 'allow_printing',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 4,
+                'description' => 'Allow users to print the PDF',
+            ],
+            'allow_modify' => [
+                'name' => 'Allow Modifications',
+                'slug' => 'allow_modify',
+                'data_type' => 'boolean',
+                'default_value' => 'false',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 5,
+                'description' => 'Allow users to modify the PDF content',
+            ],
+            'allow_copy' => [
+                'name' => 'Allow Copy',
+                'slug' => 'allow_copy',
+                'data_type' => 'boolean',
+                'default_value' => 'true',
+                'choices' => null,
+                'validation_rules' => 'boolean',
+                'is_basic' => false,
+                'display_order' => 6,
+                'description' => 'Allow users to copy text and images',
+            ],
+        ],
+
+        // PDF Unprotect Options
+        'pdf_to_unprotect' => [
+            'password' => [
+                'name' => 'PDF Password',
+                'slug' => 'password',
+                'data_type' => 'password',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'required|string',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Enter the password to unlock the PDF',
+            ],
+        ],
+
+        // PDF Delete Pages Options
+        'pdf_to_delete_pages' => [
+            'page_range' => [
+                'name' => 'Pages to Delete',
+                'slug' => 'page_range',
+                'data_type' => 'text',
+                'default_value' => '',
+                'choices' => null,
+                'validation_rules' => 'required|string',
+                'is_basic' => true,
+                'display_order' => 1,
+                'description' => 'Specify pages to delete (e.g., "1,3,5-7")',
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Provider API Mappings
+    |--------------------------------------------------------------------------
+    |
+    | Maps internal option names to provider-specific API parameters.
+    | Supports multiple providers for future extensibility.
+    |
+    */
+
+    'provider_mappings' => [
+        'convertapi' => [
+            // Images to PDF mappings (merge)
+            'images_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'image_quality' => 'ImageQuality',
+                'margin_horizontal' => 'HorizontalMargin',
+                'margin_vertical' => 'VerticalMargin',
+                'color_space' => 'ColorSpace',
+                'resolution' => 'PdfResolution',
+            ],
+
+            // Image to PDF mappings (convert individual)
+            'image_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'margin_horizontal' => 'HorizontalMargin',
+                'margin_vertical' => 'VerticalMargin',
+                'color_space' => 'ColorSpace',
+                'resolution' => 'PdfResolution',
+            ],
+
+            // Word to PDF mappings
+            'docx_to_pdf' => [
+                'convert_headings' => 'ConvertHeadings',
+                'convert_metadata' => 'ConvertMetadata',
+                'page_range' => 'PageRange',
+                'convert_bookmarks' => 'ConvertBookmarks',
+                'pdfa' => 'Pdfa',
+                'compress_pdf' => 'CompressPDF',
+                'password' => 'Password',
+            ],
+
+            // Excel to PDF mappings
+            'excel_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'fit_to_page' => 'FitToPage',
+                'worksheet_index' => 'WorksheetIndex',
+                'autofit' => 'AutoFit',
+                'convert_metadata' => 'ConvertMetadata',
+                'password' => 'Password',
+            ],
+
+            // PowerPoint to PDF mappings
+            'powerpoint_to_pdf' => [
+                'slide_range' => 'SlideRange',
+                'convert_speaker_notes' => 'ConvertSpeakerNotes',
+                'include_hidden_slides' => 'IncludeHiddenSlides',
+                'convert_metadata' => 'ConvertMetadata',
+                'password' => 'DocumentPassword',
+            ],
+
+            // PDF to Images mappings
+            'pdf_to_images' => [
+                'image_format' => 'ImageFormat',
+                'resolution' => 'ImageResolution',
+                'page_range' => 'PageRange',
+                'quality' => 'Quality',
+                'color_space' => 'ColorSpace',
+                'image_width' => 'ImageWidth',
+                'image_height' => 'ImageHeight',
+                'password' => 'Password',
+            ],
+
+            // PDF to Word mappings
+            'pdf_to_word' => [
+                'output_format' => 'OutputFormat',
+                'page_range' => 'PageRange',
+                'ocr_enabled' => 'Ocr',
+                'ocr_language' => 'OcrLanguage',
+                'password' => 'Password',
+            ],
+
+            // PDF to Excel mappings
+            'pdf_to_excel' => [
+                'output_format' => 'OutputFormat',
+                'page_range' => 'PageRange',
+                'ocr_enabled' => 'Ocr',
+                'ocr_language' => 'OcrLanguage',
+                'password' => 'Password',
+            ],
+
+            // PDF to PowerPoint mappings
+            'pdf_to_powerpoint' => [
+                'output_format' => 'OutputFormat',
+                'slides_layout' => 'SlidesLayout',
+                'ocr_enabled' => 'Ocr',
+            ],
+
+            // PDF to Text mappings
+            'pdf_to_text' => [
+                'preserve_formatting' => 'PreserveFormatting',
+                'ocr_enabled' => 'Ocr',
+                'include_page_breaks' => 'IncludePageBreaks',
+            ],
+
+            // AutoCAD to PDF mappings
+            'autocad_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'layout' => 'Layout',
+                'color_mode' => 'ColorMode',
+                'resolution' => 'Resolution',
+                'scale_factor' => 'ScaleFactor',
+                'include_layers' => 'IncludeLayers',
+                'background_color' => 'BackgroundColor',
+            ],
+
+            // PostScript to PDF mappings
+            'postscript_to_pdf' => [
+                'embed_fonts' => 'EmbedFonts',
+                'subset_fonts' => 'SubsetFonts',
+                'pdf_version' => 'PdfVersion',
+            ],
+
+            // eBook to PDF mappings
+            'ebook_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'margin' => 'Margin',
+            ],
+
+            // Email to PDF mappings
+            // Note: No ConvertAPI mappings - hybrid service handles conversion internally
+            'email_to_pdf' => [
+                // No mappings - mail_part is handled by HybridEmlToPdfService
+            ],
+
+            // Office to PDF mappings
+            'office_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+            ],
+
+            // Merge AutoCAD to PDF mappings (same as individual AutoCAD)
+            'merge_autocad_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'layout' => 'Layout',
+                'color_mode' => 'ColorMode',
+            ],
+
+            // Merge Word to PDF mappings (same as individual DOCX)
+            'merge_word_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+            ],
+
+            // Merge Excel to PDF mappings (same as individual Excel)
+            'merge_excel_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'fit_to_page' => 'FitToPage',
+            ],
+
+            // Merge PowerPoint to PDF mappings (same as individual PowerPoint)
+            'merge_powerpoint_to_pdf' => [
+                // No standard PowerPoint conversion options apply to merge operation
+            ],
+
+            // Merge PostScript to PDF mappings (same as individual PostScript)
+            'merge_postscript_to_pdf' => [
+                'embed_fonts' => 'EmbedFonts',
+                'subset_fonts' => 'SubsetFonts',
+                'pdf_version' => 'PdfVersion',
+            ],
+
+            // Merge eBook to PDF mappings (same as individual eBook)
+            'merge_ebook_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'margin' => 'Margin',
+            ],
+
+            // Merge Office to PDF mappings (same as individual Office)
+            'merge_office_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+            ],
+
+            // Compress PDF mappings
+            'compress_pdf' => [
+                'level' => 'CompressionLevel',
+                'image_quality' => 'ImageQuality',
+                'image_resolution' => 'ImageResolution',
+            ],
+
+            // OCR PDF mappings
+            'ocr_pdf' => [
+                'ocr_languages' => 'OcrLanguages',
+                'ocr_settings' => 'OcrSettings',
+                'text_positioning' => 'TextPositioning',
+            ],
+
+            // PDF/A mappings
+            'pdfa_pdf' => [
+                'flavor' => 'PdfAVersion',
+            ],
+
+            // Repair PDF mappings
+            'repair_pdf' => [
+                // No option mappings - ConvertAPI handles automatically
+            ],
+
+            // Rasterize PDF mappings
+            'rasterize_pdf' => [
+                // No option mappings - ConvertAPI handles automatically
+            ],
+
+            // PDF to HTML mappings
+            'pdf_to_html' => [
+                'extract_mode' => 'ExtractMode',
+                'include_images' => 'IncludeImages',
+                'image_format' => 'ImageFormat',
+            ],
+
+            // HTML to PDF mappings
+            'html_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'margin_top' => 'MarginTop',
+                'margin_bottom' => 'MarginBottom',
+                'margin_left' => 'MarginLeft',
+                'margin_right' => 'MarginRight',
+                'enable_javascript' => 'JavaScriptEnabled',
+                'wait_time' => 'WaitTime',
+                'scale' => 'Scale',
+                'print_background' => 'PrintBackground',
+                'display_header_footer' => 'DisplayHeaderFooter',
+            ],
+
+            // PDF to TXT mappings
+            'pdf_to_txt' => [
+                'preserve_layout' => 'PreserveLayout',
+            ],
+
+            // PDF to CSV mappings
+            'pdf_to_csv' => [
+                'delimiter' => 'Delimiter',
+                'extract_all_tables' => 'ExtractAllTables',
+            ],
+
+            // CSV to PDF mappings
+            'csv_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'fit_to_page' => 'FitToPage',
+                'delimiter' => 'Delimiter',
+                'text_encoding' => 'TextEncoding',
+                'has_header_row' => 'HasHeaderRow',
+            ],
+
+            // Publisher to PDF mappings
+            'pub_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'print_quality' => 'PrintQuality',
+            ],
+
+            // RTF to PDF mappings
+            'rtf_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'margin_top' => 'MarginTop',
+                'margin_bottom' => 'MarginBottom',
+                'margin_left' => 'MarginLeft',
+                'margin_right' => 'MarginRight',
+                'password' => 'DocumentPassword',
+            ],
+
+            // eBook to PDF mappings
+            'ebook_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'chapter_range' => 'ChapterRange',
+                'include_toc' => 'IncludeToc',
+            ],
+
+            // Visio to PDF mappings
+            'vsd_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'page_range' => 'PageRange',
+                'include_background' => 'IncludeBackground',
+            ],
+
+            // Markdown to PDF mappings
+            'md_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+                'code_highlighting' => 'CodeHighlighting',
+            ],
+
+            // ODG to PDF mappings
+            'odg_to_pdf' => [
+                'page_size' => 'PageSize',
+                'orientation' => 'PageOrientation',
+            ],
+
+            // PDF Split mappings
+            'pdf_to_split' => [
+                'page_range' => 'PageRange',
+                // split_mode and merge_output are handled in WorkflowRunner logic
+            ],
+
+            // PDF Rotate mappings
+            'pdf_to_rotate' => [
+                'rotation_angle' => 'Angle',
+                'page_range' => 'PageRange',
+            ],
+
+            // PDF Protect mappings
+            'pdf_to_protect' => [
+                'user_password' => 'UserPassword',
+                'owner_password' => 'OwnerPassword',
+                'encryption_level' => 'EncryptionLevel',
+                'allow_printing' => 'AllowPrint',
+                'allow_modify' => 'AllowModify',
+                'allow_copy' => 'AllowCopy',
+            ],
+
+            // PDF Unprotect mappings
+            'pdf_to_unprotect' => [
+                'password' => 'Password',
+            ],
+
+            // PDF Delete Pages mappings
+            'pdf_to_delete_pages' => [
+                'page_range' => 'PageRange',
+            ],
+        ],
+
+        // Future providers can be added here
+        // 'zamzar' => [...],
+        // 'cloudconvert' => [...],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | UI Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for rendering options in the user interface.
+    |
+    */
+
+    'ui_config' => [
+        'basic_options_limit' => 2, // Show max 2 basic options by default
+        'show_more_text_key' => 'ui.show_more_options',
+        'show_less_text_key' => 'ui.show_fewer_options',
+        'reset_to_defaults_text_key' => 'ui.reset_to_defaults',
+        'conversion_options_title_key' => 'ui.conversion_options_title',
+        'conversion_options_subtitle_key' => 'ui.conversion_options_subtitle',
+        'options_help_text_key' => 'ui.options_help_text',
+    ],
+];

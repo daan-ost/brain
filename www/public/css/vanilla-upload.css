@@ -1,0 +1,306 @@
+/**
+ * Vanilla Upload Component Styles
+ *
+ * Clean, modern design met progressive enhancement
+ * Geen dependencies op Alpine.js of andere frameworks
+ */
+
+.upload-manager {
+    width: 100%;
+    max-width: 1400px; /* Wider for 3-column layout with cover page */
+    margin: 0 auto;
+    padding: 0 1rem; /* Add horizontal padding for mobile */
+}
+
+/* Step Container */
+.upload-step {
+    background: white;
+    border-radius: 28px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border: 1px solid #f3f4f6;
+    padding: 3rem;
+    transition: all 0.3s ease;
+}
+
+.upload-step.hidden {
+    display: none;
+}
+
+/* Upload Dropzone */
+.upload-dropzone {
+    border: 2px dashed #d1d5db;
+    border-radius: 12px;
+    padding: 4rem 2rem;
+    text-align: center;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.upload-dropzone:hover {
+    border-color: #9ca3af;
+}
+
+.upload-dropzone.dragging {
+    border-color: #3b82f6;
+    background-color: #eff6ff;
+}
+
+/* Upload Icon */
+.upload-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 1.5rem;
+    color: #d1d5db;
+}
+
+/* Upload Button */
+.upload-button {
+    background-color: #3b82f6;
+    color: white;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    margin-bottom: 0.75rem;
+}
+
+.upload-button:hover {
+    background-color: #2563eb;
+}
+
+/* Upload Hint */
+.upload-hint {
+    color: #9ca3af;
+    font-size: 0.875rem;
+    margin: 0.5rem 0;
+}
+
+/* Extension Badges */
+.upload-extensions {
+    margin-top: 1rem;
+    min-height: 40px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.extension-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background: white;
+    color: #374151;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 0.25rem;
+    border: 1px solid #d1d5db;
+}
+
+/* Error Display */
+.upload-error {
+    margin-top: 1.5rem;
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    max-width: 450px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.error-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.error-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    color: #dc2626;
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+}
+
+.error-message {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #991b1b;
+    margin: 0;
+}
+
+.error-suggestions {
+    margin: 0.5rem 0 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.error-suggestions li {
+    font-size: 0.75rem;
+    color: #b91c1c;
+    margin-top: 0.25rem;
+}
+
+/* File List */
+.file-list {
+    margin: 1.5rem 0;
+}
+
+.files {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.file-name {
+    font-weight: 500;
+    color: #111827;
+}
+
+.file-size {
+    color: #6b7280;
+    font-size: 0.875rem;
+}
+
+/* Buttons */
+.back-button,
+.convert-button,
+.convert-another-button {
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.back-button {
+    background: none;
+    color: #6b7280;
+    margin-bottom: 1.5rem;
+}
+
+.back-button:hover {
+    color: #111827;
+}
+
+.convert-button {
+    background-color: #3b82f6;
+    color: white;
+    width: 100%;
+    font-size: 1.125rem;
+}
+
+.convert-button:hover {
+    background-color: #2563eb;
+}
+
+.convert-another-button {
+    background-color: #f3f4f6;
+    color: #374151;
+    margin-top: 1rem;
+}
+
+.convert-another-button:hover {
+    background-color: #e5e7eb;
+}
+
+/* Progress */
+.progress-container {
+    text-align: center;
+    padding: 2rem 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background-color: #e5e7eb;
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.progress-bar::after {
+    content: '';
+    display: block;
+    height: 100%;
+    background-color: #3b82f6;
+    width: 0%;
+    animation: progress 2s ease-in-out infinite;
+}
+
+@keyframes progress {
+    0% { width: 0%; }
+    50% { width: 100%; }
+    100% { width: 0%; }
+}
+
+.progress-text {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+/* Success */
+.success-message {
+    text-align: center;
+    padding: 2rem 0;
+}
+
+.success-icon {
+    width: 64px;
+    height: 64px;
+    color: #10b981;
+    margin: 0 auto 1rem;
+}
+
+.success-message h3 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 1.5rem;
+}
+
+.download-link {
+    display: inline-block;
+    background-color: #3b82f6;
+    color: white;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 0.2s ease;
+}
+
+.download-link:hover {
+    background-color: #2563eb;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .upload-step {
+        padding: 1.5rem;
+        border-radius: 16px;
+    }
+
+    .upload-dropzone {
+        padding: 2rem 1rem;
+    }
+
+    .upload-icon {
+        width: 60px;
+        height: 60px;
+    }
+}

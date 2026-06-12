@@ -1,0 +1,78 @@
+================================================================================
+AIFACTORY PROJECT CONFIGURATIE
+================================================================================
+
+Gebruik deze waarden bij het aanmaken van een nieuw project in AIfactory:
+
+BASISGEGEVENS
+-------------
+Project naam:        NoBrainersBot
+Slug:                brain
+Repository URL:      https://github.com/daan-ost/brain
+Local path:          /Users/daanvantongeren/Documents/Sites/brain/www
+Default branch:      main
+
+DATABASE
+--------
+Database naam:       brain
+Database host:       127.0.0.1
+Database port:       8889
+Database user:       root
+Database password:   root
+Test database:       brain_test
+
+URLS
+----
+Local test URL:      https://brain:8890
+
+TECH STACK (selecteer)
+----------------------
+- Laravel
+- Livewire
+- MySQL
+- PHP 8.4
+
+VINKJES
+-------
+[x] Is active
+[x] Is based on base website
+[ ] Is default project
+
+E2E SETTINGS (na aanmaken invullen)
+-----------------------------------
+Auth type:           fortify
+Login URL:           /login
+Admin login URL:     /beheer
+Test user email:     test@example.com
+Test user password:  password
+Admin email:         daan@interus.nl
+Admin password:      password
+
+================================================================================
+STAPPEN NA AANMAKEN IN AIFACTORY
+================================================================================
+
+1. MAAK PROJECT AAN
+   Ga naar AIfactory admin en maak het project aan met bovenstaande waarden
+
+2. MAAK TEST DATABASE AAN
+   In phpMyAdmin, maak database: brain_test
+
+3. GENEREER CONTEXTEN
+   In AIfactory project detail pagina:
+   - Klik "Generate" bij UI Navigation
+   - Klik "Generate" bij Feature Registry
+   - Optioneel: Generate Database Schema
+
+4. MAAK WORKTREE AAN (voor build isolation)
+   In AIfactory project settings:
+   - Zet Build Isolation op "worktree"
+   - Worktree base: /Users/daanvantongeren/Documents/Sites/brain-builds
+   - Maak een eerste worktree aan
+
+5. SEED TEST USERS
+   In terminal:
+   cd /Users/daanvantongeren/Documents/Sites/brain/www
+   php artisan db:seed --class=TestUserSeeder
+
+================================================================================

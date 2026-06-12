@@ -1,0 +1,47 @@
+# Dependencies
+www/vendor/
+www/node_modules/
+
+# Storage files
+www/storage/app/converted/
+www/storage/app/uploads/
+www/storage/app/temp/
+www/storage/logs/
+www/storage/framework/cache/
+www/storage/framework/sessions/
+www/storage/framework/views/
+
+# Environment files
+www/.env
+www/.env.review
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+www/storage/test-scenarios/
+www/test-results/
+www/playwright-report/data/
+www/playwright-report/trace/
+
+# Playwright
+www/playwright-report/
+www/test-results/
+
+# Compiled assets
+www/public/hot
+www/public/build/
+
+# Debug files
+*.log
+
+# AIfactory spec manifest
+.aifactory/
