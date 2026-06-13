@@ -652,3 +652,24 @@ Built and faithful: the driver, CHECK 1 (absolute floor), CHECK 2 (age/profit la
 **The remaining gap = the `lock_profit` HP ratchet (the trailing stop).** Traced via trade 12772: legacy sold at a `selling_price` (0.0278) *above* the market price (0.02757) — a trailed stop locked from the earlier peak. My replay omitted the ratchet (the spec called it inert via the excursion bug), but **the excursion columns are real (85%/78% match), so the ratchet is active** and trails the stop up on `highest_profit_loss`. The exact ratchet arithmetic (percent-vs-fraction units, the `hp_setting` tier thresholds) is the spec's flagged ambiguity (Q1/Q8) and must be extracted from `lock_profit` (`functions_br.php:4744`), not guessed.
 
 **Next:** focused extraction of `lock_profit`'s ratchet (like the buy-side calc-type digs) → trail the stop correctly → the profitable-exit prices/dates converge. The losers (floor/ladder sells) already match well; the tail is winner-exit precision.
+
+---
+
+## Daan's authoritative model (2026-06-13) — the SL is the MAX of parallel mechanisms, never lowered
+
+Daan clarified the real design (use this for the next implementation pass):
+
+The stop-loss (SL) price at each datetime is the **MAXIMUM** of several mechanisms running in parallel:
+1. **Start SL** — e.g. ~1% below the buy price (the floor).
+2. **Time-based rising SL** — over time the SL is forced up; e.g. after 5 minutes it sits a fixed % above the buy price. This stops trades lasting too long. (The hardcoded age/profit ladder is this mechanism expressed as profit-by-time targets.)
+3. **Business rules (rule 101)** — when an indicator drops by an x% / absolute amount, set the SL to ~99.5% of the **current marketprice**.
+
+Two invariants:
+- **Once a (trailing) SL price is set it is NEVER lowered.** Critical.
+- **Per datetime, the SL price = the highest of all the above (incl. the previous SL).**
+
+Also (for later): the sell process should **store, per datetime, all values** (marketprice, SL price, each rule's value) — a "sell trade" mirroring the buy-side per-subrule storage. This lets us see the max price reached during the sell window and later **automate** choosing the best sell moment / a "don't sell after this datetime" (hard-drop) window — currently done by hand. (Use case: a 3% drop then a 10% rise → sell before the 3% drop and rebuy for the 10% rise.)
+
+### Implementation status vs this model
+
+The current `validate_sell.py` (committed, **87% total P&L** vs legacy, 80% win/loss direction) uses **explicit sell triggers** (CHECK 1/2/3 + rule 101 orderstatus) and reproduces the losers/floor-sells well. Two attempts to re-express it as the pure "max-of-mechanisms + never-lower" model **regressed** (winners ran too long: total P&L +3000% vs +1102%), because the explicit triggers don't translate 1:1 into SL prices without the exact per-mechanism SL values. **The faithful fix needs the exact SL each mechanism sets per minute pinned** (from `process_sell_simulation_trade` + `determine_stoploss_price`, or from Daan), then validated — not guessed.
