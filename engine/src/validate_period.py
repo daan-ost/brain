@@ -3,7 +3,7 @@
 Scaled validation: evaluate my engine at the EXACT datetimes legacy evaluated
 (the oracle datetimes), and compare per-subrule value + pass, and the overall
 fire verdict. This sidesteps the trade-datetime offset and isolates any diverging
-subrule. READ-ONLY on bot_signals.  Usage: validate_period.py [from] [to]
+subrule. READ-ONLY on bot_signals.  Usage: validate_period.py [rule] [from] [to]
 """
 import bisect
 import json
@@ -14,11 +14,13 @@ from datetime import timedelta
 import pymysql
 
 from calc import subrule_value
-from volume import missingdata, check_volumeud_3
+from volume import missingdata, check_volumeud_3, volume_settings
 
-SYM, RULE, MIN_VOLUME = 2525, 21, 14448
-FROM = sys.argv[1] if len(sys.argv) > 1 else "2025-02-14 00:00:00"
-TO = sys.argv[2] if len(sys.argv) > 2 else "2025-02-21 00:00:00"
+SYM = 2525
+RULE = int(sys.argv[1]) if len(sys.argv) > 1 else 21
+FROM = sys.argv[2] if len(sys.argv) > 2 else "2025-02-14 00:00:00"
+TO = sys.argv[3] if len(sys.argv) > 3 else "2025-02-21 00:00:00"
+VOL_SETTINGS = volume_settings(RULE)
 
 src = pymysql.connect(host="127.0.0.1", port=8889, user="root", password="root",
                       database="bot_signals", cursorclass=pymysql.cursors.DictCursor)
@@ -27,6 +29,11 @@ src = pymysql.connect(host="127.0.0.1", port=8889, user="root", password="root",
 def sq(sql, args):
     with src.cursor() as c:
         c.execute(sql, args); return c.fetchall()
+
+
+# min_volume from wp_trading_symbols_rule for this symbol+rule (drives check_volumeud_3)
+_msr = sq("SELECT settings FROM wp_trading_symbols_rule WHERE trading_symbol_id=%s AND rule_id=%s LIMIT 1", (SYM, RULE))
+MIN_VOLUME = float(json.loads(_msr[0]["settings"]).get("min_volume", 1e12)) if _msr else 1e12
 
 
 # in-memory series (+6h margin)
@@ -65,6 +72,8 @@ def vol_rows(T, minutes, n=None):
 def passes(v, lo, hi):
     if v is None:
         return None
+    if v == "PASS":                 # futureprice (backtest-only) → always pass live
+        return True
     # calc.py already rounds each value to its legacy precision; compare as-is (no over-rounding).
     if lo is not None and v < float(lo):
         return False
@@ -80,7 +89,7 @@ def eval_value(sr, T):
     vc = json.loads(sr["value_condition"]) if sr["value_condition"] else {}
     if name == "volume_check":
         rows60 = vol_rows(T, 60)
-        ok = check_volumeud_3(rows60, MIN_VOLUME)
+        ok = check_volumeud_3(rows60, MIN_VOLUME, VOL_SETTINGS)
         return (round(float(rows60[0]["value"])) if (ok and rows60) else 0.0), ok
     if name == "missingdata":
         return round(missingdata(vol_rows(T, 300, def1)), 4), None
@@ -127,8 +136,10 @@ for T in odts:
         if mypass is False:
             my_pass = False
         a = agg[sr["ID"]]; a["n"] += 1
-        if v is not None and abs(round(v, 1) - round(float(orc["value"]), 1)) < 0.05:
+        if v not in (None, "PASS") and abs(round(v, 1) - round(float(orc["value"]), 1)) < 0.05:
             a["val_ok"] += 1
+        elif v == "PASS":
+            a["val_ok"] += 1          # futureprice not numerically compared (backtest-only)
         if mypass is not None and int(mypass) == orc["result_ok"]:
             a["pass_ok"] += 1
     leg = len(orows) == len(subrules) and all(r["result_ok"] == 1 for r in orows.values())

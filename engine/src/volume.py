@@ -27,16 +27,32 @@ def missingdata(rows):
     return float(max_diff)
 
 
-# Rule-21 settings for check_volumeud_3 (volume_check case 2258-2321; min_volume from
-# wp_trading_symbols_rule). Rule-21 OVERRIDES (functions_br.php:2316): multiplier_volume_sum_min=2.1
-# and min_price_diff_percentage=0.03 (NOT the base 8 / 1).
-RULE21_VOLUME_SETTINGS = dict(
-    multiplier_volume_sum_min=2.1, multiplier_volume_sum_max=20,
+# check_volumeud_3 settings: base (volume_check case 2258-2273) + per-rule overrides (2274-2321).
+# min_volume comes from wp_trading_symbols_rule. min_price_diff defaults to 1 (function default).
+_BASE_VOLUME = dict(
+    multiplier_volume_sum_min=8, multiplier_volume_sum_max=20,
     rows_to_analyse=30, minutes_to_analyse=60, minimal_rows_to_analyse=5,
     minimal_relative_volume=0.4, maximal_relative_volume=4,
     not_negative_before_x_values=2.8, trigger_minimal_volume_relative=0.03,
-    max_price_diff_percentage=10, min_price_diff_percentage=0.03,
+    max_price_diff_percentage=10, min_price_diff_percentage=1,
 )
+_VOLUME_OVERRIDES = {
+    20: dict(maximal_relative_volume=24, max_price_diff_percentage=16, min_price_diff_percentage=0.1,
+             multiplier_volume_sum_max=41, multiplier_volume_sum_min=3.4, minimal_relative_volume=0.35),
+    21: dict(multiplier_volume_sum_min=2.1, min_price_diff_percentage=0.03),
+    22: dict(multiplier_volume_sum_min=3.1, minimal_relative_volume=-0.04, trigger_minimal_volume_relative=0.03,
+             multiplier_volume_sum_max=79, maximal_relative_volume=23, max_price_diff_percentage=27,
+             min_price_diff_percentage=0.03),
+    23: dict(minimal_relative_volume=0.07, trigger_minimal_volume_relative=0.005, multiplier_volume_sum_min=2.4,
+             min_price_diff_percentage=0.5, maximal_relative_volume=5),
+}
+
+
+def volume_settings(rule):
+    return {**_BASE_VOLUME, **_VOLUME_OVERRIDES.get(int(rule), {})}
+
+
+RULE21_VOLUME_SETTINGS = volume_settings(21)   # back-compat
 
 
 def check_volumeud_3(rows, min_volume, s=RULE21_VOLUME_SETTINGS):

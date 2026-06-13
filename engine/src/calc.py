@@ -27,13 +27,15 @@ def window_metrics(vals):
     if not vals:
         return {}
     first, last = vals[0], vals[-1]          # first = newest, last = oldest
+    lowv, highv, sumv = min(vals), max(vals), sum(vals)
     m = {
         "first_value": first,
         "last_value": last,
         "diff_previous_number": first - last,                 # change over the window (newest - oldest)
         "max_diff_number": max(abs(v - first) for v in vals),  # largest abs deviation from newest
-        "lowest_value": min(vals),
-        "highest_value": max(vals),
+        "lowest_value": lowv,
+        "highest_value": highv,
+        "range_percentage": (abs(highv - lowv) / sumv * 100) if (highv != lowv and sumv != 0) else 0.0,
     }
     if len(vals) >= 2:
         std = float(np.std(vals, ddof=1))                      # sample std (n-1)
@@ -79,4 +81,12 @@ def subrule_value(subrulename, value_condition, vals, prices):
     if subrulename == "skewness":
         return round(window_metrics(vals).get("skewness", 0.0), 5)
 
-    return None  # missingdata, volume_check — TODO
+    if subrulename == "range_percentage":
+        return round(window_metrics(vals).get("range_percentage", 0.0), 5)
+
+    # futureprice / futureprice_x_rows: backtest-only look-ahead; legacy SKIPS it live
+    # (functions_br.php:782-785) → always pass. Leak-free for live/ML.
+    if subrulename in ("futureprice", "futureprice_x_rows"):
+        return "PASS"
+
+    return None  # missingdata, volume_check — handled by the caller via volume.py
