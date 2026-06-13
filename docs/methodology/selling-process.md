@@ -629,3 +629,26 @@ READ-ONLY on `bot_signals`. For DOGEAI (`SYM=2525`):
 | `update_simulation_trade` (SQL) | `legacy/functions.php` | 1014-1056 |
 | `get_distinct_indicator_bydate_date` | `legacy/functions.php` | 1732-1749 |
 | live (non-sim) sell path | `legacy/bot_process_selling.php` | 234-268 |
+
+---
+
+## Validation status (2026-06-13) — built & validated; trailing-stop precision is the tail
+
+Engine: `brain/engine/src/{sell_rule101.py, validate_sell.py}`. Replayed all 661 closed DOGEAI trades vs the oracle:
+
+| output | exact | note |
+|---|---|---|
+| selling_price | 333/661 | |
+| selling_date | 402/661 | |
+| profit_loss (exact) | 334/661 | |
+| profit_loss (±0.5%) | 417/661 | net-P&L fidelity |
+| win/loss direction | 531/661 (80%) | |
+| highest_profit_loss | 563/661 (85%) | excursion is REAL → resolves Q1 |
+| lowest_profit_loss | 513/661 (78%) | |
+| **TOTAL P&L** | **mine +954.7% vs legacy +1102.0% (87%)** | |
+
+Built and faithful: the driver, CHECK 1 (absolute floor), CHECK 2 (age/profit ladder), CHECK 3 (trailing breach), and rule 101's three subrule types (`sell_negative_volume`, `sell_x_below`, `previous_value`/SL).
+
+**The remaining gap = the `lock_profit` HP ratchet (the trailing stop).** Traced via trade 12772: legacy sold at a `selling_price` (0.0278) *above* the market price (0.02757) — a trailed stop locked from the earlier peak. My replay omitted the ratchet (the spec called it inert via the excursion bug), but **the excursion columns are real (85%/78% match), so the ratchet is active** and trails the stop up on `highest_profit_loss`. The exact ratchet arithmetic (percent-vs-fraction units, the `hp_setting` tier thresholds) is the spec's flagged ambiguity (Q1/Q8) and must be extracted from `lock_profit` (`functions_br.php:4744`), not guessed.
+
+**Next:** focused extraction of `lock_profit`'s ratchet (like the buy-side calc-type digs) → trail the stop correctly → the profitable-exit prices/dates converge. The losers (floor/ladder sells) already match well; the tail is winner-exit precision.
