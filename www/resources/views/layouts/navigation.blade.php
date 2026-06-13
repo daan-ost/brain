@@ -24,6 +24,11 @@
                     <x-nav-link :href="route('pricing')" :active="request()->routeIs('pricing*')">
                         Pricing
                     </x-nav-link>
+                    @if (auth()->user()?->is_admin)
+                        <x-nav-link :href="route('engine.index')" :active="request()->routeIs('engine.*')">
+                            Engine
+                        </x-nav-link>
+                    @endif
                 </div>
             </div>
 
