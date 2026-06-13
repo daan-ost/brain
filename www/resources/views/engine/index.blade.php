@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.trading')
 
 @section('content')
 <div class="py-8">

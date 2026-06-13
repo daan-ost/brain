@@ -87,6 +87,21 @@ return [
             ]) : [],
         ],
 
+        // READ-ONLY source: the legacy bot_signals database. NEVER written to.
+        'bot_signals' => [
+            'driver' => 'mysql',
+            'host' => env('BOT_SIGNALS_HOST', '127.0.0.1'),
+            'port' => env('BOT_SIGNALS_PORT', env('DB_PORT', '8889')),
+            'database' => env('BOT_SIGNALS_DATABASE', 'bot_signals'),
+            'username' => env('BOT_SIGNALS_USERNAME', 'root'),
+            'password' => env('BOT_SIGNALS_PASSWORD', 'root'),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => false,
+            'engine' => null,
+        ],
+
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),

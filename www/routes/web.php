@@ -316,8 +316,10 @@ Route::middleware(['auth', 'two_factor'])->group(function () {
     });
 
     // -------------------------------------------------------------------------
-    // TRADING ENGINE (admin) — browse the faithful rule-engine replay
+    // TRADING (admin) — trades overview + faithful rule-engine replay
     // -------------------------------------------------------------------------
+    Route::get('/trades', \App\Livewire\Trades\Index::class)->name('trades.index');
+
     Route::prefix('engine')->name('engine.')->group(function () {
         Route::get('/', [\App\Http\Controllers\EngineController::class, 'index'])->name('index');
         Route::get('/signal/{signal}', [\App\Http\Controllers\EngineController::class, 'signal'])->name('signal');

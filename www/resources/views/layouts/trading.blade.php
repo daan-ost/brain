@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{{ $title ?? 'NoBrainersBot' }}</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @livewireStyles
+</head>
+<body class="font-sans antialiased bg-gray-50 text-gray-800" x-data="{ open: false }">
+
+    {{-- Sidebar --}}
+    <aside class="fixed inset-y-0 left-0 z-40 w-64 flex flex-col bg-gray-900 text-gray-300
+                  -translate-x-full lg:translate-x-0 transition-transform"
+           :class="open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
+        <div class="flex h-16 items-center gap-2 px-5 border-b border-white/10">
+            <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white font-bold">N</span>
+            <span class="text-white font-semibold tracking-tight">NoBrainersBot</span>
+        </div>
+        <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1 text-sm">
+            @php($item = fn ($routeName, $active) => [$routeName, $active])
+            <a href="{{ route('dashboard') }}"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-white/5 hover:text-white transition">
+                <span class="w-2 h-2 rounded-full bg-gray-600"></span> Dashboard
+            </a>
+            <a href="{{ route('trades.index') }}"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 transition
+                      {{ request()->routeIs('trades.*') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
+                <span class="w-2 h-2 rounded-full {{ request()->routeIs('trades.*') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Trades
+            </a>
+            <a href="{{ route('engine.index') }}"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 transition
+                      {{ request()->routeIs('engine.*') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
+                <span class="w-2 h-2 rounded-full {{ request()->routeIs('engine.*') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Engine
+            </a>
+        </nav>
+        <div class="border-t border-white/10 px-3 py-3">
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button class="w-full text-left rounded-lg px-3 py-2 text-sm hover:bg-white/5 hover:text-white transition">
+                    Uitloggen ({{ auth()->user()?->email }})
+                </button>
+            </form>
+        </div>
+    </aside>
+
+    {{-- Main --}}
+    <div class="lg:pl-64">
+        <header class="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-gray-200 bg-white px-4 sm:px-6">
+            <button @click="open = !open" class="lg:hidden text-gray-500" aria-label="Menu">☰</button>
+            <div class="text-sm text-gray-400">{{ $header ?? '' }}</div>
+        </header>
+        <main class="p-4 sm:p-6 lg:p-8">
+            {{ $slot ?? '' }}
+            @yield('content')
+        </main>
+    </div>
+
+    @livewireScripts
+</body>
+</html>
