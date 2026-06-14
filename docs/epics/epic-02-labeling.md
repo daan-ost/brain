@@ -63,7 +63,19 @@ The model can never beat its labels. Today's labels are manual and a bit inconsi
 
 - Exit-timing modeling (E09). This epic only *defines* quality via the available path; it does not optimize selling.
 
+## Proposed defaults (data-grounded — see findings/good-moment-defaults.md)
+
+Read from DOGEAI's own 78 good / 312 bad hand-labels:
+
+| Knob | Proposed | Why |
+|---|---|---|
+| `min_upside` | **5%** | p25 of good trades; bad trades essentially never reach it (best bad +4.88%) |
+| `max_drawdown` | **1%** | catches 75/78 good trades; equals the sell-floor (internal consistency) |
+| `horizons` | **5 / 10 / 15 / 20 / 45 min** | stacked — did it reach +5% within any window? |
+
+Status: proposed, awaiting Daan's final confirm. Calibration vs the hand-labels is the acceptance test.
+
 ## Open questions (for Daan)
 
-- Exact defaults for `max_drawdown`, `min_upside`, the window minutes, and the stabilization window.
+- Confirm `min_upside` = 5% (vs 4%, which catches a few more good trades but admits near-miss bad ones).
 - Do you want to review the auto-labels on a sample before we train on them?

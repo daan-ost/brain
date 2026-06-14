@@ -10,8 +10,9 @@ Hard rule: `bot_signals` is a **read-only source** — never written to.
 |---|---|---|
 | [A](epic-A-good-trade-periods.md) | Good trade-period discovery + per-datetime outcome store + explorer (screens + graph) | E02 + feature-store |
 | [B](epic-B-lookback-store.md) | Per-rule lookback feature store (fast-queryable) | E01 |
+| [S](epic-S-sell-precision.md) | Sell-engine precision (87% → higher) — **parked**, dependency of A | E09 (faithful, not optimized) |
 
-A and B are the concrete, buildable versions of the foundation. The numbered E01–E11 below remain the grand plan.
+A and B are the concrete, buildable versions of the foundation. S is a parked dependency (don't forget). The numbered E01–E11 below remain the grand plan.
 
 ## Grand plan
 

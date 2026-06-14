@@ -44,8 +44,12 @@ Some good moments are already caught by rules 20/21/22/23; many are not. If we o
 - The ML filter / new-rule search (later precision epics) — this epic produces their input, it does not build them.
 - Live execution.
 
+## Decided
+
+- **Good-period defaults:** `min_upside` 5%, `max_drawdown` 1%, horizons 5/10/15/20/45 min — data-grounded, see findings/good-moment-defaults.md (awaiting final confirm on 5% vs 4%).
+- **Rule set is fixed:** buy rules 20/21/22/23 only; 10/11/12/18 stay out of scope. No need to enumerate other rules.
+
 ## Open questions (for Daan)
 
-- Good-period defaults (max_drawdown, min_upside, horizons) — confirm with E02's open questions.
 - Graph: per-entry sell-outcome as a heat band over the price line — is that the view you want, or a separate result line under the price chart?
 - Do we scan every indicator datetime in a window, or down-sample for very long windows?

@@ -21,10 +21,9 @@ New-rule discovery and the ML filter need to sweep across **all** calc-types × 
 
 1. **What to compute.** For each `(symbol, datetime, indicator, lookback ∈ 1..20)`, compute the full `window_metrics` set (skewness, std, volatility, range_percentage, max_diff, diff_previous, lowest, highest, …). "Per rule" = tag rows with the rule(s) whose subrules reference that `(indicator, lookback)` so a query can scope to "rule 20's features", but the underlying values are rule-agnostic (computed once, shared).
 2. **Scope of datetimes.** Driven iteratively (not all 101M): the datetimes of real trades + the datetimes inside Epic A's good windows + rule-fire datetimes. Keyed so more coins/periods append cleanly.
-3. **Storage choice (the key decision).** Optimize for `MAX/MIN/AVG of feature F at lookback L across a set of datetimes`. Options:
-   - **DuckDB / Parquet** (recommended per E01 research) — columnar, partition by `symbol+date`, fast aggregations, low memory; Python-native. Best for analytical sweeps.
-   - **MySQL table** in brain — `feature_values(symbol_id, datetime, indicator, lookback, metric, value)` long-format, indexed on `(symbol_id, indicator, lookback, metric)`. Simpler to join with Laravel screens, heavier for big sweeps.
-   - Likely **both**: DuckDB/Parquet as the analytical store of record; a thin MySQL summary for screens.
+3. **Storage choice — DECIDED.** Optimize for `MAX/MIN/AVG of feature F at lookback L across a set of datetimes`. **Two stores:**
+   - **DuckDB / Parquet = store of record** (the analytical truth). Columnar, partition by `symbol+date`, fast aggregations, low memory; Python-native. This is where the new-rule sweeps and ML training read from.
+   - **Thin MySQL summary in brain = for the screens.** Not the full cube — a compact rollup (per rule/coin/metric/lookback: min/max/avg/percentiles over good vs bad) so Laravel/Livewire screens query it directly without touching DuckDB. Rebuilt from the Parquet store of record.
 4. **Layout for speed.** Long/tidy format `(symbol, datetime, indicator, lookback, metric, value)` partitioned by symbol+date. This makes the example query a single filtered aggregation. Store a `params_hash`/`feature_version` so recomputes are reproducible and diffable.
 5. **Leakage contract.** Every value at datetime `t` uses only indicator rows with `datetime ≤ t` (as-of). No future quantity ever enters this store (those are labels, Epic A's outcomes).
 6. **Query helpers.** A small Python API (and a couple of SQL views) for the common questions: per-rule feature ranges over good vs bad trades; distribution of a metric at a lookback; good-vs-bad separation for a `(indicator, lookback, metric)` triple (the new-rule search primitive).
@@ -44,8 +43,12 @@ New-rule discovery and the ML filter need to sweep across **all** calc-types × 
 - The good-period definition and per-datetime sell outcomes (Epic A).
 - Rules 10/11/12/18 (deferred).
 
+## Decided
+
+- **Storage:** DuckDB/Parquet = store of record; thin MySQL rollup = for screens. (Approved by Daan.)
+- **Rule set is fixed:** 20/21/22/23 only; 10/11/12/18 out of scope.
+
 ## Open questions (for Daan)
 
-- Confirm storage of record: DuckDB/Parquet for analysis + a thin MySQL summary for screens — agreed?
 - Which metrics are "useful" enough to always store vs compute-on-demand? (Default: store the full `window_metrics` set — it's cheap once.)
 - Lookback unit: confirmed as **count of values (1..20)**, not minutes? (Legacy `save_cache_values` is count-based.)
