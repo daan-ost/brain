@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Trades;
 
+use App\Models\CoinAnnotation;
 use App\Models\CoinFire;
 use App\Models\CoinPeriod;
 use Illuminate\Support\Carbon;
@@ -11,16 +12,24 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Coin day-navigator (Epic A): pick a coin, step through its days, and see the price
- * graph with the promising periods, the rule-fires (rule + result), and good/bad
- * membership overlaid. Periods + fires come from the brain DB (persist_to_brain.py);
- * price is read live from the read-only bot_signals connection.
+ * Coin day-navigator (Epic A): pick a coin, step through its days, see the price graph
+ * with promising periods + rule-fires overlaid. Click a fire or a promising period to
+ * open a zoomed detail (5 min before buy → 5 min after sell), with stats and a manual
+ * annotation (pulldown + comment) that feeds rule discovery — flag the promising trades
+ * that won't work in practice (too-fast rise, too volatile, exchange-not-executable, ...).
+ * Periods + fires come from brain; price + legacy remark are read from read-only bot_signals.
  */
 #[Layout('layouts.trading')]
 class CoinExplorer extends Component
 {
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
+
+    // detail/annotation state
+    public ?string $selType = null;     // 'fire' | 'period'
+    public ?int $selId = null;
+    public string $annCategory = '';
+    public string $annComment = '';
 
     public function mount(): void
     {
@@ -30,28 +39,18 @@ class CoinExplorer extends Component
         }
     }
 
-    /** Coins that have persisted periods. */
     public function coins(): array
     {
-        return CoinPeriod::query()
-            ->select('trading_symbol_id', 'symbol')
-            ->distinct()
-            ->orderBy('symbol')
-            ->get()
-            ->mapWithKeys(fn ($r) => [$r->trading_symbol_id => $r->symbol ?: $r->trading_symbol_id])
-            ->all();
+        return CoinPeriod::query()->select('trading_symbol_id', 'symbol')->distinct()
+            ->orderBy('symbol')->get()
+            ->mapWithKeys(fn ($r) => [$r->trading_symbol_id => $r->symbol ?: $r->trading_symbol_id])->all();
     }
 
-    /** Distinct days (by best_entry) that have activity for this coin, ascending. */
     public function dayList()
     {
-        return CoinPeriod::query()
-            ->where('trading_symbol_id', $this->coin)
-            ->selectRaw('DATE(best_entry) as d')
-            ->distinct()
-            ->orderBy('d')
-            ->pluck('d')
-            ->map(fn ($d) => Carbon::parse($d));
+        return CoinPeriod::query()->where('trading_symbol_id', $this->coin)
+            ->selectRaw('DATE(best_entry) as d')->distinct()->orderBy('d')
+            ->pluck('d')->map(fn ($d) => Carbon::parse($d));
     }
 
     public function step(int $dir): void
@@ -62,13 +61,121 @@ class CoinExplorer extends Component
             $this->date = $days->first() ?? $this->date;
             return;
         }
-        $j = max(0, min($days->count() - 1, $i + $dir));
-        $this->date = $days[$j];
+        $this->date = $days[max(0, min($days->count() - 1, $i + $dir))];
     }
 
     public function updatedCoin(): void
     {
         $this->date = optional($this->dayList()->first())?->format('Y-m-d') ?? $this->date;
+        $this->closeDetail();
+    }
+
+    // ---- selection / detail ----
+    public function selectFire(int $id): void { $this->open('fire', $id); }
+    public function selectPeriod(int $id): void { $this->open('period', $id); }
+
+    private function open(string $type, int $id): void
+    {
+        $this->selType = $type;
+        $this->selId = $id;
+        $ann = CoinAnnotation::where('target_type', $type)->where('target_id', $id)->first();
+        $this->annCategory = $ann?->category ?? '';
+        $this->annComment = $ann?->comment ?? '';
+    }
+
+    public function closeDetail(): void
+    {
+        $this->reset(['selType', 'selId', 'annCategory', 'annComment']);
+    }
+
+    public function saveAnnotation(): void
+    {
+        if (! $this->selType || ! $this->selId) {
+            return;
+        }
+        $target = $this->selType === 'fire' ? CoinFire::find($this->selId) : CoinPeriod::find($this->selId);
+        if (! $target) {
+            return;
+        }
+        $dt = $this->selType === 'fire' ? $target->datetime : $target->best_entry;
+        CoinAnnotation::updateOrCreate(
+            ['target_type' => $this->selType, 'target_id' => $this->selId],
+            ['trading_symbol_id' => $this->coin, 'symbol' => $target->symbol,
+             'target_datetime' => $dt, 'category' => $this->annCategory ?: null, 'comment' => $this->annComment ?: null],
+        );
+        $this->dispatch('annotation-saved');
+    }
+
+    /** Downsampled volumeud price between two datetimes, from the read-only source. */
+    private function priceBetween($from, $to, int $cap = 400): array
+    {
+        $rows = DB::connection('bot_signals')->table('wp_trading_indicator')
+            ->select('datetime', 'price')->where('trading_symbol_id', $this->coin)
+            ->where('indicator', 'volumeud')->whereNotNull('price')
+            ->whereBetween('datetime', [$from, $to])->orderBy('datetime')->get();
+        $step = max(1, (int) ceil($rows->count() / $cap));
+        return $rows->values()->filter(fn ($r, $i) => $i % $step === 0)
+            ->map(fn ($r) => ['x' => Carbon::parse($r->datetime)->getTimestampMs(), 'y' => (float) $r->price])
+            ->values()->all();
+    }
+
+    private function detail(): ?array
+    {
+        if (! $this->selType || ! $this->selId) {
+            return null;
+        }
+        if ($this->selType === 'fire') {
+            $f = CoinFire::find($this->selId);
+            if (! $f) {
+                return null;
+            }
+            // legacy trade detail (read-only) for best price / excursions / remark
+            $leg = DB::connection('bot_signals')->table('wp_trading_simulation')
+                ->where('trading_symbol_id', $this->coin)->where('rule', $f->rule)
+                ->where('datetime', $f->datetime->format('Y-m-d H:i:s'))->first();
+            $sell = $leg && $leg->selling_date ? Carbon::parse($leg->selling_date) : (clone $f->datetime)->addMinutes(30);
+            $from = (clone $f->datetime)->subMinutes(5);
+            $to = (clone $sell)->addMinutes(5);
+            $markers = ['buy' => $f->datetime->getTimestampMs()];
+            if ($leg && $leg->selling_date) $markers['sell'] = Carbon::parse($leg->selling_date)->getTimestampMs();
+            if ($leg && $leg->datetime_best) $markers['best'] = Carbon::parse($leg->datetime_best)->getTimestampMs();
+            return [
+                'type' => 'fire', 'id' => $f->id, 'title' => "Trade · rule {$f->rule} · {$f->datetime->format('d M H:i:s')}",
+                'price' => $this->priceBetween($from, $to),
+                'markers' => $markers,
+                'stats' => array_filter([
+                    'rule' => $f->rule,
+                    'resultaat' => [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$f->result] ?? '—',
+                    'in promising' => $f->in_good_period ? 'ja' : 'nee',
+                    'aankoopprijs' => $leg->price ?? $f->buy_price,
+                    'verkoopprijs' => $leg->selling_price ?? null,
+                    'beste prijs' => $leg->best_price ?? null,
+                    'winst %' => $leg->profit_loss ?? $f->profit_loss,
+                    'hoogste %' => $leg->highest_profit_loss ?? null,
+                    'laagste %' => $leg->lowest_profit_loss ?? null,
+                ], fn ($v) => $v !== null && $v !== ''),
+                'legacy_remark' => $leg->remark ?? null,
+            ];
+        }
+        $p = CoinPeriod::find($this->selId);
+        if (! $p) {
+            return null;
+        }
+        $from = (clone $p->period_from)->subMinutes(5);
+        $to = (clone $p->period_to)->addMinutes(5);
+        return [
+            'type' => 'period', 'id' => $p->id, 'title' => "Promising · {$p->best_entry->format('d M H:i:s')}",
+            'price' => $this->priceBetween($from, $to),
+            'markers' => ['best' => $p->best_entry->getTimestampMs(),
+                          'pfrom' => $p->period_from->getTimestampMs(), 'pto' => $p->period_to->getTimestampMs()],
+            'stats' => array_filter([
+                'beste instap' => $p->best_entry->format('H:i:s'),
+                'upside %' => $p->best_upside,
+                'vroege dip %' => $p->best_lowest10,
+                'momenten' => $p->n_moments,
+            ], fn ($v) => $v !== null && $v !== ''),
+            'legacy_remark' => null,
+        ];
     }
 
     public function render()
@@ -76,54 +183,36 @@ class CoinExplorer extends Component
         $start = Carbon::parse($this->date)->startOfDay();
         $end = (clone $start)->endOfDay();
 
-        $periods = CoinPeriod::query()
-            ->where('trading_symbol_id', $this->coin)
-            ->where('period_from', '<=', $end)
-            ->where('period_to', '>=', $start)
-            ->orderBy('period_from')
-            ->get();
+        $periods = CoinPeriod::query()->where('trading_symbol_id', $this->coin)
+            ->where('period_from', '<=', $end)->where('period_to', '>=', $start)
+            ->orderBy('period_from')->get();
+        $fires = CoinFire::query()->where('trading_symbol_id', $this->coin)
+            ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->get();
 
-        $fires = CoinFire::query()
-            ->where('trading_symbol_id', $this->coin)
-            ->whereBetween('datetime', [$start, $end])
-            ->orderBy('datetime')
-            ->get();
+        // annotations for this day's targets
+        $ann = CoinAnnotation::query()->where('trading_symbol_id', $this->coin)
+            ->where(fn ($q) => $q
+                ->where(fn ($w) => $w->where('target_type', 'fire')->whereIn('target_id', $fires->pluck('id')))
+                ->orWhere(fn ($w) => $w->where('target_type', 'period')->whereIn('target_id', $periods->pluck('id'))))
+            ->get()->keyBy(fn ($a) => $a->target_type . ':' . $a->target_id);
 
-        // price (volumeud) for the day from the read-only source, downsampled to ~600 pts
-        $rows = DB::connection('bot_signals')
-            ->table('wp_trading_indicator')
-            ->select('datetime', 'price')
-            ->where('trading_symbol_id', $this->coin)
-            ->where('indicator', 'volumeud')
-            ->whereNotNull('price')
-            ->whereBetween('datetime', [$start, $end])
-            ->orderBy('datetime')
-            ->get();
-        $step = max(1, (int) ceil($rows->count() / 600));
-        $price = $rows->values()->filter(fn ($r, $i) => $i % $step === 0)
-            ->map(fn ($r) => ['x' => Carbon::parse($r->datetime)->getTimestampMs(), 'y' => (float) $r->price])
-            ->values();
+        $price = $this->priceBetween($start, $end, 600);
 
         $chart = [
             'price' => $price,
-            'periods' => $periods->map(fn ($p) => [
-                'from' => $p->period_from->getTimestampMs(),
-                'to' => $p->period_to->getTimestampMs(),
-                'upside' => $p->best_upside,
-            ])->values(),
-            'fires' => $fires->map(fn ($f) => [
-                'x' => $f->datetime->getTimestampMs(),
-                'rule' => $f->rule,
-                'result' => $f->result,
-                'good' => $f->in_good_period,
-                'pl' => $f->profit_loss,
-            ])->values(),
+            'periods' => $periods->map(fn ($p) => ['id' => $p->id, 'from' => $p->period_from->getTimestampMs(),
+                'to' => $p->period_to->getTimestampMs(), 'best' => $p->best_entry->getTimestampMs(), 'upside' => $p->best_upside])->values(),
+            'fires' => $fires->map(fn ($f) => ['id' => $f->id, 'x' => $f->datetime->getTimestampMs(),
+                'rule' => $f->rule, 'result' => $f->result, 'good' => $f->in_good_period, 'pl' => $f->profit_loss])->values(),
         ];
 
         return view('livewire.trades.coin-explorer', [
             'periods' => $periods,
             'fires' => $fires,
+            'annotations' => $ann,
             'chart' => $chart,
+            'detail' => $this->detail(),
+            'categories' => CoinAnnotation::CATEGORIES,
             'dayCount' => $this->dayList()->count(),
             'goodToday' => $fires->where('in_good_period', true)->count(),
             'badToday' => $fires->where('in_good_period', false)->count(),

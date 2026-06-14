@@ -45,6 +45,21 @@ Automate what Daan did by hand (start from a premise, often phobos, refine via g
 ### 3. Refinement
 Add calculations beyond the current 27 subrules; improve the volume formula (e.g. trailing-baseline relative volume) so more bad drop. Each addition is accepted only if it improves the held-out score.
 
+## Manual annotations as a discovery target (built — coin_annotations)
+
+The coin-explorer lets Daan click any promising period or fire and label it (pulldown +
+comment): `te snelle stijging`, `te volatiel / schokkerig`, `exchange: niet uitvoerbaar`,
+etc. These flag promising trades that look good on paper but won't execute in practice (the
+exchange can't buy fast enough on a too-fast spike). Stored in `coin_annotations` (brain),
+with the legacy `wp_trading_simulation.remark` shown read-only beside them.
+
+For discovery this is gold: each flagged promising trade is a **negative the feature store
+must learn to exclude**. The loop: Daan annotates → we search the feature store for a
+band/feature that separates the flagged ones (e.g. a volatility/range metric that catches
+"te volatiel", or an early-slope metric that catches "te snelle stijging") → propose a gate
+that removes them from the promising set without dropping the clean ones. This refines the
+good ground truth itself, not just the rules.
+
 ## The overfitting guard (THE thing to get right)
 
 With ~1000 features × thresholds there are billions of options and few good examples (NOS: ~50 good fires). A greedy search **will** find spurious bands that look great in-sample. So every rule/gate must be validated **out-of-sample**:
