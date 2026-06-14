@@ -1,7 +1,7 @@
 # EPIC B: Per-rule lookback feature store (fast-queryable)
 
 **Phase:** 0 — Foundation (build now)
-**Status:** Planned
+**Status:** v1 built — Parquet store + sweep working (`feature_store.py`, `feature_query.py`). See findings/feature-store-v1.md. Remaining: full-mode training set, thin MySQL rollup for screens, append-without-rebuild.
 **Depends on:** `calc.py` (window_metrics), Epic A (good windows) — but can be built in parallel.
 **Refines:** E01 (data foundation / feature store) — this is the concrete, query-shaped version.
 

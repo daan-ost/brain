@@ -31,6 +31,8 @@ DOGEAI = `trading_symbol_id` 2525 (5m). First validated slice: ~25 Feb 2025.
 - **`promising.py`** — port of legacy `find_promising_trades` (good-moment definition). `PromisingEngine(symbol, order)` loads the volumeud series; `.promising(entry_dt)` returns highest/lowest_10/checkpoints/verdict. **Order = ascending** (validated vs labels; DESC is a legacy quirk). `_validate()` checks vs result=1/3 labels (DOGEAI 95.1%).
 - **`cluster_promising.py`** — dedups overlapping promising moments into periods (`scan_periods`, `best_entry`). One best entry per rise.
 - **`rules_vs_promising.py`** — overlays actual legacy rule-fires on promising periods. Shows rules' low recall + low precision vs the good ground truth. Use the recorded-trade overlay (section A), not the current-boundary live re-eval (section B, drifts).
+- **`feature_store.py`** (Epic B) — builds the Parquet feature store: per in-scope datetime × indicator × lookback 1..20, the full window_metrics. Modes: `full` (promising-period dts + fires) / `fires` (labeled fires only, fast). Writes engine/data/features/ (gitignored). Leak-free as-of.
+- **`feature_query.py`** — sweeps the store: ranks (indicator,lookback,metric) by good/bad separation (Cohen's d). The new-rule / precision-feature discovery primitive. Finding: volume features dominate; edge is multivariate (no single threshold).
 
 ## How a buy rule works
 
