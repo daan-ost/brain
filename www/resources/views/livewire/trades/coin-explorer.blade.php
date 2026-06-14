@@ -18,8 +18,8 @@
 
         <div class="ml-auto flex items-center gap-2 text-sm">
             <span class="px-2 py-1 rounded bg-emerald-900/60 text-emerald-300">{{ $periods->count() }} promising</span>
-            <span class="px-2 py-1 rounded bg-sky-900/60 text-sky-300">{{ $goodToday }} goede fires</span>
-            <span class="px-2 py-1 rounded bg-rose-900/60 text-rose-300">{{ $badToday }} slechte fires</span>
+            <span class="px-2 py-1 rounded bg-sky-900/60 text-sky-300">{{ $goodToday }} goede trades</span>
+            <span class="px-2 py-1 rounded bg-rose-900/60 text-rose-300">{{ $badToday }} slechte trades</span>
         </div>
     </div>
 
@@ -31,14 +31,14 @@
             <div class="relative h-[420px]"><canvas x-ref="cv"></canvas></div>
         </div>
         <p class="text-xs text-slate-500 mt-2">
-            Klik op een fire-stip of een groene periode (of een rij hieronder) voor detail + label.
-            Scroll = in/uitzoomen op tijd, sleep = schuiven. Groene vlakken = promising. Stippen = fires (groen = in promising, rood = buiten).
+            Klik op een trade-stip of een groene periode (of een rij hieronder) voor detail + label.
+            Scroll = in/uitzoomen op tijd, sleep = schuiven. Groene vlakken = promising. Stippen = trades (groen = in promising, rood = buiten).
         </p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
-            <h2 class="text-sm font-semibold text-slate-300 mb-2">Fires deze dag ({{ $fires->count() }})</h2>
+            <h2 class="text-sm font-semibold text-slate-300 mb-2">Trades deze dag ({{ $fires->count() }})</h2>
             <div class="overflow-x-auto rounded-lg border border-slate-800">
                 <table class="w-full text-sm">
                     <thead class="bg-slate-800/60 text-slate-400">
@@ -68,7 +68,7 @@
                                 <td class="px-3 py-1.5 text-xs text-amber-300">{{ optional($annotations->get('fire:'.$f->id))->category }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="6" class="px-3 py-4 text-center text-slate-500">Geen fires deze dag.</td></tr>
+                            <tr><td colspan="6" class="px-3 py-4 text-center text-slate-500">Geen trades deze dag.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
