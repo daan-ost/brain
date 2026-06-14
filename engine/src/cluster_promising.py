@@ -20,7 +20,7 @@ import datetime as _dt
 import sys
 from datetime import timedelta
 
-from config import FORWARD_MINUTES
+from config import CLUSTER_GAP_MINUTES
 from promising import PromisingEngine
 
 
@@ -28,7 +28,7 @@ def _parse(s):
     return _dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S") if len(s) > 10 else _dt.datetime.strptime(s, "%Y-%m-%d")
 
 
-def scan_periods(eng, frm=None, to=None, gap_minutes=FORWARD_MINUTES):
+def scan_periods(eng, frm=None, to=None, gap_minutes=CLUSTER_GAP_MINUTES):
     """Return clustered promising periods. Each period is a list of
     (datetime, highest, lowest_10, highest_dt) tuples (verdict=='buy' moments).
 
@@ -64,7 +64,7 @@ else:
     SYM = int(sys.argv[1]) if len(sys.argv) > 1 else 2525
     FROM = sys.argv[2] if len(sys.argv) > 2 else None
     TO = sys.argv[3] if len(sys.argv) > 3 else None
-    GAP = int(sys.argv[4]) if len(sys.argv) > 4 else FORWARD_MINUTES
+    GAP = int(sys.argv[4]) if len(sys.argv) > 4 else CLUSTER_GAP_MINUTES
 
     eng = PromisingEngine(SYM, "asc")
     DT = eng.DT

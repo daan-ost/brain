@@ -21,13 +21,13 @@ from datetime import timedelta
 
 import pymysql
 
-from config import FORWARD_MINUTES
+from config import UPSIDE_MINUTES
 
 # 5-min-rule profile (rules 20/21/22/23) — simulate_buy.php:1550
 PROFILE = dict(
     setting_percentage_highest=3,   # peak over window must exceed
     check_number_verdict=2,         # some checkpoint must exceed
-    period_length=FORWARD_MINUTES,  # checkpoints up to the trade horizon (1 hour)
+    period_length=UPSIDE_MINUTES,   # checkpoints up to the short upside horizon
     first_15_above=2,               # early checkpoint gate
     max_lowest=-0.1,                # early-dip gate (strict save mode)
 )
@@ -75,10 +75,11 @@ class PromisingEngine:
             self.conn.close()
 
     def _window(self, entry_dt):
-        # look forward at most FORWARD_MINUTES (a 5-min-timeframe trade lasts ~1 hour),
-        # so the upside/peak reflect a realistic hold, not a far-off rise hours later.
+        # look forward only UPSIDE_MINUTES: a good entry must rise SOON. The peak/upside come
+        # from this short window, so 'promising' is the start of a quick move — not a far-off
+        # peak 50 min later (which made periods span hours).
         lo = bisect.bisect_left(self.DT, entry_dt - timedelta(seconds=5))
-        hi = bisect.bisect_right(self.DT, entry_dt + timedelta(minutes=FORWARD_MINUTES))
+        hi = bisect.bisect_right(self.DT, entry_dt + timedelta(minutes=UPSIDE_MINUTES))
         asc = list(zip(self.DT[lo:hi], self.PX[lo:hi]))
         if self.order == "desc":
             return asc[::-1][:1000]

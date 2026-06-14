@@ -1,10 +1,17 @@
 """
 Shared trading config — single source of truth for the horizons.
 
-A trade runs on the 5-minute timeframe and lasts at most ~1 hour. That same horizon
-bounds BOTH the promising determination (how far forward we look for upside / the peak)
-AND the sell-engine (max hold). Keeping it here means changing it in one place.
+A trade runs on the 5-minute timeframe. Two different horizons:
+
+- FORWARD_MINUTES  — max trade DURATION / hold (the sell-engine exits within this). ~1 hour.
+- UPSIDE_MINUTES   — the promising UPSIDE horizon: a good entry must rise soon, within this
+                     short window — NOT "peaks somewhere in the next hour". This is what keeps
+                     promising windows short and precise (Daan: "direct omhoog binnen x minuten").
+- CLUSTER_GAP_MINUTES — promising moments more than this apart are DIFFERENT opportunities;
+                     keeps distinct short moves as separate periods (execution overlap between
+                     them is handled separately by the shadow logic on fires).
 """
 
-# Max look-ahead for promising AND max trade duration for the sell-engine (minutes).
-FORWARD_MINUTES = 60
+FORWARD_MINUTES = 60        # max hold (sell-engine)
+UPSIDE_MINUTES = 15         # promising: the rise must arrive within this short window
+CLUSTER_GAP_MINUTES = 15    # separate distinct short moves into separate periods

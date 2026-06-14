@@ -45,6 +45,33 @@ because each 180-min window reached a far peak. New (60-min):
   base = more upside. 16:00 fails (early dip −1.48%). The old "16:22 = 43.64%" was the
   180-min artifact.
 
+## Refinement (2026-06-14b): short upside horizon — periods must be SHORT
+
+A 1-hour look-ahead still made periods span HOURS: a moment was "promising" if the peak
+came anytime in the next hour, so a 5-hour run-up chained into one period (e.g. 15 Feb
+23:30→04:52). Daan: promising must be SHORT — the price rises *soon* (within x min), not
+too fast, with a minimum duration.
+
+Split the horizons in `config.py`:
+- `FORWARD_MINUTES = 60` — max hold (sell-engine).
+- `UPSIDE_MINUTES = 15` — promising upside horizon: the rise must arrive within this short
+  window. The peak/upside come from here, so promising = the start of a quick move.
+- `CLUSTER_GAP_MINUTES = 15` — distinct short moves stay separate periods (execution overlap
+  is handled by the shadow logic on fires, not by merging periods).
+
+Effect: 15 Feb went from ONE 5-hour blob to **4 short periods** (01:44 +14.6%, 02:22 +38.3%,
+04:07 +12.6%, 04:49 +8.6%) — matching how Daan reads the chart.
+
+Re-validation at UPSIDE=15 (vs labels): DOGEAI precision 0.98 / recall 0.60; NOS precision
+0.78 / **recall 0.11**. Very precise but low recall — +5% within 15 min is rare, especially
+on slower coins (NOS). **15 min is a starting point; the upside horizon + the extra gates
+("niet te snel" rate cap, minimum duration) are the next tuning, likely per-coin.**
+
+## Still open on the promising definition (Daan's criteria, to implement/tune)
+- `UPSIDE_MINUTES`: 15 vs 20 vs 30 (recall vs shortness), likely per-coin.
+- **"niet te snel"** — cap the initial rate so an unexecutable vertical spike isn't promising.
+- **minimum duration** — the move must sustain ≥ N min, not a 1-tick spike that reverts.
+
 ## Still to align
 
 - The **sell-engine** (`validate_sell.py`, `MAX_MIN = 1500`) should adopt `FORWARD_MINUTES`

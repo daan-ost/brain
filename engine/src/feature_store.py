@@ -29,14 +29,14 @@ import pandas as pd
 import pymysql
 
 from calc import window_metrics
-from config import FORWARD_MINUTES
+from config import CLUSTER_GAP_MINUTES
 from promising import PromisingEngine
 from cluster_promising import scan_periods, best_entry
 
 SYM = int(sys.argv[1]) if len(sys.argv) > 1 else 2525
 FROM = sys.argv[2] if len(sys.argv) > 2 else None
 TO = sys.argv[3] if len(sys.argv) > 3 else None
-GAP = int(sys.argv[4]) if len(sys.argv) > 4 else FORWARD_MINUTES
+GAP = int(sys.argv[4]) if len(sys.argv) > 4 else CLUSTER_GAP_MINUTES
 MODE = sys.argv[5] if len(sys.argv) > 5 else "full"
 INDICATORS = ["vzo", "phobos", "obv-x-value", "mfi", "volumeud"]
 MAX_LOOKBACK = 20
