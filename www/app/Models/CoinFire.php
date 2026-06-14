@@ -19,9 +19,13 @@ class CoinFire extends Model
     protected $casts = [
         'datetime' => 'datetime',
         'selling_datetime' => 'datetime',
+        'shadow_parent' => 'datetime',
         'in_good_period' => 'boolean',
+        'is_executed' => 'boolean',
         'profit_loss' => 'float',
         'buy_price' => 'float',
+        'selling_price' => 'float',
+        'legacy_profit_loss' => 'float',
     ];
 
     public function period(): BelongsTo

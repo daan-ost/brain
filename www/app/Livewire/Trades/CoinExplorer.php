@@ -136,38 +136,6 @@ class CoinExplorer extends Component
         $this->dispatch('annotation-saved');
     }
 
-    /**
-     * Shadow fires: once a trade is running it holds until it sells (capped at HOLD_MINUTES),
-     * so any fire during that window can't execute — it's a "shadow" of the running trade,
-     * not an independent good/bad entry. Returns [fireId => Carbon parent-trade-datetime|null].
-     * $fires must be ordered by datetime ascending.
-     */
-    private function shadowMap($fires): array
-    {
-        $map = [];
-        $openUntil = null;
-        $openAt = null;
-        foreach ($fires as $f) {
-            if ($openUntil !== null && $f->datetime <= $openUntil) {
-                $map[$f->id] = $openAt;                       // shadow of the trade at $openAt
-                continue;
-            }
-            $map[$f->id] = null;                              // a real, executed trade
-            $cap = (clone $f->datetime)->addMinutes(self::HOLD_MINUTES);
-            $openUntil = $f->selling_datetime && $f->selling_datetime->lt($cap) ? $f->selling_datetime : $cap;
-            $openAt = $f->datetime;
-        }
-        return $map;
-    }
-
-    private function dayFires(): \Illuminate\Support\Collection
-    {
-        $start = Carbon::parse($this->date)->startOfDay();
-        $end = (clone $start)->endOfDay();
-        return CoinFire::where('trading_symbol_id', $this->coin)
-            ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->get();
-    }
-
     /** A zoom window [from,to] that contains every marker, with 5 min margin on each side. */
     private function windowAround(array $markers): array
     {
@@ -202,13 +170,9 @@ class CoinExplorer extends Component
             if (! $f) {
                 return null;
             }
-            // legacy trade detail (read-only) for best price / excursions / remark
-            $leg = DB::connection('bot_signals')->table('wp_trading_simulation')
-                ->where('trading_symbol_id', $this->coin)->where('rule', $f->rule)
-                ->where('datetime', $f->datetime->format('Y-m-d H:i:s'))->first();
+            // OUR fire detail (brain only): buy/sell from our sell-engine; legacy result = reference.
             $markers = ['buy' => $f->datetime->getTimestampMs()];
-            if ($leg && $leg->selling_date) $markers['sell'] = Carbon::parse($leg->selling_date)->getTimestampMs();
-            if ($leg && $leg->datetime_best) $markers['best'] = Carbon::parse($leg->datetime_best)->getTimestampMs();
+            if ($f->selling_datetime) $markers['sell'] = $f->selling_datetime->getTimestampMs();
             // overlay the promising period this fire belongs to (if any): band + best entry + peak
             if ($f->period_id && ($per = CoinPeriod::find($f->period_id))) {
                 $markers['pfrom'] = $per->period_from->getTimestampMs();
@@ -221,19 +185,17 @@ class CoinExplorer extends Component
                 'type' => 'fire', 'id' => $f->id, 'title' => "Trade · rule {$f->rule} · {$f->datetime->format('d M H:i:s')}",
                 'price' => $this->priceBetween($from, $to),
                 'markers' => $markers,
-                'shadow_of' => ($sp = $this->shadowMap($this->dayFires())[$f->id] ?? null) ? $sp->format('H:i:s') : null,
                 'stats' => array_filter([
                     'rule' => $f->rule,
-                    'resultaat' => [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$f->result] ?? '—',
-                    'in promising' => $sp ? '↳ schaduw van ' . $sp->format('H:i:s') : ($f->in_good_period ? 'ja' : 'nee'),
-                    'aankoopprijs' => $leg->price ?? $f->buy_price,
-                    'verkoopprijs' => $leg->selling_price ?? null,
-                    'beste prijs' => $leg->best_price ?? null,
-                    'winst %' => $leg->profit_loss ?? $f->profit_loss,
-                    'hoogste %' => $leg->highest_profit_loss ?? null,
-                    'laagste %' => $leg->lowest_profit_loss ?? null,
+                    'uitkomst' => ! $f->is_executed ? '↳ schaduw van ' . optional($f->shadow_parent)->format('H:i:s')
+                        : ($f->in_good_period ? 'promising (goed)' : 'buiten promising'),
+                    'aankoopprijs' => $f->buy_price,
+                    'verkoopprijs' => $f->selling_price,
+                    'winst % (onze sell)' => $f->is_executed ? $f->profit_loss : null,
+                    'legacy result' => [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$f->legacy_result] ?? null,
+                    'legacy P&L' => $f->legacy_profit_loss,
                 ], fn ($v) => $v !== null && $v !== ''),
-                'legacy_remark' => $leg->remark ?? null,
+                'legacy_remark' => null,
             ];
         }
         $p = CoinPeriod::find($this->selId);
@@ -285,25 +247,24 @@ class CoinExplorer extends Component
             'price' => $price,
             'periods' => $periods->map(fn ($p) => ['id' => $p->id, 'from' => $p->period_from->getTimestampMs(),
                 'to' => $p->period_to->getTimestampMs(), 'best' => $p->best_entry->getTimestampMs(), 'upside' => $p->best_upside])->values(),
-            'fires' => $fires->map(fn ($f) => ['id' => $f->id, 'x' => $f->datetime->getTimestampMs(),
-                'rule' => $f->rule, 'result' => $f->result, 'good' => $f->in_good_period, 'pl' => $f->profit_loss])->values(),
+            // chart markers: only EXECUTED fires (shadows wouldn't trade), good = in promising
+            'fires' => $fires->where('is_executed', true)->map(fn ($f) => ['id' => $f->id, 'x' => $f->datetime->getTimestampMs(),
+                'rule' => $f->rule, 'good' => $f->in_good_period, 'pl' => $f->profit_loss])->values(),
         ];
 
-        $shadows = $this->shadowMap($fires);
-        // good/bad counts ignore shadow fires (they wouldn't execute — a trade is already open)
-        $real = $fires->filter(fn ($f) => $shadows[$f->id] === null);
+        // good/bad counts are over EXECUTED trades only (shadows wouldn't execute — a trade is open)
+        $exec = $fires->where('is_executed', true);
 
         return view('livewire.trades.coin-explorer', [
             'periods' => $periods,
             'fires' => $fires,
-            'shadows' => $shadows,
             'annotations' => $ann,
             'chart' => $chart,
             'detail' => $this->detail(),
             'categories' => CoinAnnotation::CATEGORIES,
             'dayCount' => $this->dayList()->count(),
-            'goodToday' => $real->where('in_good_period', true)->count(),
-            'badToday' => $real->where('in_good_period', false)->count(),
+            'goodToday' => $exec->where('in_good_period', true)->count(),
+            'badToday' => $exec->where('in_good_period', false)->count(),
         ]);
     }
 }
