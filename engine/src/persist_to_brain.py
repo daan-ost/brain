@@ -67,25 +67,32 @@ def period_of(dt):
 
 
 # --- fires (recorded legacy trades) ---
+# in_good_period = the PER-FIRE promising verdict (is THIS exact moment a good entry with
+# upside ahead within the hour?), NOT mere membership of a wide period span. A fire after the
+# peak (bought too late, on the way down) gets verdict='' -> not good, matching its bad result.
 trades = rd("SELECT datetime, rule, result, price, profit_loss, selling_date "
             "FROM wp_trading_simulation WHERE trading_symbol_id=%s AND rule IN (20,21,22,23) "
             "AND datetime>=%s AND datetime<%s ORDER BY datetime", (SYM, _from_sql, _to_sql))
+good_count = 0
 with dst.cursor() as c:
     for t in trades:
-        pid = period_of(t["datetime"])
+        pid = period_of(t["datetime"])                    # containing period (for the chart overlay)
+        p = eng.promising(t["datetime"])
+        good = 1 if (p and p["verdict"] == "buy") else 0   # the per-fire good/bad label
+        good_count += good
         c.execute(
             "INSERT INTO coin_fires (trading_symbol_id, symbol, datetime, rule, result, in_good_period, "
             "period_id, profit_loss, buy_price, selling_datetime, created_at, updated_at) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
             (SYM, SYMBOL, t["datetime"], int(t["rule"]),
              int(t["result"]) if t["result"] is not None else None,
-             1 if pid else 0, pid,
+             good, pid,
              float(t["profit_loss"]) if t["profit_loss"] is not None else None,
              float(t["price"]) if t["price"] is not None else None,
              t["selling_date"]))
 
 dst.commit()
-inside = sum(1 for t in trades if period_of(t["datetime"]))
+inside = good_count
 print(f"=== persist_to_brain — {SYMBOL} ({SYM}) ===")
 print(f"periods: {len(periods)}  |  fires: {len(trades)}  "
       f"({inside} inside promising / {len(trades)-inside} outside)")

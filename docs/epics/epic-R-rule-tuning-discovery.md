@@ -30,6 +30,10 @@ Therefore two distinct counts:
 1. **Position count (result/P&L):** merge time-overlapping fires (across all rules) into non-overlapping positions (buy→sell via the sell engine). Each position's result counts once.
 2. **Per-rule attribution (precision):** each rule's fires are scored independently for `#good/#bad`, regardless of whether a position was already open. A rule can be "successful" even if its fire wouldn't have executed.
 
+**Implemented in the coin-explorer (2026-06-14):**
+- **Shadow fires** — a fire within a running trade's window (sell time, capped at `HOLD_MINUTES`=60) is greyed and excluded from the good/bad counts (it wouldn't execute). Matches count #1.
+- **Per-fire good/bad label** — `in_good_period` is now the *per-fire promising verdict* (is THIS exact moment a good entry with upside ahead within the hour?), not membership of a wide period span. A fire bought after the peak (too late, on the way down) gets verdict='' → "buiten"/red, matching its bad result — instead of a misleading green ✓ from the loose span.
+
 ## The process (what to get right)
 
 ### 1. Band tuning (`band_gate.py` — built)

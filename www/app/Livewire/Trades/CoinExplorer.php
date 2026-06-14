@@ -22,6 +22,9 @@ use Livewire\Component;
 #[Layout('layouts.trading')]
 class CoinExplorer extends Component
 {
+    /** Max trade hold in minutes — must match engine config.py FORWARD_MINUTES. */
+    public const HOLD_MINUTES = 60;
+
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
 
@@ -133,6 +136,38 @@ class CoinExplorer extends Component
         $this->dispatch('annotation-saved');
     }
 
+    /**
+     * Shadow fires: once a trade is running it holds until it sells (capped at HOLD_MINUTES),
+     * so any fire during that window can't execute — it's a "shadow" of the running trade,
+     * not an independent good/bad entry. Returns [fireId => Carbon parent-trade-datetime|null].
+     * $fires must be ordered by datetime ascending.
+     */
+    private function shadowMap($fires): array
+    {
+        $map = [];
+        $openUntil = null;
+        $openAt = null;
+        foreach ($fires as $f) {
+            if ($openUntil !== null && $f->datetime <= $openUntil) {
+                $map[$f->id] = $openAt;                       // shadow of the trade at $openAt
+                continue;
+            }
+            $map[$f->id] = null;                              // a real, executed trade
+            $cap = (clone $f->datetime)->addMinutes(self::HOLD_MINUTES);
+            $openUntil = $f->selling_datetime && $f->selling_datetime->lt($cap) ? $f->selling_datetime : $cap;
+            $openAt = $f->datetime;
+        }
+        return $map;
+    }
+
+    private function dayFires(): \Illuminate\Support\Collection
+    {
+        $start = Carbon::parse($this->date)->startOfDay();
+        $end = (clone $start)->endOfDay();
+        return CoinFire::where('trading_symbol_id', $this->coin)
+            ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->get();
+    }
+
     /** A zoom window [from,to] that contains every marker, with 5 min margin on each side. */
     private function windowAround(array $markers): array
     {
@@ -185,10 +220,11 @@ class CoinExplorer extends Component
                 'type' => 'fire', 'id' => $f->id, 'title' => "Trade · rule {$f->rule} · {$f->datetime->format('d M H:i:s')}",
                 'price' => $this->priceBetween($from, $to),
                 'markers' => $markers,
+                'shadow_of' => ($sp = $this->shadowMap($this->dayFires())[$f->id] ?? null) ? $sp->format('H:i:s') : null,
                 'stats' => array_filter([
                     'rule' => $f->rule,
                     'resultaat' => [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$f->result] ?? '—',
-                    'in promising' => $f->in_good_period ? 'ja' : 'nee',
+                    'in promising' => $sp ? '↳ schaduw van ' . $sp->format('H:i:s') : ($f->in_good_period ? 'ja' : 'nee'),
                     'aankoopprijs' => $leg->price ?? $f->buy_price,
                     'verkoopprijs' => $leg->selling_price ?? null,
                     'beste prijs' => $leg->best_price ?? null,
@@ -252,16 +288,21 @@ class CoinExplorer extends Component
                 'rule' => $f->rule, 'result' => $f->result, 'good' => $f->in_good_period, 'pl' => $f->profit_loss])->values(),
         ];
 
+        $shadows = $this->shadowMap($fires);
+        // good/bad counts ignore shadow fires (they wouldn't execute — a trade is already open)
+        $real = $fires->filter(fn ($f) => $shadows[$f->id] === null);
+
         return view('livewire.trades.coin-explorer', [
             'periods' => $periods,
             'fires' => $fires,
+            'shadows' => $shadows,
             'annotations' => $ann,
             'chart' => $chart,
             'detail' => $this->detail(),
             'categories' => CoinAnnotation::CATEGORIES,
             'dayCount' => $this->dayList()->count(),
-            'goodToday' => $fires->where('in_good_period', true)->count(),
-            'badToday' => $fires->where('in_good_period', false)->count(),
+            'goodToday' => $real->where('in_good_period', true)->count(),
+            'badToday' => $real->where('in_good_period', false)->count(),
         ]);
     }
 }

@@ -47,17 +47,26 @@
                             <th class="text-right px-3 py-2">P&L %</th><th class="text-left px-3 py-2">label</th></tr>
                     </thead>
                     <tbody>
+                        @php $map = [1 => ['goed','text-emerald-400'], 2 => ['middel','text-orange-400'], 3 => ['slecht','text-rose-400']]; @endphp
                         @forelse ($fires as $f)
+                            @php $sh = $shadows[$f->id] ?? null; @endphp
                             <tr wire:click="selectFire({{ $f->id }})"
-                                class="border-t border-slate-800 cursor-pointer hover:bg-slate-800/40 {{ $selType==='fire' && $selId===$f->id ? 'bg-slate-800/60' : '' }}">
-                                <td class="px-3 py-1.5 font-mono text-xs">{{ $f->datetime->format('H:i:s') }}</td>
-                                <td class="px-3 py-1.5">{{ $f->rule }}</td>
+                                class="border-t border-slate-800 cursor-pointer hover:bg-slate-800/40 {{ $sh ? 'opacity-50' : '' }} {{ $selType==='fire' && $selId===$f->id ? 'bg-slate-800/60' : '' }}">
+                                <td class="px-3 py-1.5 font-mono text-xs {{ $sh ? 'text-slate-500' : '' }}">{{ $f->datetime->format('H:i:s') }}</td>
+                                <td class="px-3 py-1.5 {{ $sh ? 'text-slate-500' : '' }}">{{ $f->rule }}</td>
                                 <td class="px-3 py-1.5">
-                                    @php $map = [1 => ['goed','text-emerald-400'], 2 => ['middel','text-amber-400'], 3 => ['slecht','text-rose-400']]; @endphp
-                                    <span class="{{ $map[$f->result][1] ?? 'text-slate-500' }}">{{ $map[$f->result][0] ?? '—' }}</span>
+                                    <span class="{{ $sh ? 'text-slate-500' : ($map[$f->result][1] ?? 'text-slate-500') }}">{{ $map[$f->result][0] ?? '—' }}</span>
                                 </td>
-                                <td class="px-3 py-1.5">{!! $f->in_good_period ? '<span class="text-emerald-400">✓</span>' : '<span class="text-rose-400">buiten</span>' !!}</td>
-                                <td class="px-3 py-1.5 text-right font-mono {{ $f->profit_loss >= 0 ? 'text-emerald-400' : 'text-rose-400' }}">{{ $f->profit_loss !== null ? number_format($f->profit_loss, 2) : '—' }}</td>
+                                <td class="px-3 py-1.5">
+                                    @if ($sh)
+                                        <span class="text-slate-500" title="zit in de trade van {{ $sh->format('H:i:s') }}">↳ in trade {{ $sh->format('H:i:s') }}</span>
+                                    @elseif ($f->in_good_period)
+                                        <span class="text-emerald-400">✓</span>
+                                    @else
+                                        <span class="text-rose-400">buiten</span>
+                                    @endif
+                                </td>
+                                <td class="px-3 py-1.5 text-right font-mono {{ $sh ? 'text-slate-500' : ($f->profit_loss >= 0 ? 'text-emerald-400' : 'text-rose-400') }}">{{ $f->profit_loss !== null ? number_format($f->profit_loss, 2) : '—' }}</td>
                                 <td class="px-3 py-1.5 text-xs text-amber-300">{{ optional($annotations->get('fire:'.$f->id))->category }}</td>
                             </tr>
                         @empty
