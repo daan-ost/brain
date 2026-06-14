@@ -106,6 +106,16 @@ class CoinExplorer extends Component
         $this->dispatch('annotation-saved');
     }
 
+    /** A zoom window [from,to] that contains every marker, with 5 min margin on each side. */
+    private function windowAround(array $markers): array
+    {
+        $ms = array_values($markers);
+        return [
+            Carbon::createFromTimestampMs(min($ms))->subMinutes(5),
+            Carbon::createFromTimestampMs(max($ms))->addMinutes(5),
+        ];
+    }
+
     /** Downsampled volumeud price between two datetimes, from the read-only source. */
     private function priceBetween($from, $to, int $cap = 400): array
     {
@@ -133,9 +143,6 @@ class CoinExplorer extends Component
             $leg = DB::connection('bot_signals')->table('wp_trading_simulation')
                 ->where('trading_symbol_id', $this->coin)->where('rule', $f->rule)
                 ->where('datetime', $f->datetime->format('Y-m-d H:i:s'))->first();
-            $sell = $leg && $leg->selling_date ? Carbon::parse($leg->selling_date) : (clone $f->datetime)->addMinutes(30);
-            $from = (clone $f->datetime)->subMinutes(5);
-            $to = (clone $sell)->addMinutes(5);
             $markers = ['buy' => $f->datetime->getTimestampMs()];
             if ($leg && $leg->selling_date) $markers['sell'] = Carbon::parse($leg->selling_date)->getTimestampMs();
             if ($leg && $leg->datetime_best) $markers['best'] = Carbon::parse($leg->datetime_best)->getTimestampMs();
@@ -146,6 +153,7 @@ class CoinExplorer extends Component
                 $markers['pbest'] = $per->best_entry->getTimestampMs();
                 if ($per->peak_datetime) $markers['peak'] = $per->peak_datetime->getTimestampMs();
             }
+            [$from, $to] = $this->windowAround($markers);
             return [
                 'type' => 'fire', 'id' => $f->id, 'title' => "Trade · rule {$f->rule} · {$f->datetime->format('d M H:i:s')}",
                 'price' => $this->priceBetween($from, $to),
@@ -168,13 +176,12 @@ class CoinExplorer extends Component
         if (! $p) {
             return null;
         }
-        $from = (clone $p->period_from)->subMinutes(5);
-        $to = (clone $p->period_to)->addMinutes(5);
         $markers = ['pbest' => $p->best_entry->getTimestampMs(),
                     'pfrom' => $p->period_from->getTimestampMs(), 'pto' => $p->period_to->getTimestampMs()];
         if ($p->peak_datetime) {
             $markers['peak'] = $p->peak_datetime->getTimestampMs();
         }
+        [$from, $to] = $this->windowAround($markers);
         return [
             'type' => 'period', 'id' => $p->id, 'title' => "Promising · {$p->best_entry->format('d M H:i:s')}",
             'price' => $this->priceBetween($from, $to),
