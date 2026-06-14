@@ -105,13 +105,11 @@ def _ctx():
 
 
 ctx = {}   # datetime -> context dict
-period_spans = []
+eng = PromisingEngine(SYM, "asc", conn=src)
 if MODE == "full":
-    eng = PromisingEngine(SYM, "asc", conn=src)
     periods, _, _ = scan_periods(eng, FROM, TO, GAP)
     for per in periods:
         be = best_entry(per)                       # (dt, highest, lowest_10, highest_dt)
-        period_spans.append((per[0][0], per[-1][0]))
         c = ctx.setdefault(be[0], _ctx())
         c["is_best_entry"] = 1
         c["in_good_period"] = 1
@@ -123,8 +121,9 @@ for t in sq("SELECT datetime, rule, result FROM wp_trading_simulation "
     c = ctx.setdefault(t["datetime"], _ctx())
     c["rule_fire"] = int(t["rule"])
     c["result"] = int(t["result"]) if t["result"] is not None else 0
-    # mark whether this fire lands inside a promising period (the automatable good/bad label)
-    if any(a <= t["datetime"] <= b for a, b in period_spans):
+    # PER-FIRE promising verdict = the good/bad label (consistent with persist_to_brain + the screens)
+    pr = eng.promising(t["datetime"])
+    if pr and pr["verdict"] == "buy":
         c["in_good_period"] = 1
 
 datetimes = sorted(ctx)
