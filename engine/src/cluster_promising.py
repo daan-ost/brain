@@ -20,6 +20,7 @@ import datetime as _dt
 import sys
 from datetime import timedelta
 
+from config import FORWARD_MINUTES
 from promising import PromisingEngine
 
 
@@ -27,9 +28,13 @@ def _parse(s):
     return _dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S") if len(s) > 10 else _dt.datetime.strptime(s, "%Y-%m-%d")
 
 
-def scan_periods(eng, frm=None, to=None, gap_minutes=15):
+def scan_periods(eng, frm=None, to=None, gap_minutes=FORWARD_MINUTES):
     """Return clustered promising periods. Each period is a list of
-    (datetime, highest, lowest_10, highest_dt) tuples (verdict=='buy' moments)."""
+    (datetime, highest, lowest_10, highest_dt) tuples (verdict=='buy' moments).
+
+    Overlap removal: a new trade can't start while one is still running, so moments
+    within `gap_minutes` (= the 1-hour trade horizon) of the previous belong to the
+    SAME opportunity. The best entry per period is the highest-upside moment."""
     DT = eng.DT
     lo = bisect.bisect_left(DT, _parse(frm)) if frm else 0
     hi = bisect.bisect_right(DT, _parse(to)) if to else len(DT)
@@ -59,7 +64,7 @@ else:
     SYM = int(sys.argv[1]) if len(sys.argv) > 1 else 2525
     FROM = sys.argv[2] if len(sys.argv) > 2 else None
     TO = sys.argv[3] if len(sys.argv) > 3 else None
-    GAP = int(sys.argv[4]) if len(sys.argv) > 4 else 15
+    GAP = int(sys.argv[4]) if len(sys.argv) > 4 else FORWARD_MINUTES
 
     eng = PromisingEngine(SYM, "asc")
     DT = eng.DT
