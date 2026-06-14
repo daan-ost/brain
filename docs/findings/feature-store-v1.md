@@ -44,6 +44,31 @@ is a single filtered aggregation over the Parquet (see `feature_store.py` demo +
 2. **No single feature cleanly separates good from bad on DOGEAI** (best d ≈ 0.55, medium). If one did, the rules would already use it. → **the edge is multivariate**: combine features (ML meta-filter, E03/E06), not one more threshold. This is the core justification for the precision layer.
 3. **NOS's huge d ≈ 2.5 is suggestive but small-sample** (10 good fires — the rules caught few good NOS moments, per rules-vs-promising.md). To get enough good examples for training we need `full` mode (promising-period datetimes), not just the rule-fires.
 
+## Correction — volume must be relative, not absolute
+
+Daan flagged it: `vzo`/`phobos`/`mfi`/`obv-x-value` are bounded (~−130..130 / 0..100), but
+`volumeud` is an **unbounded, coin-dependent raw number** (DOGEAI ±1.6M vs NOS ±56k; min_volume
+baseline 15169 vs 510 — ~30×). Storing absolute volume metrics (highest_value, std, …) is wrong:
+they don't transfer across coins and drift with the absolute level.
+
+**Fix:** `volumeud` is now normalized to **relative volume = value / min_volume** (exactly legacy
+`check_volumeud_3`'s `rel_vol`). The DOGEAI top separator is now `volumeud highest_value` **4.2× vs
+3.1×** (good vs bad) instead of `64000 vs 47000`.
+
+What we learned:
+- **Within one coin the separation (Cohen's d) is unchanged** — d is scale-invariant, so dividing by
+  a constant baseline doesn't alter the ranking. So DOGEAI's earlier finding was *directionally* valid
+  (good trades peak at ~4× baseline volume vs ~3× for bad) — it was a real relative-volume signal, not
+  an absolute artifact.
+- **But normalization is essential** for (a) cross-coin pooling/transfer, (b) interpretability ("4×"
+  means the same on every coin), (c) avoiding absolute-level confounds.
+- The **scale-free metrics were always safe**: `volatility` (std/first), `range_percentage`, `skewness`.
+  NOS's top (`volumeud volatility` d≈2.5) is unchanged by normalization — it was coin-safe all along.
+
+Remaining nuance: a *constant* min_volume baseline fixes coin-dependence but not within-coin **time
+drift** (if a coin's volume grows over months). A *trailing* baseline (value / median of recent N)
+would be drift-free — a refinement for later.
+
 ## Next
 
 - Build the `full`-mode store (promising-period datetimes) so good examples aren't limited to the few the rules caught — the training set for the ML filter.

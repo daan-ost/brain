@@ -59,13 +59,30 @@ def sq(sql, args):
 _from_sql = FROM or "1970-01-01"
 _to_sql = TO or "2099-01-01"
 
+# Volume baseline: vzo/phobos/mfi/obv-x-value are bounded (~-130..130 / 0..100), but volumeud
+# is an UNBOUNDED, coin-dependent raw number (DOGEAI ±1.6M vs NOS ±56k). Absolute volume metrics
+# don't transfer across coins and drift with the absolute level. So we normalize volumeud to
+# RELATIVE volume = value / min_volume (the legacy baseline, exactly check_volumeud_3's rel_vol).
+# Scale-free metrics (volatility, range_percentage, skewness) are unchanged by this; only the
+# magnitude metrics (first/last/lowest/highest/std/max_diff) become coin-comparable multiples.
+import json as _json
+_mv = sq("SELECT settings FROM wp_trading_symbols_rule WHERE trading_symbol_id=%s "
+         "AND rule_id IN (20,21,22,23) ORDER BY rule_id LIMIT 1", (SYM,))
+VOL_BASE = float(_json.loads(_mv[0]["settings"]).get("min_volume", 1)) if _mv else 1.0
+if VOL_BASE <= 0:
+    VOL_BASE = 1.0
+
 # per-indicator as-of series (+6h margin for lookback)
 series = {}
 for r in sq("SELECT indicator, datetime, value FROM wp_trading_indicator "
             "WHERE trading_symbol_id=%s AND datetime>=DATE_SUB(%s, INTERVAL 6 HOUR) AND datetime<%s "
             "AND value IS NOT NULL ORDER BY datetime", (SYM, _from_sql, _to_sql)):
     s = series.setdefault(r["indicator"], {"dt": [], "v": []})
-    s["dt"].append(r["datetime"]); s["v"].append(float(r["value"]))
+    val = float(r["value"])
+    if r["indicator"] == "volumeud":
+        val = val / VOL_BASE          # -> relative volume (coin-comparable)
+    s["dt"].append(r["datetime"]); s["v"].append(val)
+print(f"volume baseline (min_volume) = {VOL_BASE:g} — volumeud stored as relative volume")
 
 
 def asof_window(ind, T, n):
