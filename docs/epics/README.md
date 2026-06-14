@@ -1,7 +1,19 @@
 # Epics — nobrainersbot trading system
 
 Build specs for the rewrite. See `../roadmap.md` for the north star, principles, and phasing.
+New here? Read [../functional-overview.md](../functional-overview.md) (what it does) and [../technical-overview.md](../technical-overview.md) (how it's built) first.
 Hard rule: `bot_signals` is a **read-only source** — never written to.
+
+## Active build epics (now)
+
+| Epic | Title | Refines |
+|---|---|---|
+| [A](epic-A-good-trade-periods.md) | Good trade-period discovery + per-datetime outcome store + explorer (screens + graph) | E02 + feature-store |
+| [B](epic-B-lookback-store.md) | Per-rule lookback feature store (fast-queryable) | E01 |
+
+A and B are the concrete, buildable versions of the foundation. The numbered E01–E11 below remain the grand plan.
+
+## Grand plan
 
 | Epic | Phase | Title | Build-first? |
 |---|---|---|---|
