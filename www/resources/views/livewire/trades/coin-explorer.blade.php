@@ -24,12 +24,15 @@
     </div>
 
     <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 mb-6">
-        <div wire:key="chart-{{ $coin }}-{{ $date }}" x-data="coinChart(@js($chart))">
+        <div wire:ignore wire:key="chart-{{ $coin }}-{{ $date }}" x-data="coinChart(@js($chart))">
+            <div class="flex justify-end mb-1">
+                <button @click="chart && chart.resetZoom()" class="text-xs text-slate-400 hover:text-white">↺ zoom reset</button>
+            </div>
             <div class="relative h-[420px]"><canvas x-ref="cv"></canvas></div>
         </div>
         <p class="text-xs text-slate-500 mt-2">
             Klik op een fire-stip of een groene periode (of een rij hieronder) voor detail + label.
-            Groene vlakken = promising. Stippen = fires (groen = in promising, rood = buiten).
+            Scroll = in/uitzoomen op tijd, sleep = schuiven. Groene vlakken = promising. Stippen = fires (groen = in promising, rood = buiten).
         </p>
     </div>
 
@@ -98,7 +101,11 @@
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" wire:key="detail-{{ $selType }}-{{ $selId }}">
             <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
                 <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
-                    <h3 class="font-semibold text-white">{{ $detail['title'] }}</h3>
+                    <div class="flex items-center gap-2">
+                        <button wire:click="navDetail(-1)" title="vorige" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-sm">‹</button>
+                        <h3 class="font-semibold text-white">{{ $detail['title'] }}</h3>
+                        <button wire:click="navDetail(1)" title="volgende" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-sm">›</button>
+                    </div>
                     <button wire:click="closeDetail" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
                 </div>
 
@@ -153,35 +160,59 @@ function __xaxis() { return { type: 'linear', ticks: { color: '#64748b', maxTick
     callback: (v) => new Date(v).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) },
     grid: { color: 'rgba(51,65,85,0.3)' } }; }
 
+// vertical crosshair line at the hovered point
+const __crosshair = { id: 'crosshair', afterDraw(chart) {
+    const act = chart.tooltip?.getActiveElements?.() || [];
+    if (!act.length) return;
+    const x = act[0].element.x, { top, bottom } = chart.chartArea, ctx = chart.ctx;
+    ctx.save(); ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom);
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(148,163,184,0.55)'; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.restore();
+} };
+
+function __baseOptions(withZoom) {
+    const o = {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: { x: __xaxis(), y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(51,65,85,0.3)' } } },
+        plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: {
+                title: (it) => new Date(it[0].parsed.x).toLocaleTimeString('nl-NL'),
+                label: (it) => 'prijs: ' + it.parsed.y,
+            } },
+        },
+    };
+    if (withZoom) o.plugins.zoom = {
+        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, drag: { enabled: false }, mode: 'x' },
+        pan: { enabled: true, mode: 'x' },
+    };
+    return o;
+}
+
 function coinChart(data) {
     return {
         chart: null,
         init() {
             __ann();
+            const ex = Chart.getChart(this.$refs.cv); if (ex) ex.destroy();
             const annotations = {};
             (data.periods || []).forEach((p, i) => { annotations['per' + i] = { type: 'box', xMin: p.from, xMax: p.to, backgroundColor: 'rgba(16,185,129,0.12)', borderWidth: 0 }; });
             (data.fires || []).forEach((f, i) => { annotations['fire' + i] = { type: 'line', xMin: f.x, xMax: f.x,
                 borderColor: f.good ? 'rgba(16,185,129,0.9)' : 'rgba(244,63,94,0.9)', borderWidth: 1.5, borderDash: [4, 3],
                 label: { display: true, content: 'R' + f.rule, position: 'start', backgroundColor: f.good ? 'rgba(16,185,129,0.85)' : 'rgba(244,63,94,0.85)', color: '#fff', font: { size: 9 }, padding: 2 } }; });
-            const wire = this.$wire;
-            this.chart = new Chart(this.$refs.cv, {
-                type: 'line',
+            const wire = this.$wire, opts = __baseOptions(true);
+            opts.plugins.annotation = { annotations };
+            opts.onClick = (e) => {
+                const x = this.chart.scales.x.getValueForPixel(e.x);
+                let best = null, bd = Infinity;
+                (data.fires || []).forEach(f => { const d = Math.abs(f.x - x); if (d < bd) { bd = d; best = f; } });
+                if (best && bd < 150000) { wire.selectFire(best.id); return; }
+                const per = (data.periods || []).find(p => x >= p.from && x <= p.to);
+                if (per) wire.selectPeriod(per.id);
+            };
+            this.chart = new Chart(this.$refs.cv, { type: 'line', plugins: [__crosshair],
                 data: { datasets: [{ label: 'prijs', data: data.price, borderColor: 'rgba(148,163,184,0.9)', borderWidth: 1.2, pointRadius: 0, tension: 0.1, parsing: false }] },
-                options: {
-                    responsive: true, maintainAspectRatio: false, animation: false,
-                    onClick: (e) => {
-                        const x = this.chart.scales.x.getValueForPixel(e.x);
-                        let best = null, bd = Infinity;
-                        (data.fires || []).forEach(f => { const d = Math.abs(f.x - x); if (d < bd) { bd = d; best = f; } });
-                        if (best && bd < 150000) { wire.selectFire(best.id); return; }
-                        const per = (data.periods || []).find(p => x >= p.from && x <= p.to);
-                        if (per) wire.selectPeriod(per.id);
-                    },
-                    scales: { x: __xaxis(), y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(51,65,85,0.3)' } } },
-                    plugins: { legend: { display: false }, annotation: { annotations },
-                        tooltip: { callbacks: { title: (it) => new Date(it[0].parsed.x).toLocaleTimeString('nl-NL') } } },
-                },
-            });
+                options: opts });
         },
     };
 }
@@ -191,26 +222,22 @@ function zoomChart(d) {
         chart: null,
         init() {
             __ann();
+            const ex = Chart.getChart(this.$refs.zv); if (ex) ex.destroy();
             const m = d.markers || {}, ann = {};
             if (m.pfrom && m.pto) ann.band = { type: 'box', xMin: m.pfrom, xMax: m.pto,
                 backgroundColor: 'rgba(16,185,129,0.10)', borderColor: 'rgba(16,185,129,0.35)', borderWidth: 1 };
             const line = (x, color, txt, pos) => ({ type: 'line', xMin: x, xMax: x, borderColor: color, borderWidth: 1.5,
                 label: { display: true, content: txt, position: pos || 'start', backgroundColor: color, color: '#fff', font: { size: 9 }, padding: 2 } });
-            // promising markers (shown on both period and fire detail when in a period)
             if (m.pbest) ann.pbest = line(m.pbest, 'rgba(16,185,129,0.95)', 'beste instap', 'end');
             if (m.peak) ann.peak = line(m.peak, 'rgba(251,191,36,0.95)', 'piek / verkoop', 'end');
-            // trade markers
             if (m.buy) ann.buy = line(m.buy, 'rgba(56,189,248,0.95)', 'koop');
             if (m.sell) ann.sell = line(m.sell, 'rgba(244,63,94,0.95)', 'verkoop');
             if (m.best) ann.best = line(m.best, 'rgba(132,204,22,0.9)', 'best (legacy)');
-            this.chart = new Chart(this.$refs.zv, {
-                type: 'line',
+            const opts = __baseOptions(true);
+            opts.plugins.annotation = { annotations: ann };
+            this.chart = new Chart(this.$refs.zv, { type: 'line', plugins: [__crosshair],
                 data: { datasets: [{ data: d.price, borderColor: 'rgba(148,163,184,0.95)', borderWidth: 1.3, pointRadius: 0, tension: 0.1, parsing: false }] },
-                options: { responsive: true, maintainAspectRatio: false, animation: false,
-                    scales: { x: __xaxis(), y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(51,65,85,0.3)' } } },
-                    plugins: { legend: { display: false }, annotation: { annotations: ann },
-                        tooltip: { callbacks: { title: (it) => new Date(it[0].parsed.x).toLocaleTimeString('nl-NL') } } } },
-            });
+                options: opts });
         },
     };
 }

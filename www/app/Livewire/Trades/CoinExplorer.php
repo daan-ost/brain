@@ -88,6 +88,33 @@ class CoinExplorer extends Component
         $this->reset(['selType', 'selId', 'annCategory', 'annComment']);
     }
 
+    /** Step to the next/previous fire (or period) of the same day, inside the modal. */
+    public function navDetail(int $dir): void
+    {
+        if (! $this->selType) {
+            return;
+        }
+        $ids = $this->dayTargetIds($this->selType);
+        $i = array_search($this->selId, $ids, true);
+        if ($i === false) {
+            return;
+        }
+        $this->open($this->selType, $ids[max(0, min(count($ids) - 1, $i + $dir))]);
+    }
+
+    private function dayTargetIds(string $type): array
+    {
+        $start = Carbon::parse($this->date)->startOfDay();
+        $end = (clone $start)->endOfDay();
+        if ($type === 'fire') {
+            return CoinFire::where('trading_symbol_id', $this->coin)
+                ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->pluck('id')->all();
+        }
+        return CoinPeriod::where('trading_symbol_id', $this->coin)
+            ->where('period_from', '<=', $end)->where('period_to', '>=', $start)
+            ->orderBy('period_from')->pluck('id')->all();
+    }
+
     public function saveAnnotation(): void
     {
         if (! $this->selType || ! $this->selId) {
