@@ -20,7 +20,7 @@ class Index extends Component
 
     #[Url] public string $coin = '';
     #[Url] public string $rule = '';
-    #[Url] public string $outcome = '';       // '' | good | bad | shadow
+    #[Url] public string $outcome = '';       // '' | goed | middel | slecht | shadow
     #[Url] public string $from = '';
     #[Url] public string $to = '';
 
@@ -45,8 +45,9 @@ class Index extends Component
         return CoinFire::query()
             ->when($this->coin !== '', fn (Builder $q) => $q->where('trading_symbol_id', (int) $this->coin))
             ->when($this->rule !== '', fn (Builder $q) => $q->where('rule', (int) $this->rule))
-            ->when($this->outcome === 'good', fn (Builder $q) => $q->where('is_executed', true)->where('in_good_period', true))
-            ->when($this->outcome === 'bad', fn (Builder $q) => $q->where('is_executed', true)->where('in_good_period', false))
+            ->when($this->outcome === 'goed', fn (Builder $q) => $q->where('is_executed', true)->where('best_upside', '>=', 3))
+            ->when($this->outcome === 'middel', fn (Builder $q) => $q->where('is_executed', true)->where('best_upside', '>=', 0.5)->where('best_upside', '<', 3))
+            ->when($this->outcome === 'slecht', fn (Builder $q) => $q->where('is_executed', true)->where('best_upside', '<', 0.5))
             ->when($this->outcome === 'shadow', fn (Builder $q) => $q->where('is_executed', false))
             ->when($this->from !== '', fn (Builder $q) => $q->whereDate('datetime', '>=', $this->from))
             ->when($this->to !== '', fn (Builder $q) => $q->whereDate('datetime', '<=', $this->to));
@@ -61,17 +62,19 @@ class Index extends Component
             ->orderBy('symbol')->get();
         $rules = CoinFire::query()->select('rule')->distinct()->orderBy('rule')->pluck('rule');
 
-        // outcome pills: count + summed OUR P&L (executed only)
+        // class pills (best_upside): count + avg best upside + summed OUR sell P&L (the gap is the point)
         $pills = [];
-        foreach (['good', 'bad', 'shadow'] as $k) {
-            $q = (clone $this->baseQuery());
-            if ($k === 'good') $q->where('is_executed', true)->where('in_good_period', true);
-            if ($k === 'bad') $q->where('is_executed', true)->where('in_good_period', false);
-            if ($k === 'shadow') $q->where('is_executed', false);
-            $pills[$k] = ['n' => (clone $q)->count(), 'pl' => (float) (clone $q)->sum('profit_loss')];
+        foreach (['goed' => [3, null], 'middel' => [0.5, 3], 'slecht' => [null, 0.5]] as $k => [$lo, $hi]) {
+            $q = (clone $this->baseQuery())->where('is_executed', true);
+            if ($lo !== null) $q->where('best_upside', '>=', $lo);
+            if ($hi !== null) $q->where('best_upside', '<', $hi);
+            $pills[$k] = ['n' => (clone $q)->count(), 'best' => (float) (clone $q)->avg('best_upside'),
+                          'pl' => (float) (clone $q)->sum('profit_loss')];
         }
         $execQ = (clone $this->baseQuery())->where('is_executed', true);
-        $totals = ['n' => (clone $execQ)->count(), 'pl' => (float) (clone $execQ)->sum('profit_loss')];
+        $totals = ['n' => (clone $execQ)->count(),
+                   'best' => (float) (clone $execQ)->sum('best_upside'),
+                   'pl' => (float) (clone $execQ)->sum('profit_loss')];
 
         return view('livewire.trades.index', compact('trades', 'coins', 'rules', 'pills', 'totals'));
     }

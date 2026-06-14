@@ -15,7 +15,7 @@ import bisect
 import datetime as _dt
 import sys
 
-from config import CLUSTER_GAP_MINUTES
+from config import CLUSTER_GAP_MINUTES, FORWARD_MINUTES
 from db import brain, legacy
 from promising import PromisingEngine
 from cluster_promising import scan_periods, best_entry
@@ -75,6 +75,20 @@ def price_at(dt):
     return PX[i - 1] if i > 0 else None
 
 
+def best_upside_at(dt, buy):
+    """Max favorable excursion (%) within the hold [dt, dt+FORWARD_MINUTES] vs buy — the best
+    price you could have sold at. This is the trade's quality, independent of our sell-engine."""
+    if not buy:
+        return None
+    import datetime as __dt
+    lo = bisect.bisect_left(DT, dt)
+    hi = bisect.bisect_right(DT, dt + __dt.timedelta(minutes=FORWARD_MINUTES))
+    if lo >= hi:
+        return None
+    mx = max(PX[lo:hi])
+    return round((mx - buy) / buy * 100, 3)
+
+
 all_fires = []
 for rule in RULES:
     for dt in rule_eng.fires(rule, FROM_dt, TO_dt):
@@ -112,13 +126,14 @@ with dst.cursor() as c:
             executed, shadow_parent = 1, None
             n_exec += 1
 
+        best_up = best_upside_at(dt, buy)              # trade quality (best available exit)
         c.execute(
             "INSERT INTO coin_fires (trading_symbol_id, symbol, datetime, rule, in_good_period, is_executed, "
-            "shadow_parent, period_id, buy_price, selling_price, selling_datetime, profit_loss, "
+            "shadow_parent, period_id, buy_price, selling_price, best_upside, selling_datetime, profit_loss, "
             "legacy_result, legacy_profit_loss, created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
             (SYM, SYMBOL, dt, rule, good, executed, shadow_parent, period_of(dt),
-             buy, sell["selling_price"] if sell else None, sell["selling_date"] if sell else None,
+             buy, sell["selling_price"] if sell else None, best_up, sell["selling_date"] if sell else None,
              sell["profit_loss"] if sell else None,
              int(legres) if legres is not None else None,
              float(legpl) if legpl is not None else None))

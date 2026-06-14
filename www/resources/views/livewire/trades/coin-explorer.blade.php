@@ -18,8 +18,9 @@
 
         <div class="ml-auto flex items-center gap-2 text-sm">
             <span class="px-2 py-1 rounded bg-emerald-900/60 text-emerald-300">{{ $periods->count() }} promising</span>
-            <span class="px-2 py-1 rounded bg-sky-900/60 text-sky-300">{{ $goodToday }} goede trades</span>
-            <span class="px-2 py-1 rounded bg-rose-900/60 text-rose-300">{{ $badToday }} slechte trades</span>
+            <span class="px-2 py-1 rounded bg-emerald-900/60 text-emerald-300">{{ $goedToday }} goed</span>
+            <span class="px-2 py-1 rounded bg-orange-900/60 text-orange-300">{{ $middelToday }} middel</span>
+            <span class="px-2 py-1 rounded bg-rose-900/60 text-rose-300">{{ $slechtToday }} slecht</span>
         </div>
     </div>
 
@@ -43,13 +44,12 @@
                 <table class="w-full text-sm">
                     <thead class="bg-slate-800/60 text-slate-400">
                         <tr><th class="text-left px-3 py-2">tijd</th><th class="text-left px-3 py-2">rule</th>
-                            <th class="text-left px-3 py-2">uitkomst</th><th class="text-right px-3 py-2">P&L %</th>
-                            <th class="text-left px-3 py-2">legacy</th><th class="text-left px-3 py-2">label</th></tr>
+                            <th class="text-left px-3 py-2">uitkomst</th><th class="text-right px-3 py-2">beste up%</th>
+                            <th class="text-right px-3 py-2">onze sell%</th><th class="text-left px-3 py-2">label</th></tr>
                     </thead>
                     <tbody>
-                        @php $leg = [1 => ['goed','text-emerald-400'], 2 => ['middel','text-orange-400'], 3 => ['slecht','text-rose-400']]; @endphp
                         @forelse ($fires as $f)
-                            @php $sh = ! $f->is_executed; @endphp
+                            @php $sh = ! $f->is_executed; [$kl, $klc] = $f->klasse(); @endphp
                             <tr wire:click="selectFire({{ $f->id }})"
                                 class="border-t border-slate-800 cursor-pointer hover:bg-slate-800/40 {{ $sh ? 'opacity-50' : '' }} {{ $selType==='fire' && $selId===$f->id ? 'bg-slate-800/60' : '' }}">
                                 <td class="px-3 py-1.5 font-mono text-xs {{ $sh ? 'text-slate-500' : '' }}">{{ $f->datetime->format('H:i:s') }}</td>
@@ -57,14 +57,12 @@
                                 <td class="px-3 py-1.5">
                                     @if ($sh)
                                         <span class="text-slate-500" title="zit in de trade van {{ optional($f->shadow_parent)->format('H:i:s') }}">↳ in trade {{ optional($f->shadow_parent)->format('H:i:s') }}</span>
-                                    @elseif ($f->in_good_period)
-                                        <span class="text-emerald-400">goed (promising)</span>
                                     @else
-                                        <span class="text-rose-400">buiten</span>
+                                        <span class="{{ $klc }}">{{ $kl }}</span>
                                     @endif
                                 </td>
-                                <td class="px-3 py-1.5 text-right font-mono {{ $sh ? 'text-slate-500' : (($f->profit_loss ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400') }}">{{ ($f->is_executed && $f->profit_loss !== null) ? number_format($f->profit_loss, 2) : '—' }}</td>
-                                <td class="px-3 py-1.5 text-xs {{ $leg[$f->legacy_result][1] ?? 'text-slate-600' }}">{{ $leg[$f->legacy_result][0] ?? '·' }}</td>
+                                <td class="px-3 py-1.5 text-right font-mono {{ $sh ? 'text-slate-500' : 'text-emerald-300' }}">{{ $f->best_upside !== null ? number_format($f->best_upside, 2) : '—' }}</td>
+                                <td class="px-3 py-1.5 text-right font-mono {{ $sh ? 'text-slate-500' : (($f->profit_loss ?? 0) >= 0 ? 'text-slate-300' : 'text-rose-400') }}">{{ ($f->is_executed && $f->profit_loss !== null) ? number_format($f->profit_loss, 2) : '—' }}</td>
                                 <td class="px-3 py-1.5 text-xs text-amber-300">{{ optional($annotations->get('fire:'.$f->id))->category }}</td>
                             </tr>
                         @empty
@@ -204,9 +202,11 @@ function coinChart(data) {
             const ex = Chart.getChart(this.$refs.cv); if (ex) ex.destroy();
             const annotations = {};
             (data.periods || []).forEach((p, i) => { annotations['per' + i] = { type: 'box', xMin: p.from, xMax: p.to, backgroundColor: 'rgba(16,185,129,0.12)', borderWidth: 0 }; });
-            (data.fires || []).forEach((f, i) => { annotations['fire' + i] = { type: 'line', xMin: f.x, xMax: f.x,
-                borderColor: f.good ? 'rgba(16,185,129,0.9)' : 'rgba(244,63,94,0.9)', borderWidth: 1.5, borderDash: [4, 3],
-                label: { display: true, content: 'R' + f.rule, position: 'start', backgroundColor: f.good ? 'rgba(16,185,129,0.85)' : 'rgba(244,63,94,0.85)', color: '#fff', font: { size: 9 }, padding: 2 } }; });
+            const klc = { goed: 'rgba(16,185,129,0.9)', middel: 'rgba(251,146,60,0.9)', slecht: 'rgba(244,63,94,0.9)' };
+            (data.fires || []).forEach((f, i) => { const col = klc[f.klasse] || 'rgba(148,163,184,0.8)';
+                annotations['fire' + i] = { type: 'line', xMin: f.x, xMax: f.x,
+                borderColor: col, borderWidth: 1.5, borderDash: [4, 3],
+                label: { display: true, content: 'R' + f.rule, position: 'start', backgroundColor: col, color: '#fff', font: { size: 9 }, padding: 2 } }; });
             const wire = this.$wire, opts = __baseOptions(true);
             opts.plugins.annotation = { annotations };
             opts.onClick = (e) => {

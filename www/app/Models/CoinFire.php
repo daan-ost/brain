@@ -25,8 +25,31 @@ class CoinFire extends Model
         'profit_loss' => 'float',
         'buy_price' => 'float',
         'selling_price' => 'float',
+        'best_upside' => 'float',
         'legacy_profit_loss' => 'float',
     ];
+
+    /**
+     * Trade quality from the best available exit (best_upside), NOT our (imperfect) sell.
+     * Daan: goed >= 3%, middel 0.5-3%, slecht < 0.5%. Returns [label, css-class].
+     */
+    public function klasse(): array
+    {
+        $u = $this->best_upside;
+        if ($u === null) return ['—', 'text-slate-500'];
+        if ($u >= 3) return ['goed', 'text-emerald-400'];
+        if ($u >= 0.5) return ['middel', 'text-orange-400'];
+        return ['slecht', 'text-rose-400'];
+    }
+
+    public function klasseKey(): string
+    {
+        $u = $this->best_upside;
+        if ($u === null) return 'onbekend';
+        if ($u >= 3) return 'goed';
+        if ($u >= 0.5) return 'middel';
+        return 'slecht';
+    }
 
     public function period(): BelongsTo
     {

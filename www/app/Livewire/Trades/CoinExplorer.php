@@ -187,10 +187,10 @@ class CoinExplorer extends Component
                 'markers' => $markers,
                 'stats' => array_filter([
                     'rule' => $f->rule,
-                    'uitkomst' => ! $f->is_executed ? '↳ schaduw van ' . optional($f->shadow_parent)->format('H:i:s')
-                        : ($f->in_good_period ? 'promising (goed)' : 'buiten promising'),
+                    'uitkomst' => ! $f->is_executed ? '↳ schaduw van ' . optional($f->shadow_parent)->format('H:i:s') : $f->klasse()[0],
+                    'beste upside %' => $f->best_upside,
                     'aankoopprijs' => $f->buy_price,
-                    'verkoopprijs' => $f->selling_price,
+                    'verkoopprijs (onze sell)' => $f->selling_price,
                     'winst % (onze sell)' => $f->is_executed ? $f->profit_loss : null,
                     'legacy result' => [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$f->legacy_result] ?? null,
                     'legacy P&L' => $f->legacy_profit_loss,
@@ -247,13 +247,13 @@ class CoinExplorer extends Component
             'price' => $price,
             'periods' => $periods->map(fn ($p) => ['id' => $p->id, 'from' => $p->period_from->getTimestampMs(),
                 'to' => $p->period_to->getTimestampMs(), 'best' => $p->best_entry->getTimestampMs(), 'upside' => $p->best_upside])->values(),
-            // chart markers: only EXECUTED fires (shadows wouldn't trade), good = in promising
+            // chart markers: only EXECUTED trades (shadows wouldn't trade), coloured by class
             'fires' => $fires->where('is_executed', true)->map(fn ($f) => ['id' => $f->id, 'x' => $f->datetime->getTimestampMs(),
-                'rule' => $f->rule, 'good' => $f->in_good_period, 'pl' => $f->profit_loss])->values(),
+                'rule' => $f->rule, 'klasse' => $f->klasseKey(), 'best' => $f->best_upside])->values(),
         ];
 
-        // good/bad counts are over EXECUTED trades only (shadows wouldn't execute — a trade is open)
-        $exec = $fires->where('is_executed', true);
+        // goed/middel/slecht counts over EXECUTED trades (best_upside class)
+        $exec = $fires->where('is_executed', true)->groupBy(fn ($f) => $f->klasseKey());
 
         return view('livewire.trades.coin-explorer', [
             'periods' => $periods,
@@ -263,8 +263,9 @@ class CoinExplorer extends Component
             'detail' => $this->detail(),
             'categories' => CoinAnnotation::CATEGORIES,
             'dayCount' => $this->dayList()->count(),
-            'goodToday' => $exec->where('in_good_period', true)->count(),
-            'badToday' => $exec->where('in_good_period', false)->count(),
+            'goedToday' => $exec->get('goed', collect())->count(),
+            'middelToday' => $exec->get('middel', collect())->count(),
+            'slechtToday' => $exec->get('slecht', collect())->count(),
         ]);
     }
 }

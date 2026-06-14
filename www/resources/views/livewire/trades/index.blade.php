@@ -30,8 +30,9 @@
                 <span class="text-xs font-medium text-gray-500">Uitkomst</span>
                 <select wire:model.live="outcome" class="rounded-lg border-gray-300 text-sm">
                     <option value="">Alle</option>
-                    <option value="good">Goed (promising)</option>
-                    <option value="bad">Buiten</option>
+                    <option value="goed">Goed (≥3%)</option>
+                    <option value="middel">Middel (0,5–3%)</option>
+                    <option value="slecht">Slecht (&lt;0,5%)</option>
                     <option value="shadow">Schaduw</option>
                 </select>
             </label>
@@ -48,16 +49,16 @@
             </div>
         </div>
 
-        {{-- outcome pills: aantal + opgetelde P&L (onze sell) --}}
+        {{-- class pills: aantal · gem. beste upside (kans) · opgetelde onze-sell P&L (het gat = onze sell-engine) --}}
         @php $pct = fn ($v) => ($v >= 0 ? '+' : '').number_format((float) $v, 1, ',', '.').'%'; @endphp
-        <div class="mt-3 flex flex-wrap gap-2 text-xs">
+        <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <span class="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700">
                 Uitgevoerd {{ number_format($totals['n'], 0, ',', '.') }} ·
-                <span class="font-semibold {{ $totals['pl'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($totals['pl']) }}</span>
+                beste {{ $pct($totals['best']) }} · onze sell <span class="font-semibold {{ $totals['pl'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($totals['pl']) }}</span>
             </span>
-            <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-800">Goed {{ $pills['good']['n'] }} · {{ $pct($pills['good']['pl']) }}</span>
-            <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-800">Buiten {{ $pills['bad']['n'] }} · {{ $pct($pills['bad']['pl']) }}</span>
-            <span class="px-2.5 py-1 rounded-full bg-gray-200 text-gray-600">Schaduw {{ $pills['shadow']['n'] }}</span>
+            <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-800">Goed {{ $pills['goed']['n'] }} · beste ⌀{{ $pct($pills['goed']['best']) }} · sell {{ $pct($pills['goed']['pl']) }}</span>
+            <span class="px-2.5 py-1 rounded-full bg-orange-100 text-orange-800">Middel {{ $pills['middel']['n'] }}</span>
+            <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-800">Slecht {{ $pills['slecht']['n'] }}</span>
         </div>
     </div>
 
@@ -70,8 +71,8 @@
                     <th class="px-4 py-3">Coin</th>
                     <th class="px-4 py-3">Rule</th>
                     <th class="px-4 py-3 text-right">Aankoop</th>
-                    <th class="px-4 py-3 text-right">Verkoop</th>
-                    <th class="px-4 py-3 text-right">P&L (onze sell)</th>
+                    <th class="px-4 py-3 text-right">Beste up%</th>
+                    <th class="px-4 py-3 text-right">Onze sell%</th>
                     <th class="px-4 py-3 text-center">Uitkomst</th>
                     <th class="px-4 py-3 text-center">Legacy</th>
                 </tr>
@@ -84,17 +85,16 @@
                         <td class="px-4 py-3 text-gray-700">{{ $t->symbol }}</td>
                         <td class="px-4 py-3 text-gray-500">{{ $t->rule }}</td>
                         <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ $fmt($t->buy_price) }}</td>
-                        <td class="px-4 py-3 text-right tabular-nums text-gray-500">{{ $fmt($t->selling_price) }}</td>
-                        <td class="px-4 py-3 text-right tabular-nums font-medium {{ ($t->profit_loss ?? 0) > 0 ? 'text-green-600' : (($t->profit_loss ?? 0) < 0 ? 'text-red-600' : 'text-gray-500') }}">
+                        <td class="px-4 py-3 text-right tabular-nums font-medium text-emerald-600">{{ $t->best_upside !== null ? number_format($t->best_upside, 2, ',', '.').'%' : '—' }}</td>
+                        <td class="px-4 py-3 text-right tabular-nums {{ ($t->profit_loss ?? 0) < 0 ? 'text-red-600' : 'text-gray-500' }}">
                             {{ ($t->is_executed && $t->profit_loss !== null) ? number_format($t->profit_loss, 2, ',', '.').'%' : '—' }}
                         </td>
                         <td class="px-4 py-3 text-center">
                             @if (! $t->is_executed)
                                 <span class="text-xs text-gray-400" title="zit in trade van {{ optional($t->shadow_parent)->format('H:i:s') }}">↳ schaduw</span>
-                            @elseif ($t->in_good_period)
-                                <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">Goed</span>
                             @else
-                                <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">Buiten</span>
+                                @php([$kl, $klc] = [$t->klasseKey(), ['goed'=>'bg-green-100 text-green-800','middel'=>'bg-orange-100 text-orange-800','slecht'=>'bg-red-100 text-red-800']])
+                                <span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ $klc[$kl] ?? 'bg-gray-100 text-gray-600' }}">{{ ucfirst($kl) }}</span>
                             @endif
                         </td>
                         <td class="px-4 py-3 text-center text-xs text-gray-400">
