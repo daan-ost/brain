@@ -2,8 +2,7 @@
 
 namespace App\Livewire\Trades;
 
-use App\Models\Trading\TradingSimulation;
-use App\Models\Trading\TradingSymbol;
+use App\Models\CoinFire;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -11,17 +10,17 @@ use Livewire\Component;
 use Livewire\WithPagination;
 
 /**
- * Trades — browse the legacy found/labeled trades (wp_trading_simulation, READ-ONLY)
- * with filters on coin, period, rule and result. WorkMyAgent-style sidebar + table.
+ * Trades — browse OUR fires from the brain DB (coin_fires), filtered by coin, rule and outcome.
+ * Reads only brain: coins/rules are whatever we actually rebuilt (DOGEAI + NOS, rules 20-23).
  */
 #[Layout('layouts.trading')]
 class Index extends Component
 {
     use WithPagination;
 
-    #[Url] public string $coin = '2525';     // default DOGEAI
+    #[Url] public string $coin = '';
     #[Url] public string $rule = '';
-    #[Url] public string $result = '';        // '1' | '2' | '3' | 'unlabeled' | ''
+    #[Url] public string $outcome = '';       // '' | good | bad | shadow
     #[Url] public string $from = '';
     #[Url] public string $to = '';
 
@@ -37,48 +36,43 @@ class Index extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['rule', 'result', 'from', 'to']);
+        $this->reset(['rule', 'outcome', 'from', 'to']);
         $this->resetPage();
     }
 
     private function baseQuery(): Builder
     {
-        return TradingSimulation::query()
+        return CoinFire::query()
             ->when($this->coin !== '', fn (Builder $q) => $q->where('trading_symbol_id', (int) $this->coin))
             ->when($this->rule !== '', fn (Builder $q) => $q->where('rule', (int) $this->rule))
-            ->when($this->result === 'unlabeled', fn (Builder $q) => $q->whereNull('result'))
-            ->when(in_array($this->result, ['1', '2', '3'], true), fn (Builder $q) => $q->where('result', (int) $this->result))
+            ->when($this->outcome === 'good', fn (Builder $q) => $q->where('is_executed', true)->where('in_good_period', true))
+            ->when($this->outcome === 'bad', fn (Builder $q) => $q->where('is_executed', true)->where('in_good_period', false))
+            ->when($this->outcome === 'shadow', fn (Builder $q) => $q->where('is_executed', false))
             ->when($this->from !== '', fn (Builder $q) => $q->whereDate('datetime', '>=', $this->from))
             ->when($this->to !== '', fn (Builder $q) => $q->whereDate('datetime', '<=', $this->to));
     }
 
     public function render()
     {
-        $trades = $this->baseQuery()
-            ->with('symbol')
-            ->orderByDesc('datetime')
-            ->paginate(50);
+        $trades = $this->baseQuery()->orderByDesc('datetime')->paginate(50);
 
-        // filter option lists
-        $coins = TradingSymbol::query()
-            ->whereIn('ID', TradingSimulation::query()->select('trading_symbol_id')->distinct())
-            ->orderBy('symbol')
-            ->get(['ID', 'symbol', 'timeframe']);
+        // dropdowns from brain only (what we actually rebuilt: DOGEAI + NOS, rules 20-23)
+        $coins = CoinFire::query()->select('trading_symbol_id', 'symbol')->distinct()
+            ->orderBy('symbol')->get();
+        $rules = CoinFire::query()->select('rule')->distinct()->orderBy('rule')->pluck('rule');
 
-        $rules = TradingSimulation::query()
-            ->when($this->coin !== '', fn (Builder $q) => $q->where('trading_symbol_id', (int) $this->coin))
-            ->select('rule')->distinct()->orderBy('rule')->pluck('rule');
+        // outcome pills: count + summed OUR P&L (executed only)
+        $pills = [];
+        foreach (['good', 'bad', 'shadow'] as $k) {
+            $q = (clone $this->baseQuery());
+            if ($k === 'good') $q->where('is_executed', true)->where('in_good_period', true);
+            if ($k === 'bad') $q->where('is_executed', true)->where('in_good_period', false);
+            if ($k === 'shadow') $q->where('is_executed', false);
+            $pills[$k] = ['n' => (clone $q)->count(), 'pl' => (float) (clone $q)->sum('profit_loss')];
+        }
+        $execQ = (clone $this->baseQuery())->where('is_executed', true);
+        $totals = ['n' => (clone $execQ)->count(), 'pl' => (float) (clone $execQ)->sum('profit_loss')];
 
-        // per-result aggregates for the pills: count + summed profit_loss %
-        $agg = (clone $this->baseQuery())
-            ->selectRaw('result, COUNT(*) as n, SUM(profit_loss) as pl')
-            ->groupBy('result')->get()->keyBy('result');
-
-        $totals = [
-            'n' => (int) $agg->sum('n'),
-            'pl' => (float) $agg->sum('pl'),
-        ];
-
-        return view('livewire.trades.index', compact('trades', 'coins', 'rules', 'agg', 'totals'));
+        return view('livewire.trades.index', compact('trades', 'coins', 'rules', 'pills', 'totals'));
     }
 }
