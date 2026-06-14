@@ -18,7 +18,8 @@ rule_list = ",".join(str(r) for r in RULES)
 sym_list = ",".join(str(s) for s in SYMS)
 
 with conn.cursor() as c:
-    c.execute(f"DELETE FROM rules WHERE rule_number IN ({rule_list})")
+    # only re-seed the legacy-seeded rows; keep our tuned-precision subrules (add_tuned_subrules.py)
+    c.execute(f"DELETE FROM rules WHERE rule_number IN ({rule_list}) AND source='legacy-seed'")
     c.execute("DELETE FROM coin_rule_settings")
 
     # subrule definitions

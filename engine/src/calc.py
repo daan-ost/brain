@@ -237,4 +237,9 @@ def subrule_value(subrulename, value_condition, vals, prices):
     if subrulename in ("futureprice", "futureprice_x_rows"):
         return "PASS"
 
+    # any of the 31 window calculations by name (the new tuned subrules from indicator_metrics)
+    if subrulename in WINDOW_METRIC_KEYS:
+        v = window_metrics(vals).get(subrulename)
+        return round(float(v), 5) if v is not None else None
+
     return None  # missingdata, volume_check — handled by the caller via volume.py
