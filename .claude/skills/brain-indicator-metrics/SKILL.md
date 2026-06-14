@@ -20,8 +20,13 @@ The 29 calcs = `engine/src/calc.py` `WINDOW_METRIC_KEYS` (ported from legacy
 diff_lowest/highest_value_period, standard_deviation, volatility, range_percentage,
 consecutive_increases/decreases, reversal_count, average_reversal_size, median_value, skewness,
 count_positive/negative, max_same_value.
-**2nd pass (not yet ported):** sideways, fast_increase, increase_all_indicators, trend_up_and_down,
-profit_change_compared_to_current (cross-indicator / trend logic).
+Plus **sideways_upper / sideways_lower** (checkSideWays band — extremes removed).
+
+**The other "special" Test types are NOT cached, because in legacy they were never implemented:**
+`trend_up_and_down` (empty case), `increase_all_indicators` (0 occurrences),
+`profit_change_compared_to_current` (0 occurrences) — UI radio buttons only. And `fast_increase`
+is a price-only fixed-7-window classifier (the "te snelle stijging" detector) → `calc.fast_increase()`
+for rule-eval, not a per-(indicator,lookback) cache column.
 
 ## Scope (which datetimes)
 

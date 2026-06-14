@@ -90,7 +90,33 @@ WINDOW_METRIC_KEYS = (
     "standard_deviation", "volatility", "range_percentage", "consecutive_increases",
     "consecutive_decreases", "reversal_count", "average_reversal_size", "median_value", "skewness",
     "count_positive", "count_negative", "max_same_value",
+    "sideways_upper", "sideways_lower",                   # checkSideWays band (extremes removed)
 )
+
+
+def fast_increase(prices):
+    """Legacy 'fastincrease' classifier over the first ~7 price points (newest-first). Returns
+    first_diff, or 0.001 (a 'too-fast/choppy' kill marker) — the 'te snelle stijging' detector.
+    Price-only (volumeud), fixed window: NOT a per-lookback cache metric, used at rule-eval time."""
+    if not prices or len(prices) < 2:
+        return 0.0
+    d = [calc_percentage(prices[i], prices[i - 1]) for i in range(1, min(7, len(prices)))]
+    while len(d) < 6:
+        d.append(0.0)
+    first, second, third, fourth, fifth, sixth = d[:6]
+    sap = window_metrics(prices[3:]).get("sum_average_positive_percentage", 0.0) if len(prices) > 3 else 0.0
+    show = first
+    if sap > 0.5 and 2.1 <= first < 5:
+        show = 0.001
+    elif second > 1 or third > 1 or fourth > 1 or fifth > 1 or sixth > 1:
+        show = 0.001
+    if sap > 0.04 and 0.5 < first < 2.1:
+        show = 0.001
+    if first > 5:
+        show = first
+    if first > 1 and second > 1 and (first + second) > 3.5:
+        show = first
+    return show
 
 
 def window_metrics(vals):
@@ -147,6 +173,19 @@ def window_metrics(vals):
         "count_negative": sum(1 for v in vals if v < 0),
         "max_same_value": _max_same_value(vals),
     }
+    # sideways band (checkSideWays): drop current + the single max & min, then % band vs current
+    rest = vals[1:]
+    if len(rest) >= 3:
+        mx, mn = max(rest), min(rest)
+        filt = [v for v in rest if v != mx and v != mn]
+    else:
+        filt = rest
+    if filt:
+        m["sideways_upper"] = calc_percentage(first, max(filt))
+        m["sideways_lower"] = calc_percentage(min(filt), first)
+    else:
+        m["sideways_upper"] = 0.0
+        m["sideways_lower"] = 0.0
     if len(vals) >= 2:
         std = float(np.std(vals, ddof=1))                     # sample std (n-1)
         m["standard_deviation"] = std
