@@ -25,6 +25,7 @@ Some good moments are already caught by rules 20/21/22/23; many are not. If we o
    - `period_datetime_outcomes` — `(id, good_period_id, symbol_id, datetime, selling_price, selling_date, profit_loss, minutes_in_trade, highest_pl, lowest_pl)`. One row per datetime per window.
    - Per-datetime feature values reuse Epic B's store (don't duplicate).
 5. **Screens (Laravel/Livewire, `www`).** Following the WorkMyAgent sidebar pattern already used for `/trades`:
+   - **Day navigator per coin (Daan's ask).** Pick a coin, step through the days (prev/next day, jump to date). Per day: the price graph + everything that happened that day overlaid — which trades fired, which rule, the result, and which promising periods. One screen to *see* a coin's day.
    - **Good periods list** — filter by coin/period; columns: coin, from–to, length, # datetimes, best achievable %, # rule-fires inside.
    - **Period detail** — table of every datetime in the window with the per-datetime sell outcome (profit_loss, sell datetime) and whether a rule fired there.
 6. **Graph.** A price chart over the window with the per-datetime result overlaid: price line + a colored band/heat showing the sell-outcome % per entry datetime, and markers where rules fired. So you can *see* where the good entry moments are and where the current rules catch vs miss them.

@@ -96,33 +96,42 @@ def asof_window(ind, T, n):
 
 
 # ---- in-scope datetimes + context ----
+# Each datetime carries flags: is the moment a promising best-entry (good ground truth),
+# is it inside any promising period, and is it a rule-fire (with result). `in_good_period`
+# is the automatable label Daan wants: good = inside a promising period, bad = outside.
+def _ctx():
+    return dict(is_best_entry=0, in_good_period=0, period_upside=None, rule_fire=0, result=0)
+
+
 ctx = {}   # datetime -> context dict
+period_spans = []
 if MODE == "full":
     eng = PromisingEngine(SYM, "asc", conn=src)
     periods, _, _ = scan_periods(eng, FROM, TO, GAP)
-    vdt = eng.DT
     for per in periods:
-        upside = best_entry(per)[1]
-        a, b = per[0][0], per[-1][0]
-        lo = bisect.bisect_left(vdt, a); hi = bisect.bisect_right(vdt, b)
-        for j in range(lo, hi):
-            T = vdt[j]
-            c = ctx.setdefault(T, dict(in_good_period=0, period_upside=None, rule_fire=0, result=0))
-            c["in_good_period"] = 1
-            c["period_upside"] = float(upside)
+        be = best_entry(per)                       # (dt, highest, lowest_10, highest_dt)
+        period_spans.append((per[0][0], per[-1][0]))
+        c = ctx.setdefault(be[0], _ctx())
+        c["is_best_entry"] = 1
+        c["in_good_period"] = 1
+        c["period_upside"] = float(be[1])
 
 for t in sq("SELECT datetime, rule, result FROM wp_trading_simulation "
             "WHERE trading_symbol_id=%s AND rule IN (20,21,22,23) AND datetime>=%s AND datetime<%s",
             (SYM, _from_sql, _to_sql)):
-    c = ctx.setdefault(t["datetime"], dict(in_good_period=0, period_upside=None, rule_fire=0, result=0))
+    c = ctx.setdefault(t["datetime"], _ctx())
     c["rule_fire"] = int(t["rule"])
     c["result"] = int(t["result"]) if t["result"] is not None else 0
+    # mark whether this fire lands inside a promising period (the automatable good/bad label)
+    if any(a <= t["datetime"] <= b for a, b in period_spans):
+        c["in_good_period"] = 1
 
 datetimes = sorted(ctx)
-print(f"=== feature_store — symbol {SYM}, {FROM or 'start'}..{TO or 'end'} ===")
+print(f"=== feature_store — symbol {SYM}, {FROM or 'start'}..{TO or 'end'} ({MODE}) ===")
 print(f"in-scope datetimes: {len(datetimes)}  "
-      f"({sum(c['in_good_period'] for c in ctx.values())} in good periods, "
-      f"{sum(c['rule_fire']>0 for c in ctx.values())} rule-fires)")
+      f"({sum(c['is_best_entry'] for c in ctx.values())} promising best-entries, "
+      f"{sum(c['rule_fire']>0 for c in ctx.values())} rule-fires, "
+      f"{sum(c['rule_fire']>0 and not c['in_good_period'] for c in ctx.values())} fires OUTSIDE promising)")
 
 # ---- compute features (long) ----
 rows = []
@@ -142,9 +151,9 @@ for T in datetimes:
 
 feat = pd.DataFrame(rows, columns=["symbol", "datetime", "indicator", "lookback", "metric", "value"])
 context = pd.DataFrame(
-    [(SYM, T, c["in_good_period"], c["period_upside"], c["rule_fire"], c["result"])
+    [(SYM, T, c["is_best_entry"], c["in_good_period"], c["period_upside"], c["rule_fire"], c["result"])
      for T, c in sorted(ctx.items())],
-    columns=["symbol", "datetime", "in_good_period", "period_upside", "rule_fire", "result"])
+    columns=["symbol", "datetime", "is_best_entry", "in_good_period", "period_upside", "rule_fire", "result"])
 
 tag = (FROM or "start").replace(" ", "_").replace(":", "")[:10]
 fpath = os.path.join(OUT, f"features_{SYM}_{tag}.parquet")
