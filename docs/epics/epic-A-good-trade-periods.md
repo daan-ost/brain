@@ -1,7 +1,7 @@
 # EPIC A: Good trade-period discovery + per-datetime outcome store + explorer
 
 **Phase:** 0 — Foundation (build now)
-**Status:** Planned
+**Status:** Day-navigator built — periods + fires persisted to brain DB (`persist_to_brain.py`), `/coin-explorer` screen with price chart + promising bands + rule-fire markers + good/bad. Remaining: per-datetime sell-outcome (depends on Epic S), good-periods list/detail screens.
 **Depends on:** E02 (the entry-quality definition), the sell engine (`validate_sell.py`)
 **Refines:** E02 (labeling) + methodology/feature-store.md — this is the concrete, buildable version with screens.
 

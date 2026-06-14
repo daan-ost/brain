@@ -26,8 +26,13 @@
             </a>
             <a href="{{ route('trades.index') }}"
                class="flex items-center gap-3 rounded-lg px-3 py-2 transition
-                      {{ request()->routeIs('trades.*') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
-                <span class="w-2 h-2 rounded-full {{ request()->routeIs('trades.*') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Trades
+                      {{ request()->routeIs('trades.index') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
+                <span class="w-2 h-2 rounded-full {{ request()->routeIs('trades.index') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Trades
+            </a>
+            <a href="{{ route('trades.explorer') }}"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 transition
+                      {{ request()->routeIs('trades.explorer') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
+                <span class="w-2 h-2 rounded-full {{ request()->routeIs('trades.explorer') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Coin explorer
             </a>
             <a href="{{ route('engine.index') }}"
                class="flex items-center gap-3 rounded-lg px-3 py-2 transition
@@ -57,6 +62,9 @@
         </main>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     @livewireScripts
+    @stack('scripts')
 </body>
 </html>
