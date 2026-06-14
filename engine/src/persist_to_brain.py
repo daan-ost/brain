@@ -9,9 +9,8 @@ Usage: persist_to_brain.py [symbol_id] [from] [to] [gap_minutes]
 """
 import sys
 
-import pymysql
-
 from config import CLUSTER_GAP_MINUTES
+from db import brain, legacy
 from promising import PromisingEngine
 from cluster_promising import scan_periods, best_entry
 
@@ -20,10 +19,10 @@ FROM = sys.argv[2] if len(sys.argv) > 2 else None
 TO = sys.argv[3] if len(sys.argv) > 3 else None
 GAP = int(sys.argv[4]) if len(sys.argv) > 4 else CLUSTER_GAP_MINUTES
 
-src = pymysql.connect(host="127.0.0.1", port=8889, user="root", password="root",
-                      database="bot_signals", cursorclass=pymysql.cursors.DictCursor)
-dst = pymysql.connect(host="127.0.0.1", port=8889, user="root", password="root",
-                      database="brain", cursorclass=pymysql.cursors.DictCursor, autocommit=False)
+# brain = our store (write). legacy = OFFLINE reference only (the recorded trades + result label).
+src = legacy()
+dst = brain()
+dst.autocommit(False)
 
 
 def rd(sql, args=()):
@@ -31,14 +30,17 @@ def rd(sql, args=()):
         c.execute(sql, args); return c.fetchall()
 
 
-sym_row = rd("SELECT symbol FROM wp_trading_symbols WHERE ID=%s", (SYM,))
-SYMBOL = sym_row[0]["symbol"] if sym_row else str(SYM)
+_coin = None
+with dst.cursor() as c:
+    c.execute("SELECT symbol FROM coins WHERE id=%s", (SYM,))
+    _coin = c.fetchone()
+SYMBOL = _coin["symbol"] if _coin else str(SYM)
 _from_sql = FROM or "1970-01-01"
 _to_sql = TO or "2099-01-01"
 LABEL = f"promising_v1_gap{GAP}"
 
-# --- compute periods ---
-eng = PromisingEngine(SYM, "asc", conn=src)
+# --- compute periods (promising reads brain.indicators) ---
+eng = PromisingEngine(SYM, "asc")
 periods, _, _ = scan_periods(eng, FROM, TO, GAP)
 
 # --- clear + insert ---

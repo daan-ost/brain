@@ -50,12 +50,12 @@ def calc_percentage(frm, to, rounding=2):
 
 
 def connect():
-    return pymysql.connect(host="127.0.0.1", port=8889, user="root", password="root",
-                           database="bot_signals", cursorclass=pymysql.cursors.DictCursor)
+    from db import brain
+    return brain()
 
 
 class PromisingEngine:
-    """Loads a symbol's volumeud price series once; evaluates promising() per entry."""
+    """Loads a symbol's volumeud price series once (from brain.indicators); evaluates per entry."""
 
     def __init__(self, symbol, order="asc", profile=PROFILE, conn=None):
         self.symbol = symbol
@@ -65,7 +65,7 @@ class PromisingEngine:
         self._own = conn is None
         self.conn = conn or connect()
         with self.conn.cursor() as c:
-            c.execute("SELECT datetime, price FROM wp_trading_indicator "
+            c.execute("SELECT datetime, price FROM indicators "
                       "WHERE trading_symbol_id=%s AND indicator='volumeud' AND price IS NOT NULL "
                       "ORDER BY datetime", (symbol,))
             rows = c.fetchall()
@@ -145,11 +145,14 @@ def good_label(p):
 
 
 def _validate(symbol, order):
-    eng = PromisingEngine(symbol, order)
-    with eng.conn.cursor() as c:
+    from db import legacy
+    eng = PromisingEngine(symbol, order)        # indicators from brain
+    leg = legacy()                              # labels from legacy (offline validation reference)
+    with leg.cursor() as c:
         c.execute("SELECT ID, datetime, profit_loss, result FROM wp_trading_simulation "
                   "WHERE trading_symbol_id=%s AND result IN (1,3) ORDER BY datetime", (symbol,))
         trades = c.fetchall()
+    leg.close()
     tp = tn = fp = fn = verdict_agree = 0
     for t in trades:
         p = eng.promising(t["datetime"])

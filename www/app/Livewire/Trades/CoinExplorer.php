@@ -181,7 +181,8 @@ class CoinExplorer extends Component
     /** Downsampled volumeud price between two datetimes, from the read-only source. */
     private function priceBetween($from, $to, int $cap = 400): array
     {
-        $rows = DB::connection('bot_signals')->table('wp_trading_indicator')
+        // price comes from brain.indicators (the imported series) — screens read only brain
+        $rows = DB::table('indicators')
             ->select('datetime', 'price')->where('trading_symbol_id', $this->coin)
             ->where('indicator', 'volumeud')->whereNotNull('price')
             ->whereBetween('datetime', [$from, $to])->orderBy('datetime')->get();

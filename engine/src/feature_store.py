@@ -105,7 +105,7 @@ def _ctx():
 
 
 ctx = {}   # datetime -> context dict
-eng = PromisingEngine(SYM, "asc", conn=src)
+eng = PromisingEngine(SYM, "asc")
 if MODE == "full":
     periods, _, _ = scan_periods(eng, FROM, TO, GAP)
     for per in periods:

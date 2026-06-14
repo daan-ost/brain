@@ -112,7 +112,7 @@ def fire_at(subrules, min_volume, vol_settings, T):
 
 
 # promising periods
-eng = PromisingEngine(SYM, "asc", conn=src)
+eng = PromisingEngine(SYM, "asc")
 periods, moments, _ = scan_periods(eng, FROM, TO, GAP)
 period_spans = [(p[0][0] - timedelta(minutes=5), p[-1][0] + timedelta(minutes=5)) for p in periods]
 
