@@ -22,26 +22,135 @@ def calc_percentage(frm, to):
     return -perc if frm > to else perc
 
 
+# ---- helpers ported from legacy functions_br.php ----
+def _count_reversals(arr):                                   # count_reversals (8000)
+    count = 0; prev = None; trend = None
+    for v in arr:
+        if prev is None:
+            prev = v; continue
+        if v > prev:
+            if trend == "down":
+                count += 1
+            trend = "up"
+        elif v < prev:
+            if trend == "up":
+                count += 1
+            trend = "down"
+        prev = v
+    return count
+
+
+def _consecutive(arr, direction):                            # count_consecutive_changes (8052) — max run
+    maxc = cur = 0; prev = None
+    for v in arr:
+        if prev is None:
+            prev = v; continue
+        if (direction == "up" and v > prev) or (direction == "down" and v < prev):
+            cur += 1
+        else:
+            maxc = max(maxc, cur); cur = 0
+        prev = v
+    return max(maxc, cur)
+
+
+def _avg_reversal_size(arr):                                 # calculate_average_reversal_size (7960)
+    count = 0; total = 0.0; prev = None; trend = None
+    for v in arr:
+        if prev is None:
+            prev = v; continue
+        if v > prev:
+            if trend == "down":
+                count += 1; total += abs(v - prev)
+            trend = "up"
+        elif v < prev:
+            if trend == "up":
+                count += 1; total += abs(v - prev)
+            trend = "down"
+        prev = v
+    return total / count if count else 0.0
+
+
+def _max_same_value(arr, margin=0.01):                       # highest_occurrences_within_margin (1% margin)
+    best = 0
+    for a in arr:
+        tol = abs(a) * margin if a else margin
+        c = sum(1 for b in arr if abs(b - a) <= tol)
+        best = max(best, c)
+    return best
+
+
+# the full per-window calculation set ("Test types"), ported from calc_abs_diff_percentage (7709).
+# Excludes the cross-indicator/trend specials (sideways, fast_increase, increase_all_indicators,
+# trend_up_and_down, profit_change_compared_to_current) — those need multi-series/trend logic.
+WINDOW_METRIC_KEYS = (
+    "current_value", "first_value", "last_value", "diff_previous_value", "diff_previous_number",
+    "max_diff_number", "max_diff_percentage", "diff_number_prev_max", "diff_number_prev_min",
+    "diff_percentage_prev_max", "diff_percentage_prev_min", "sum_average_positive_percentage",
+    "lowest_value", "highest_value", "sum_value", "diff_lowest_value_period", "diff_highest_value_period",
+    "standard_deviation", "volatility", "range_percentage", "consecutive_increases",
+    "consecutive_decreases", "reversal_count", "average_reversal_size", "median_value", "skewness",
+    "count_positive", "count_negative", "max_same_value",
+)
+
+
 def window_metrics(vals):
-    """Compute the shared metric-set over a newest-first list of floats."""
+    """All per-window calculations over a newest-first list of floats (vals[0] = current)."""
     if not vals:
         return {}
-    first, last = vals[0], vals[-1]          # first = newest, last = oldest
+    first, last = vals[0], vals[-1]                          # first = newest/current, last = oldest
     lowv, highv, sumv = min(vals), max(vals), sum(vals)
+
+    # consecutive previous-value diffs (legacy loops newest -> oldest)
+    dnum_max = dnum_min = dpct_max = dpct_min = 0.0
+    sum_pos_pct = 0.0; n_pairs = 0
+    for i in range(1, len(vals)):
+        cur, prev = vals[i], vals[i - 1]
+        dn = cur - prev
+        dp = calc_percentage(cur, prev)
+        n_pairs += 1
+        if dn > dnum_max:
+            dnum_max = dn
+        if dn < dnum_min:
+            dnum_min = dn
+        if dp >= 0:
+            sum_pos_pct += dp
+            if dp > dpct_max:
+                dpct_max = dp
+        elif dp < dpct_min:
+            dpct_min = dp
+
     m = {
+        "current_value": first,
         "first_value": first,
         "last_value": last,
-        "diff_previous_number": first - last,                 # change over the window (newest - oldest)
-        "max_diff_number": max(abs(v - first) for v in vals),  # largest abs deviation from newest
+        "diff_previous_value": calc_percentage(last, first),  # % change oldest -> newest
+        "diff_previous_number": first - last,
+        "max_diff_number": max(abs(v - first) for v in vals),
+        "max_diff_percentage": max(abs(calc_percentage(first, v)) for v in vals) if first else 0.0,
+        "diff_number_prev_max": dnum_max,
+        "diff_number_prev_min": dnum_min,
+        "diff_percentage_prev_max": dpct_max,
+        "diff_percentage_prev_min": dpct_min,
+        "sum_average_positive_percentage": round(sum_pos_pct / n_pairs, 2) if n_pairs else 0.0,
         "lowest_value": lowv,
         "highest_value": highv,
+        "sum_value": sumv,
+        "diff_lowest_value_period": first - lowv,
+        "diff_highest_value_period": first - highv,
         "range_percentage": (abs(highv - lowv) / sumv * 100) if (highv != lowv and sumv != 0) else 0.0,
+        "consecutive_increases": _consecutive(vals, "up"),
+        "consecutive_decreases": _consecutive(vals, "down"),
+        "reversal_count": _count_reversals(vals),
+        "average_reversal_size": _avg_reversal_size(vals),
+        "median_value": float(np.median(vals)),
+        "count_positive": sum(1 for v in vals if v > 0),
+        "count_negative": sum(1 for v in vals if v < 0),
+        "max_same_value": _max_same_value(vals),
     }
     if len(vals) >= 2:
-        std = float(np.std(vals, ddof=1))                      # sample std (n-1)
+        std = float(np.std(vals, ddof=1))                     # sample std (n-1)
         m["standard_deviation"] = std
         m["volatility"] = std / first if first > 0 and std > 0 else 0.0
-        # population skew (/n); 0 when values are (near-)identical to avoid NaN/precision noise
         m["skewness"] = float(stats.skew(vals, bias=True)) if float(np.std(vals)) > 1e-12 else 0.0
     else:
         m.update(standard_deviation=0.0, volatility=0.0, skewness=0.0)
