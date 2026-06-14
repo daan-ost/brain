@@ -203,6 +203,57 @@ def full_validation(long, rule, ind, lb, calc, bound):
     return res
 
 
+def load_executed_fires():
+    """All executed fires (both coins) with rule + class — the substrate for RQ3 redundancy."""
+    conn = brain()
+    with conn.cursor() as c:
+        c.execute("SELECT trading_symbol_id AS sym, datetime, rule, best_upside "
+                  "FROM coin_fires WHERE is_executed=1 AND best_upside IS NOT NULL")
+        df = pd.DataFrame(c.fetchall())
+    conn.close()
+    df["cls"] = df["best_upside"].apply(_cls)
+    return df
+
+
+def rule_overlap(tol_minutes=3, fires=None):
+    """RQ3 — for each ordered rule pair (X,Y), the fraction of X's GOOD trades that are also
+    caught by Y (a GOOD Y-fire at the same datetime +/- tol_minutes, same coin). Plus, per rule,
+    the fraction of its good trades covered by the UNION of all OTHER rules. A rule whose good
+    trades are ~fully covered by others is a drop candidate. Read-only, exact (no cache)."""
+    if fires is None:
+        fires = load_executed_fires()
+    good = fires[fires["cls"] == "goed"].copy()
+    tol = pd.Timedelta(minutes=tol_minutes)
+    rules = sorted(good["rule"].unique())
+    pair_rows, union_rows = [], []
+    for X in rules:
+        gx = good[good["rule"] == X]
+        if gx.empty:
+            continue
+        covered_union = 0
+        for _, r in gx.iterrows():
+            others = good[(good["rule"] != X) & (good["sym"] == r["sym"]) &
+                          (good["datetime"] >= r["datetime"] - tol) &
+                          (good["datetime"] <= r["datetime"] + tol)]
+            if not others.empty:
+                covered_union += 1
+        union_rows.append({"rule": X, "n_good": len(gx), "covered_by_others": covered_union,
+                           "pct_covered": round(covered_union / len(gx) * 100, 1)})
+        for Y in rules:
+            if Y == X:
+                continue
+            gy = good[good["rule"] == Y]
+            cov = 0
+            for _, r in gx.iterrows():
+                m = gy[(gy["sym"] == r["sym"]) & (gy["datetime"] >= r["datetime"] - tol) &
+                       (gy["datetime"] <= r["datetime"] + tol)]
+                if not m.empty:
+                    cov += 1
+            pair_rows.append({"X": X, "Y": Y, "n_good_X": len(gx), "covered_by_Y": cov,
+                              "pct": round(cov / len(gx) * 100, 1)})
+    return pd.DataFrame(pair_rows), pd.DataFrame(union_rows)
+
+
 if __name__ == "__main__":
     # 1) unit-test the bad-edge placement against the brain-rule-tuning worked example:
     #    good lower bound -20; the highest bad below it is -30 -> lower bound at -30 (not -20),

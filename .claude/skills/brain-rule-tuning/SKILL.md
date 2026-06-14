@@ -45,4 +45,16 @@ overlap/adjacent) → no clean threshold → don't use that feature.
 3. Add at most one or two SAFE conditions per rule to `brain.rules`; re-run `persist_to_brain` +
    `build_indicator_metrics`; re-measure the per-rule good/bad ratio.
 
+## When no single safe condition exists: a PAIR (`combo_subrules.py`)
+
+Some rules (e.g. rule 20) have NO single feature with a clean good/bad gap that drops bad
+out-of-sample. Then search a **pair** of bad-edge conditions, AND'd together. Because each keeps
+~100% of good (bad-edge buffer), the pair keeps good while dropping the UNION of bad each catches.
+`combo_subrules.py [rule] [topK] [min_drop]` ranks pairs by out-of-sample good_keep (must be ≥0.99)
+then bad dropped. A pair costs two subrules — only use it when no single condition works (it beat
+principle 1 here because rule 20 had no single safe option). Worked: rule 20 vzo skewness lb13
+≤1.4173 AND mfi diff_number_prev_min lb17 ≥−22.3 → 1.42→1.68, 0 good lost.
+
+Live record of every added condition: `add_tuned_subrules.py` (source='tuned-precision', idempotent).
+
 Related: [[brain-indicator-metrics]] (the calc cache), [[brain-engine]] (rule evaluation).
