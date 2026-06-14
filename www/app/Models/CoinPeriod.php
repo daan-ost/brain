@@ -17,6 +17,7 @@ class CoinPeriod extends Model
         'period_from' => 'datetime',
         'period_to' => 'datetime',
         'best_entry' => 'datetime',
+        'peak_datetime' => 'datetime',
         'best_upside' => 'float',
         'best_lowest10' => 'float',
     ];

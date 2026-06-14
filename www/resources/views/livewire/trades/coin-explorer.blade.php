@@ -1,4 +1,4 @@
-<div class="p-6 text-slate-200">
+<div class="p-6 text-slate-200 bg-slate-950 min-h-screen">
     <div class="flex flex-wrap items-center gap-3 mb-5">
         <h1 class="text-xl font-semibold text-white mr-2">Coin explorer</h1>
 
@@ -192,12 +192,17 @@ function zoomChart(d) {
         init() {
             __ann();
             const m = d.markers || {}, ann = {};
-            if (m.pfrom && m.pto) ann.band = { type: 'box', xMin: m.pfrom, xMax: m.pto, backgroundColor: 'rgba(16,185,129,0.12)', borderWidth: 0 };
-            const line = (x, color, txt) => ({ type: 'line', xMin: x, xMax: x, borderColor: color, borderWidth: 1.5,
-                label: { display: true, content: txt, position: 'start', backgroundColor: color, color: '#fff', font: { size: 9 }, padding: 2 } });
+            if (m.pfrom && m.pto) ann.band = { type: 'box', xMin: m.pfrom, xMax: m.pto,
+                backgroundColor: 'rgba(16,185,129,0.10)', borderColor: 'rgba(16,185,129,0.35)', borderWidth: 1 };
+            const line = (x, color, txt, pos) => ({ type: 'line', xMin: x, xMax: x, borderColor: color, borderWidth: 1.5,
+                label: { display: true, content: txt, position: pos || 'start', backgroundColor: color, color: '#fff', font: { size: 9 }, padding: 2 } });
+            // promising markers (shown on both period and fire detail when in a period)
+            if (m.pbest) ann.pbest = line(m.pbest, 'rgba(16,185,129,0.95)', 'beste instap', 'end');
+            if (m.peak) ann.peak = line(m.peak, 'rgba(251,191,36,0.95)', 'piek / verkoop', 'end');
+            // trade markers
             if (m.buy) ann.buy = line(m.buy, 'rgba(56,189,248,0.95)', 'koop');
             if (m.sell) ann.sell = line(m.sell, 'rgba(244,63,94,0.95)', 'verkoop');
-            if (m.best) ann.best = line(m.best, 'rgba(16,185,129,0.95)', 'best');
+            if (m.best) ann.best = line(m.best, 'rgba(132,204,22,0.9)', 'best (legacy)');
             this.chart = new Chart(this.$refs.zv, {
                 type: 'line',
                 data: { datasets: [{ data: d.price, borderColor: 'rgba(148,163,184,0.95)', borderWidth: 1.3, pointRadius: 0, tension: 0.1, parsing: false }] },

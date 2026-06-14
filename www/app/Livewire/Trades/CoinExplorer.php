@@ -139,6 +139,13 @@ class CoinExplorer extends Component
             $markers = ['buy' => $f->datetime->getTimestampMs()];
             if ($leg && $leg->selling_date) $markers['sell'] = Carbon::parse($leg->selling_date)->getTimestampMs();
             if ($leg && $leg->datetime_best) $markers['best'] = Carbon::parse($leg->datetime_best)->getTimestampMs();
+            // overlay the promising period this fire belongs to (if any): band + best entry + peak
+            if ($f->period_id && ($per = CoinPeriod::find($f->period_id))) {
+                $markers['pfrom'] = $per->period_from->getTimestampMs();
+                $markers['pto'] = $per->period_to->getTimestampMs();
+                $markers['pbest'] = $per->best_entry->getTimestampMs();
+                if ($per->peak_datetime) $markers['peak'] = $per->peak_datetime->getTimestampMs();
+            }
             return [
                 'type' => 'fire', 'id' => $f->id, 'title' => "Trade · rule {$f->rule} · {$f->datetime->format('d M H:i:s')}",
                 'price' => $this->priceBetween($from, $to),
@@ -163,13 +170,18 @@ class CoinExplorer extends Component
         }
         $from = (clone $p->period_from)->subMinutes(5);
         $to = (clone $p->period_to)->addMinutes(5);
+        $markers = ['pbest' => $p->best_entry->getTimestampMs(),
+                    'pfrom' => $p->period_from->getTimestampMs(), 'pto' => $p->period_to->getTimestampMs()];
+        if ($p->peak_datetime) {
+            $markers['peak'] = $p->peak_datetime->getTimestampMs();
+        }
         return [
             'type' => 'period', 'id' => $p->id, 'title' => "Promising · {$p->best_entry->format('d M H:i:s')}",
             'price' => $this->priceBetween($from, $to),
-            'markers' => ['best' => $p->best_entry->getTimestampMs(),
-                          'pfrom' => $p->period_from->getTimestampMs(), 'pto' => $p->period_to->getTimestampMs()],
+            'markers' => $markers,
             'stats' => array_filter([
                 'beste instap' => $p->best_entry->format('H:i:s'),
+                'piek / verkoop' => $p->peak_datetime?->format('H:i:s'),
                 'upside %' => $p->best_upside,
                 'vroege dip %' => $p->best_lowest10,
                 'momenten' => $p->n_moments,

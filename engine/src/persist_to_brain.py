@@ -51,10 +51,10 @@ with dst.cursor() as c:
         be = best_entry(per)   # (dt, highest, lowest_10, highest_dt)
         c.execute(
             "INSERT INTO coin_periods (trading_symbol_id, symbol, period_from, period_to, best_entry, "
-            "best_upside, best_lowest10, n_moments, gap_minutes, label_version, created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
+            "best_upside, best_lowest10, peak_datetime, n_moments, gap_minutes, label_version, created_at, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
             (SYM, SYMBOL, per[0][0], per[-1][0], be[0], round(be[1], 3), round(be[2], 3),
-             len(per), GAP, LABEL))
+             be[3], len(per), GAP, LABEL))
         spans.append((per[0][0], per[-1][0], c.lastrowid))
 
 
