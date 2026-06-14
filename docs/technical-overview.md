@@ -66,6 +66,7 @@
 ## Reference data points
 
 - **DOGEAI** = `trading_symbol_id` 2525, 5m. First slice: around 25 Feb 2025.
+- **NOS** = `trading_symbol_id` 244, 5m (`stoploss_multiplier` 0.9996, `roundingup` 5). Second slice: 16 Nov 2023 → 14 Jan 2024 (data starts 16 Nov; high volatility; 152 good / 119 bad trades).
 - The "20 lookbacks": per datetime × indicator, compute `window_metrics` for lookback 1..20 (legacy `save_cache_values`, `functions_br.php:9013`). The substrate for new-rule discovery + ML — see [methodology/feature-store.md](methodology/feature-store.md) and epics A & B.
 
 ## Methodology docs

@@ -24,8 +24,10 @@ description: The legacy bot_signals (read-only) MySQL schema — tables, key col
 
 ## Key IDs & values
 
-- **DOGEAI** = `trading_symbol_id` 2525, 5-minute candles.
+- **DOGEAI** = `trading_symbol_id` 2525, 5-minute candles (slice 1).
+- **NOS** = `trading_symbol_id` 244, 5m, `stoploss_multiplier` 0.9996, `roundingup` 5 (slice 2, window 16 Nov 2023 → 14 Jan 2024; data starts 16 Nov).
 - Buy rules in scope: **20, 21, 22, 23**. Deferred: 10, 11, 12, 18.
+- **Good-moment / "interesting" routine:** `find_promising_trades()` at `legacy/managesignal/functions_br.php:8719`; tuned settings at `simulate_buy.php:1550`; auto-labeler (`result=1`) at `save_subrule.php`. See brain docs/findings/good-moment-defaults.md.
 - Sell rule: **101** (`wp_trading_rules WHERE rule_number=101`).
 - `stoploss_multiplier` 0.9996, `roundingup` 16 (DOGEAI).
 

@@ -46,8 +46,9 @@ Some good moments are already caught by rules 20/21/22/23; many are not. If we o
 
 ## Decided
 
-- **Good-period defaults:** `min_upside` 5%, `max_drawdown` 1%, horizons 5/10/15/20/45 min — data-grounded, see findings/good-moment-defaults.md (awaiting final confirm on 5% vs 4%).
-- **Rule set is fixed:** buy rules 20/21/22/23 only; 10/11/12/18 stay out of scope. No need to enumerate other rules.
+- **Good-moment definition is code-authoritative** — the owner's own `find_promising_trades()` (`functions_br.php:8719`). Peak upside > 5%, early-dip `lowest_10` > −0.1%, 180-min forward window with 15-min checkpoints, early-gain gate 2%. See findings/good-moment-defaults.md. (Supersedes the earlier `max_drawdown 1%` guess.) Epic A ports this routine as the window-marker.
+- **Rule set is fixed:** buy rules 20/21/22/23 only; 10/11/12/18 stay out of scope.
+- **Coins:** slice 1 = DOGEAI (2525). Slice 2 = **NOS = `trading_symbol_id` 244**, 5m, `stoploss_multiplier` 0.9996, `roundingup` 5. Target window 1 Nov 2023 → 15 Jan 2024, but indicator data starts **16 Nov 2023**, so effective window = **16 Nov 2023 → 14 Jan 2024** (29,212 volumeud rows; 500 trades, 152 good / 119 slecht; all 5 base indicators present). Proves the finder/store are coin-parameterized (append, not rebuild).
 
 ## Open questions (for Daan)
 

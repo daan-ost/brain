@@ -63,19 +63,25 @@ The model can never beat its labels. Today's labels are manual and a bit inconsi
 
 - Exit-timing modeling (E09). This epic only *defines* quality via the available path; it does not optimize selling.
 
-## Proposed defaults (data-grounded — see findings/good-moment-defaults.md)
+## The definition — CODE-AUTHORITATIVE (see findings/good-moment-defaults.md)
 
-Read from DOGEAI's own 78 good / 312 bad hand-labels:
+Recovered from the owner's own fine-tuned routine `find_promising_trades()` (`functions_br.php:8719`) and the auto-labeler (`save_subrule.php`). This is not a guess — it is the method the owner actually used.
 
-| Knob | Proposed | Why |
+**The "good" auto-label:** `result = 1` when `profit_loss > 2%` AND `percentage_highest > 5%` AND `lowest_10 > −0.1%`.
+
+For **entry-quality** (sell-independent, what this epic needs) drop the realised-profit term and use the available-upside view:
+
+| Knob | Value | Meaning |
 |---|---|---|
-| `min_upside` | **5%** | p25 of good trades; bad trades essentially never reach it (best bad +4.88%) |
-| `max_drawdown` | **1%** | catches 75/78 good trades; equals the sell-floor (internal consistency) |
-| `horizons` | **5 / 10 / 15 / 20 / 45 min** | stacked — did it reach +5% within any window? |
+| peak upside (`percentage_highest`) | **> 5%** | highest price in window vs entry |
+| early-dip gate (`lowest_10`) | **> −0.1%** | barely dipped first (first ~10 ticks) — "only rises" |
+| forward window | **180 min**, 15-min checkpoints | per `find_promising_trades` |
+| early-gain gate (`first_15_above`) | **2%** | 5-min-rule profile |
+| checkpoint floor (`check_number_verdict`) | **2%** | 5-min-rule profile |
 
-Status: proposed, awaiting Daan's final confirm. Calibration vs the hand-labels is the acceptance test.
+Note: the earlier `max_drawdown 1%` guess was wrong — the real early-dip gate is ~−0.1% (much tighter). Calibration vs the 78 good / 312 bad hand-labels remains the acceptance test.
 
 ## Open questions (for Daan)
 
-- Confirm `min_upside` = 5% (vs 4%, which catches a few more good trades but admits near-miss bad ones).
+- Faithful rebuild uses count-fraction checkpoints (`count/12`) like legacy, or true time-windows? (Default: faithful first.)
 - Do you want to review the auto-labels on a sample before we train on them?
