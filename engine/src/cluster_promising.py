@@ -54,8 +54,9 @@ def scan_periods(eng, frm=None, to=None, gap_minutes=CLUSTER_GAP_MINUTES):
 
 
 def best_entry(period):
-    """Best entry in a period = max available upside, ties broken by earliest."""
-    return max(period, key=lambda m: (m[1], -m[0].timestamp()))
+    """Best entry = the EARLIEST promising moment (the start of the move) — you enter early to
+    ride the whole climb, not near the top. `period` is ascending, so that's period[0]."""
+    return period[0]
 
 
 if __name__ != "__main__":

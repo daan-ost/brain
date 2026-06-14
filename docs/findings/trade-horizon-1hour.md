@@ -67,10 +67,29 @@ Re-validation at UPSIDE=15 (vs labels): DOGEAI precision 0.98 / recall 0.60; NOS
 on slower coins (NOS). **15 min is a starting point; the upside horizon + the extra gates
 ("niet te snel" rate cap, minimum duration) are the next tuning, likely per-coin.**
 
-## Still open on the promising definition (Daan's criteria, to implement/tune)
-- `UPSIDE_MINUTES`: 15 vs 20 vs 30 (recall vs shortness), likely per-coin.
-- **"niet te snel"** — cap the initial rate so an unexecutable vertical spike isn't promising.
-- **minimum duration** — the move must sustain ≥ N min, not a 1-tick spike that reverts.
+## Refinement (2026-06-14c): per-coin upside + duration gate + clean criteria
+
+Calibrated on the good trades:
+- **Per-coin `UPSIDE_MINUTES`** from each coin's p90 time-to-+5%: DOGEAI fast → 25 min, NOS slow
+  → 45 min (default 30). DOGEAI good trades reach +5% in ~11 min median; NOS ~24 min.
+- **Duration gate** (`MIN_DURATION_MINUTES=10`): the move must stay above entry (within −0.3%)
+  ≥10 min. Strong separator — good trades sustain ~56 min, bad collapse in ~4-9 min; at 10 min
+  it keeps ~71-81% good and drops ~52-70% bad. ("minstens een bepaalde duur")
+- **"niet te snel" dropped** — the first-60s rise is ~0% for all trades (entries sit at the
+  bottom before the move), so it carries no signal here.
+
+The promising verdict is now the **clean 3-criteria definition** (legacy checkpoint logic removed):
+`highest ≥ MIN_UPSIDE(5%)` within the per-coin upside window, `lowest_10 ≥ MAX_EARLY_DIP(−0.1%)`,
+and `duration ≥ MIN_DURATION(10 min)`. **Best entry = the EARLIEST promising moment** (enter at
+the start of the move, not near the top).
+
+Re-validation (verdict vs labels): DOGEAI precision **0.982** / recall 0.705; NOS precision 0.771
+/ recall 0.372. 15 Feb: clean short periods, each with an early best entry (e.g. the 01:17→02:47
+climb now has best entry 01:17, not 02:20). DOGEAI 534 periods / 66 good fires; NOS 513 / 32.
+
+### Still open / to tune
+- NOS recall (0.37) — slow coin; revisit the per-coin upside or accept it.
+- Whether a long continuous climb (e.g. 90 min) should split into sub-moves (currently one period).
 
 ## Still to align
 

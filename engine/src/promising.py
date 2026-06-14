@@ -21,13 +21,14 @@ from datetime import timedelta
 
 import pymysql
 
-from config import UPSIDE_MINUTES
+from config import (FORWARD_MINUTES, MIN_DURATION_MINUTES, DROP_BELOW_PCT,
+                    MIN_UPSIDE_PCT, MAX_EARLY_DIP_PCT, upside_minutes)
 
 # 5-min-rule profile (rules 20/21/22/23) — simulate_buy.php:1550
 PROFILE = dict(
     setting_percentage_highest=3,   # peak over window must exceed
     check_number_verdict=2,         # some checkpoint must exceed
-    period_length=UPSIDE_MINUTES,   # checkpoints up to the short upside horizon
+    period_length=30,               # checkpoint gating (overridden per-coin by self.upside)
     first_15_above=2,               # early checkpoint gate
     max_lowest=-0.1,                # early-dip gate (strict save mode)
 )
@@ -59,6 +60,7 @@ class PromisingEngine:
     def __init__(self, symbol, order="asc", profile=PROFILE, conn=None):
         self.symbol = symbol
         self.order = order
+        self.upside = upside_minutes(symbol)         # per-coin upside horizon (minutes)
         self.profile = profile
         self._own = conn is None
         self.conn = conn or connect()
@@ -75,20 +77,24 @@ class PromisingEngine:
             self.conn.close()
 
     def _window(self, entry_dt):
-        # look forward only UPSIDE_MINUTES: a good entry must rise SOON. The peak/upside come
-        # from this short window, so 'promising' is the start of a quick move — not a far-off
-        # peak 50 min later (which made periods span hours).
+        # fetch up to FORWARD_MINUTES (needed for the duration gate); the upside/peak are
+        # computed only over the first `self.upside` minutes inside promising().
         lo = bisect.bisect_left(self.DT, entry_dt - timedelta(seconds=5))
-        hi = bisect.bisect_right(self.DT, entry_dt + timedelta(minutes=UPSIDE_MINUTES))
+        hi = bisect.bisect_right(self.DT, entry_dt + timedelta(minutes=FORWARD_MINUTES))
         asc = list(zip(self.DT[lo:hi], self.PX[lo:hi]))
         if self.order == "desc":
             return asc[::-1][:1000]
         return asc[-1000:]
 
     def promising(self, entry_dt):
-        rows = self._window(entry_dt)
-        if not rows:
+        allrows = self._window(entry_dt)            # up to FORWARD_MINUTES (for the duration gate)
+        if not allrows:
             return None
+        base = allrows[0][1]
+
+        # upside window: only the first `self.upside` minutes — the rise must arrive SOON
+        cut = entry_dt + timedelta(minutes=self.upside)
+        rows = [r for r in allrows if r[0] <= cut] or allrows[:1]
         n = len(rows)
         first_price, last_price = rows[0][1], rows[-1][1]
 
@@ -110,26 +116,27 @@ class PromisingEngine:
         pct_highest = calc_percentage(first_price, highest_price)
         pct_last = calc_percentage(first_price, last_price)
 
-        p = self.profile
-        checks = {}
-        for label, m in _MULT.items():
-            idx = round(n / 12 * m)
-            if label == 15 or (idx < n and p["period_length"] >= _GATE[label]):
-                checks[label] = calc_percentage(first_price, rows[idx][1]) if 0 <= idx < n else 0.0
-            else:
-                checks[label] = 0.0
+        # duration: minutes the price stays above entry (within DROP_BELOW_PCT) over the full window
+        duration = 0.0
+        for dt, px in allrows:
+            if dt < entry_dt:
+                continue
+            if calc_percentage(base, px) < DROP_BELOW_PCT:
+                break
+            duration = (dt - entry_dt).total_seconds() / 60.0
 
-        verdict = ""
-        if pct_highest > p["setting_percentage_highest"] and \
-           any(checks[l] > p["check_number_verdict"] for l in (15, 30, 45, 60, 75, 90, 105, 120)):
-            verdict = "buy"
-        if p["first_15_above"] > 0 and checks[15] < p["first_15_above"]:
-            verdict = ""
-        if p["max_lowest"] < 0 and pct_lowest_10 < p["max_lowest"]:
-            verdict = ""
+        # Clean promising definition (Daan's criteria), replacing the legacy checkpoint logic:
+        #   1. reaches >= MIN_UPSIDE within the (per-coin) upside window  — "rises soon"
+        #   2. early dip >= MAX_EARLY_DIP                                 — "only rises, no drop first"
+        #   3. stays above entry >= MIN_DURATION                         — "sustains, not a spike"
+        verdict = "buy" if (
+            pct_highest >= MIN_UPSIDE_PCT
+            and pct_lowest_10 >= MAX_EARLY_DIP_PCT
+            and duration >= MIN_DURATION_MINUTES
+        ) else ""
 
         return dict(highest=pct_highest, highest_dt=highest_dt, lowest_10=pct_lowest_10,
-                    lowest_20=pct_lowest_20, last=pct_last, verdict=verdict, checks=checks, n=n)
+                    lowest_20=pct_lowest_20, last=pct_last, duration=duration, verdict=verdict, n=n)
 
 
 def good_label(p):
