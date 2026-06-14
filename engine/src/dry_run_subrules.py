@@ -58,13 +58,19 @@ for rule in (20, 21, 22, 23):
         bad = g[g.cls == "slecht"]["value"]
         if len(good) < 5 or len(bad) < 5:
             continue
+        # Principle 2 (brain-rule-tuning): place the threshold at the BAD EDGE (in the gap),
+        # not the good edge — leave a buffer for future good trades.
         gmin, gmax = good.min(), good.max()
-        drop_low = int((bad < gmin).sum())          # subrule:  value >= gmin
-        drop_high = int((bad > gmax).sum())          # subrule:  value <= gmax
+        bad_below = bad[bad < gmin]                  # exclusion zone for a lower bound
+        bad_above = bad[bad > gmax]                  # exclusion zone for an upper bound
+        drop_low = int((bad < bad_below.max()).sum()) if len(bad_below) else 0   # b_min at bad edge
+        drop_high = int((bad > bad_above.min()).sum()) if len(bad_above) else 0  # b_max at bad edge
+        if drop_low == 0 and drop_high == 0:
+            continue
         if drop_low >= drop_high:
-            rows.append((ind, calc, lb, "lower", round(gmin, 3), drop_low, len(good), len(bad)))
+            rows.append((ind, calc, lb, "lower", round(float(bad_below.max()), 3), drop_low, len(good), len(bad)))
         else:
-            rows.append((ind, calc, lb, "upper", round(gmax, 3), drop_high, len(good), len(bad)))
+            rows.append((ind, calc, lb, "upper", round(float(bad_above.min()), 3), drop_high, len(good), len(bad)))
     res = pd.DataFrame(rows, columns=["indicator", "calc", "lookback", "bound", "threshold",
                                       "bad_prevented", "n_good", "n_bad"])
     print(f"\n===== RULE {rule} =====")

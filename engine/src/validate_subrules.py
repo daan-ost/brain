@@ -60,16 +60,20 @@ for rule in (20, 21, 22, 23):
         te_bad = g[(g.split == "test") & (g.cls == "slecht")]["value"]
         if len(tr_good) < 5 or len(tr_bad) < 5 or len(te_good) < 3 or len(te_bad) < 3:
             continue
+        # Principle 2: threshold at the BAD EDGE (in the gap), derived on TRAIN.
         gmin, gmax = tr_good.min(), tr_good.max()
-        # pick bound by TRAIN bad drop (same rule as the dry run)
-        if int((tr_bad < gmin).sum()) >= int((tr_bad > gmax).sum()):
-            bound, thr = "lower", gmin
-            tr_drop = int((tr_bad < gmin).sum())
-            good_keep = float((te_good >= gmin).mean()); bad_drop = float((te_bad < gmin).mean())
+        tr_bb = tr_bad[tr_bad < gmin]                 # train bad below the good band
+        tr_ba = tr_bad[tr_bad > gmax]                 # train bad above the good band
+        drop_low = int((tr_bad < tr_bb.max()).sum()) if len(tr_bb) else 0
+        drop_high = int((tr_bad > tr_ba.min()).sum()) if len(tr_ba) else 0
+        if drop_low == 0 and drop_high == 0:
+            continue
+        if drop_low >= drop_high:
+            bound, thr, tr_drop = "lower", float(tr_bb.max()), drop_low
+            good_keep = float((te_good >= thr).mean()); bad_drop = float((te_bad < thr).mean())
         else:
-            bound, thr = "upper", gmax
-            tr_drop = int((tr_bad > gmax).sum())
-            good_keep = float((te_good <= gmax).mean()); bad_drop = float((te_bad > gmax).mean())
+            bound, thr, tr_drop = "upper", float(tr_ba.min()), drop_high
+            good_keep = float((te_good <= thr).mean()); bad_drop = float((te_bad > thr).mean())
         if tr_drop < MIN_DROP:
             continue
         rows.append((ind, calc, lb, bound, round(thr, 3), tr_drop,
