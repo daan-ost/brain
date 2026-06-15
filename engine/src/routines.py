@@ -19,6 +19,7 @@ from db import brain
 import daily_optimization as opt
 
 NO_REBUILD = "--no-rebuild" in sys.argv
+APPLY = "--apply" in sys.argv          # actually apply safe candidates; without it, propose-only
 RUN_DATE = sys.argv[sys.argv.index("--date") + 1] if "--date" in sys.argv else None
 TRIGGER = sys.argv[sys.argv.index("--trigger") + 1] if "--trigger" in sys.argv else "manual"
 
@@ -65,9 +66,20 @@ def routine_rule_optimization(j):
     return f"{len(new)} nieuwe kandidaten · {', '.join(parts)}"
 
 
+def routine_auto_apply(j):
+    """Apply the strongest new safe candidate per rule (engine-refire gated). Only acts with --apply;
+    otherwise it stays propose-only so the on-screen 'Nu draaien' button never mutates the rules."""
+    if not APPLY:
+        j.add("Auto-apply: uit (geen --apply) — kandidaten alleen voorgesteld, niets toegepast.", level="info")
+        return "apply uit"
+    import auto_apply
+    return auto_apply.apply_safe(lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data))
+
+
 # Ordered chain. Append future routines here; they run after each other in one journaled run.
 REGISTRY = [
     ("rule-optimization", routine_rule_optimization),
+    ("auto-apply", routine_auto_apply),
 ]
 
 
