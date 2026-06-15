@@ -94,6 +94,17 @@ def routine_auto_apply(j):
     return auto_apply.apply_safe(lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data))
 
 
+def routine_auto_loosen(j):
+    """RQ2: loosen an existing band to admit MORE good without new slecht (raises the numerator).
+    Only acts with --apply; a loosening adds fires so it is gated by a full-history re-fire (0 new
+    slecht both coins) + a portfolio confirm (good rises, slecht does not). Propose-only otherwise."""
+    if not APPLY:
+        j.add("Auto-loosen (rq2): uit (geen --apply) — draait alleen in de geplande run.", level="info")
+        return "loosen uit"
+    import auto_loosen
+    return auto_loosen.loosen_safe(lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data))
+
+
 # A SET is a named chain of routines with a shared goal. This set = eliminate existing bad trades
 # from the rules (tighten existing rules now; outlier-split into new rules = 2b, coming). Append
 # routines below; they run after each other in one journaled run, under this set's name.
@@ -102,6 +113,7 @@ SET_NAME = "Rule-precisie — bestaande slechte trades elimineren"
 REGISTRY = [
     ("rule-optimization", routine_rule_optimization),   # sweep all calcs×lookbacks → tighten existing rules
     ("auto-apply", routine_auto_apply),                 # apply the strongest safe tightening (engine-gated)
+    ("auto-loosen", routine_auto_loosen),               # rq2: loosen a band to admit more good (gated)
     # ("outlier-split", routine_outlier_split),          # 2b: pull an outlier good trade into a new rule
 ]
 
