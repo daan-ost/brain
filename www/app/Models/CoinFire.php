@@ -25,30 +25,58 @@ class CoinFire extends Model
         'profit_loss' => 'float',
         'buy_price' => 'float',
         'selling_price' => 'float',
+        'best_sell_price' => 'float',
+        'best_sell_datetime' => 'datetime',
         'best_upside' => 'float',
+        'horizons' => 'array',
+        'lowest10' => 'float',
         'legacy_profit_loss' => 'float',
     ];
 
     /**
-     * Trade quality from the best available exit (best_upside), NOT our (imperfect) sell.
-     * Daan: goed >= 3%, middel 0.5-3%, slecht < 0.5%. Returns [label, css-class].
+     * A hand label (source='manual') attached in bulk by a screen, so klasseKey() can apply the
+     * override without an N+1 query. Authoritative store is coin_moment_labels (survives re-fire);
+     * the coin_fires.manual_klasse column is a deprecated back-compat cache only.
+     */
+    public ?CoinMomentLabel $manualLabel = null;
+
+    /**
+     * Trade quality (buy-moment, sell-INdependent). A manual label overrides the calculated value.
+     * Daan: goed >= 3%, middel 0.5-3%, slecht < 0.5% (on best_upside). Returns [label, css-class].
      */
     public function klasse(): array
     {
-        $u = $this->best_upside;
-        if ($u === null) return ['—', 'text-slate-500'];
-        if ($u >= 3) return ['goed', 'text-emerald-400'];
-        if ($u >= 0.5) return ['middel', 'text-orange-400'];
-        return ['slecht', 'text-rose-400'];
+        return match ($this->klasseKey()) {
+            'goed'   => ['goed',   'text-emerald-400'],
+            'middel' => ['middel', 'text-orange-400'],
+            'slecht' => ['slecht', 'text-rose-400'],
+            default  => ['—',      'text-slate-500'],
+        };
     }
 
+    /** Effective buy-quality class: manual label > deprecated column > computed best_upside. */
     public function klasseKey(): string
+    {
+        $manual = $this->manualLabel?->manual_klasse ?? $this->manual_klasse;
+        if ($manual) return $manual;
+
+        return $this->autoKlasseKey();
+    }
+
+    /** The pure auto-classification from best_upside, ignoring any manual override. */
+    public function autoKlasseKey(): string
     {
         $u = $this->best_upside;
         if ($u === null) return 'onbekend';
         if ($u >= 3) return 'goed';
         if ($u >= 0.5) return 'middel';
         return 'slecht';
+    }
+
+    /** The legacy verdict (offline reference), shown as its own column — not folded into klasseKey. */
+    public function legacyKlasseKey(): ?string
+    {
+        return CoinMomentLabel::klasseFromLegacy($this->legacy_result);
     }
 
     public function period(): BelongsTo

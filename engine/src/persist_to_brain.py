@@ -13,9 +13,13 @@ Usage: persist_to_brain.py [symbol_id] [from] [to] [gap_minutes]
 """
 import bisect
 import datetime as _dt
+import json
 import sys
 
 from config import CLUSTER_GAP_MINUTES, FORWARD_MINUTES
+
+# Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
+HORIZONS = [5, 10, 15, 30, 45, 60]
 from db import brain, legacy
 from promising import PromisingEngine
 from cluster_promising import scan_periods, best_entry
@@ -80,13 +84,37 @@ def best_upside_at(dt, buy):
     price you could have sold at. This is the trade's quality, independent of our sell-engine."""
     if not buy:
         return None
-    import datetime as __dt
     lo = bisect.bisect_left(DT, dt)
-    hi = bisect.bisect_right(DT, dt + __dt.timedelta(minutes=FORWARD_MINUTES))
+    hi = bisect.bisect_right(DT, dt + _dt.timedelta(minutes=FORWARD_MINUTES))
     if lo >= hi:
         return None
     mx = max(PX[lo:hi])
     return round((mx - buy) / buy * 100, 3)
+
+
+def horizons_at(dt, buy):
+    """Per-horizon upside (buy-moment quality, sell-INdependent): for each HORIZON, the max
+    favorable excursion within [dt, dt+h min] vs buy, plus the peak price + time inside that
+    window. Also returns lowest10 = the early dip (%) over the first ~10 ticks. TRUE time windows
+    (not the legacy count/12 index fractions)."""
+    if not buy:
+        return None, None
+    lo = bisect.bisect_left(DT, dt)
+    out = {}
+    for h in HORIZONS:
+        hi = bisect.bisect_right(DT, dt + _dt.timedelta(minutes=h))
+        if lo >= hi:
+            out[str(h)] = None
+            continue
+        seg = PX[lo:hi]
+        mx = max(seg)
+        k = lo + seg.index(mx)                       # first datetime the peak is reached
+        out[str(h)] = {"up": round((mx - buy) / buy * 100, 3),
+                       "peak_px": mx,
+                       "peak_at": DT[k].strftime("%Y-%m-%d %H:%M:%S")}
+    early = PX[lo:lo + 10] or [buy]                  # first ~10 ticks (volumeud is event-driven)
+    lowest10 = round((min(early) - buy) / buy * 100, 3)
+    return out, lowest10
 
 
 all_fires = []
@@ -127,13 +155,18 @@ with dst.cursor() as c:
             n_exec += 1
 
         best_up = best_upside_at(dt, buy)              # trade quality (best available exit)
+        hz, low10 = horizons_at(dt, buy)               # per-horizon upside + early dip
         c.execute(
             "INSERT INTO coin_fires (trading_symbol_id, symbol, datetime, rule, in_good_period, is_executed, "
-            "shadow_parent, period_id, buy_price, selling_price, best_upside, selling_datetime, profit_loss, "
+            "shadow_parent, period_id, buy_price, selling_price, best_sell_price, best_sell_datetime, "
+            "best_upside, horizons, lowest10, selling_datetime, profit_loss, "
             "legacy_result, legacy_profit_loss, created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
             (SYM, SYMBOL, dt, rule, good, executed, shadow_parent, period_of(dt),
-             buy, sell["selling_price"] if sell else None, best_up, sell["selling_date"] if sell else None,
+             buy, sell["selling_price"] if sell else None,
+             sell["hi_price"] if sell else None, sell["hi_dt"] if sell else None,
+             best_up, json.dumps(hz) if hz else None, low10,
+             sell["selling_date"] if sell else None,
              sell["profit_loss"] if sell else None,
              int(legres) if legres is not None else None,
              float(legpl) if legpl is not None else None))

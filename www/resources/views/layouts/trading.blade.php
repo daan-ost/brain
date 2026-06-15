@@ -34,6 +34,11 @@
                       {{ request()->routeIs('trades.explorer') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
                 <span class="w-2 h-2 rounded-full {{ request()->routeIs('trades.explorer') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Coin explorer
             </a>
+            <a href="{{ route('trades.labeler') }}"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 transition
+                      {{ request()->routeIs('trades.labeler') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
+                <span class="w-2 h-2 rounded-full {{ request()->routeIs('trades.labeler') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Promising labeler
+            </a>
             <a href="{{ route('engine.index') }}"
                class="flex items-center gap-3 rounded-lg px-3 py-2 transition
                       {{ request()->routeIs('engine.*') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">

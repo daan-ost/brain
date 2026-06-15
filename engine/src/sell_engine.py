@@ -93,16 +93,19 @@ class SellEngine:
         return new_stop, round(new_stop * MULT, R), orderstatus
 
     def sell(self, buy_dt, buy, rule):
-        """Return dict(selling_price, selling_date, profit_loss, hi, lo) or None (no sell in window)."""
+        """Return dict(selling_price, selling_date, profit_loss, hi, lo, hi_price, hi_dt) or None.
+        hi_price/hi_dt = the best price (and its time) reachable WITHIN our hold [buy, our sell] —
+        the favorable excursion the sell-engine left on the table."""
         sl = self.sl_by_rule.get(int(rule), parse_sl(None))
         i = bisect.bisect_right(self.DT, buy_dt)
-        stop_prev, hi, lo, max_price = None, 0.0, 0.0, buy
+        stop_prev, hi, lo, max_price, hi_dt = None, 0.0, 0.0, buy, buy_dt
         while i < len(self.DT) and (self.DT[i] - buy_dt).total_seconds() <= FORWARD_MINUTES * 60:
             T, market = self.DT[i], self.PX[i]
             minutes = (T - buy_dt).total_seconds() / 60.0
             profit = round((market - buy) / buy * 100, 2)
             hi = max(hi, profit); lo = min(lo, profit)
-            max_price = max(max_price, market)
+            if market > max_price:
+                max_price, hi_dt = market, T
             breach = stop_prev is not None and market < stop_prev
             stop, selling_price, orderstatus = self._determine_stop(
                 buy, market, minutes, profit, stop_prev, sl, i, buy_dt, max_price)
@@ -111,7 +114,8 @@ class SellEngine:
                     stop = market if stop > market else stop_prev
                     selling_price = stop
                 pl = round((selling_price - buy) / buy * 100, 3)
-                return dict(selling_price=selling_price, selling_date=T, profit_loss=pl, hi=hi, lo=lo)
+                return dict(selling_price=selling_price, selling_date=T, profit_loss=pl, hi=hi, lo=lo,
+                            hi_price=max_price, hi_dt=hi_dt)
             stop_prev = stop
             i += 1
         # force-exit at the horizon (max 1-hour hold) at the last seen price
@@ -119,5 +123,5 @@ class SellEngine:
             T, market = self.DT[i - 1], self.PX[i - 1]
             pl = round((market * self.SELL_MULT - buy) / buy * 100, 3)
             return dict(selling_price=round(market * self.SELL_MULT, self.ROUNDING), selling_date=T,
-                        profit_loss=pl, hi=hi, lo=lo)
+                        profit_loss=pl, hi=hi, lo=lo, hi_price=max_price, hi_dt=hi_dt)
         return None

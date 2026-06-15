@@ -12,6 +12,7 @@ Hard rule: `bot_signals` is a **read-only source** — never written to.
 | [B](epic-B-lookback-store.md) | Per-rule lookback feature store (fast-queryable) | E01 |
 | [S](epic-S-sell-precision.md) | Sell-engine precision (87% → higher) — **parked**, dependency of A | E09 (faithful, not optimized) |
 | [R](epic-R-rule-tuning-discovery.md) | Rule tuning, scoring & automated discovery (goal: per coin/rule #bad ≤ #good) | E06 + E03/E05 |
+| [L](epic-L-promising-labeler.md) | Promising labeler — per-moment buy-quality labeling + classification tuning (imports legacy yes/no labels) | A + E02 |
 
 A and B are the concrete, buildable versions of the foundation. R is the path to ~legacy level (interpretable rules, before ML). S is a parked dependency. The numbered E01–E11 below remain the grand plan.
 

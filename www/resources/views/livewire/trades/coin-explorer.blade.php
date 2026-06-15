@@ -108,7 +108,10 @@
                 <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
                     <div class="flex items-center gap-2">
                         <button wire:click="navDetail(-1)" title="vorige" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-sm">‹</button>
-                        <h3 class="font-semibold text-white">{{ $detail['title'] }}</h3>
+                        <div class="flex items-baseline gap-2">
+                            <h3 class="font-semibold text-white">{{ $detail['title'] }}</h3>
+                            <span class="text-xs text-slate-500 font-mono">#{{ $detail['id'] }}</span>
+                        </div>
                         <button wire:click="navDetail(1)" title="volgende" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-sm">›</button>
                     </div>
                     <button wire:click="closeDetail" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
@@ -128,29 +131,45 @@
                         @endforeach
                     </div>
 
-                    @if (!empty($detail['legacy_remark']))
-                        <div class="mb-4 text-sm">
-                            <span class="text-slate-400">legacy remark:</span>
-                            <span class="text-amber-300">“{{ $detail['legacy_remark'] }}”</span>
+                    {{-- uitkomst override (alleen voor uitgevoerde trades; schaduwen traden niet) --}}
+                    @if ($selType === 'fire' && ($detail['is_executed'] ?? false))
+                    <div class="border-t border-slate-800 pt-4 mb-4">
+                        <div class="flex items-center gap-3 flex-wrap">
+                            <span class="text-sm text-slate-400 shrink-0">Uitkomst overschrijven:</span>
+                            <select wire:model.live="manualKlasse"
+                                    class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">
+                                <option value="">— berekend ({{ $detail['auto_klasse'] ?? '?' }}) —</option>
+                                <option value="goed">goed (≥3%)</option>
+                                <option value="middel">middel (0.5–3%)</option>
+                                <option value="slecht">slecht (&lt;0.5%)</option>
+                            </select>
+                            <button wire:click="saveManualKlasse"
+                                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">Opslaan</button>
+                            @if ($detail['manual_klasse'])
+                                <span class="text-xs text-amber-400 font-medium">✎ handmatig: {{ $detail['manual_klasse'] }}</span>
+                            @endif
                         </div>
+                        <p class="text-xs text-slate-500 mt-1.5">Opgeslagen in <code>coin_moment_labels</code> (overleeft een re-fire). Wordt zichtbaar in de Promising labeler.</p>
+                    </div>
                     @endif
 
                     <div class="border-t border-slate-800 pt-4">
                         <h4 class="text-sm font-semibold text-slate-300 mb-2">Label dit {{ $selType === 'fire' ? 'trade' : 'moment' }}</h4>
-                        <div class="flex flex-wrap items-start gap-3">
-                            <select wire:model="annCategory" class="bg-slate-800 border-slate-700 rounded-lg text-sm py-1.5 min-w-[14rem]">
+                        <div class="flex items-center gap-3 mb-2">
+                            <select wire:model="annCategory"
+                                    class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200 min-w-[14rem]">
                                 <option value="">— kies —</option>
                                 @foreach ($categories as $c)
                                     <option value="{{ $c }}">{{ $c }}</option>
                                 @endforeach
                             </select>
-                            <textarea wire:model="annComment" rows="2" placeholder="opmerking (optioneel)"
-                                      class="flex-1 min-w-[12rem] bg-slate-800 border-slate-700 rounded-lg text-sm py-1.5"></textarea>
                             <button wire:click="saveAnnotation"
                                     class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">Opslaan</button>
+                            <span x-data="annFlash()" x-show="shown" x-on:annotation-saved.window="flash()"
+                                  class="text-xs text-emerald-400">opgeslagen ✓</span>
                         </div>
-                        <p class="text-xs text-emerald-400 mt-2" x-data x-show="false"
-                           x-on:annotation-saved.window="$el.style.display='block'; setTimeout(()=>$el.style.display='none',1500)">opgeslagen ✓</p>
+                        <textarea wire:model="annComment" rows="2" placeholder="opmerking (optioneel)"
+                                  class="w-full bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200 placeholder-slate-500 resize-none"></textarea>
                     </div>
                 </div>
             </div>
@@ -160,6 +179,7 @@
 
 @push('scripts')
 <script>
+function annFlash() { return { shown: false, flash() { this.shown = true; setTimeout(() => { this.shown = false; }, 1500); } }; }
 function __ann() { if (window.__annReg !== true && window['chartjs-plugin-annotation']) { Chart.register(window['chartjs-plugin-annotation']); window.__annReg = true; } }
 function __xaxis() { return { type: 'linear', ticks: { color: '#64748b', maxTicksLimit: 10,
     callback: (v) => new Date(v).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) },
@@ -236,10 +256,11 @@ function zoomChart(d) {
             const line = (x, color, txt, pos) => ({ type: 'line', xMin: x, xMax: x, borderColor: color, borderWidth: 1.5,
                 label: { display: true, content: txt, position: pos || 'start', backgroundColor: color, color: '#fff', font: { size: 9 }, padding: 2 } });
             if (m.pbest) ann.pbest = line(m.pbest, 'rgba(16,185,129,0.95)', 'beste instap', 'end');
-            if (m.peak) ann.peak = line(m.peak, 'rgba(251,191,36,0.95)', 'piek / verkoop', 'end');
+            if (m.peak) ann.peak = line(m.peak, 'rgba(251,191,36,0.95)', 'piek (beste exit)', 'end');
             if (m.buy) ann.buy = line(m.buy, 'rgba(56,189,248,0.95)', 'koop');
-            if (m.sell) ann.sell = line(m.sell, 'rgba(244,63,94,0.95)', 'verkoop');
-            if (m.best) ann.best = line(m.best, 'rgba(132,204,22,0.9)', 'best (legacy)');
+            if (m.sell) ann.sell = line(m.sell, 'rgba(244,63,94,0.95)', 'onze verkoop');
+            if (m.bestsell) ann.bestsell = line(m.bestsell, 'rgba(168,85,247,0.95)',
+                'beste sell' + (d.bestsell_pct != null ? ' (' + (d.bestsell_pct >= 0 ? '+' : '') + d.bestsell_pct + '%)' : ''), 'end');
             const opts = __baseOptions(true);
             opts.plugins.annotation = { annotations: ann };
             this.chart = new Chart(this.$refs.zv, { type: 'line', plugins: [__crosshair],

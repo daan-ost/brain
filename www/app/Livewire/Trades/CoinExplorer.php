@@ -4,6 +4,7 @@ namespace App\Livewire\Trades;
 
 use App\Models\CoinAnnotation;
 use App\Models\CoinFire;
+use App\Models\CoinMomentLabel;
 use App\Models\CoinPeriod;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,7 @@ class CoinExplorer extends Component
     public ?int $selId = null;
     public string $annCategory = '';
     public string $annComment = '';
+    public string $manualKlasse = '';   // '' = berekend, 'goed'|'middel'|'slecht' = handmatig override
 
     public function mount(): void
     {
@@ -84,11 +86,34 @@ class CoinExplorer extends Component
         $ann = CoinAnnotation::where('target_type', $type)->where('target_id', $id)->first();
         $this->annCategory = $ann?->category ?? '';
         $this->annComment = $ann?->comment ?? '';
+        $this->manualKlasse = '';
+        if ($type === 'fire' && ($f = CoinFire::find($id))) {
+            $this->manualKlasse = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
+                ->where('datetime', $f->datetime)->where('rule', $f->rule)
+                ->where('source', 'manual')->value('manual_klasse') ?? '';
+        }
     }
 
     public function closeDetail(): void
     {
-        $this->reset(['selType', 'selId', 'annCategory', 'annComment']);
+        $this->reset(['selType', 'selId', 'annCategory', 'annComment', 'manualKlasse']);
+    }
+
+    public function saveManualKlasse(): void
+    {
+        if ($this->selType !== 'fire' || ! $this->selId) return;
+        $f = CoinFire::find($this->selId);
+        if (! $f) return;
+        $klasse = $this->manualKlasse ?: null;
+        // authoritative store — survives the persist_to_brain re-fire (which deletes coin_fires)
+        CoinMomentLabel::updateOrCreate(
+            ['trading_symbol_id' => $f->trading_symbol_id, 'datetime' => $f->datetime, 'rule' => $f->rule, 'source' => 'manual'],
+            ['symbol' => $f->symbol, 'manual_klasse' => $klasse, 'set_by' => auth()->user()?->email, 'set_at' => now()],
+        );
+        // best-effort back-compat cache on the fire (re-fire wipes it; re-filled from labels)
+        $f->manual_klasse = $klasse;
+        $f->save();
+        $this->dispatch('annotation-saved');
     }
 
     /** Step to the next/previous fire (or period) of the same day, inside the modal. */
@@ -136,10 +161,20 @@ class CoinExplorer extends Component
         $this->dispatch('annotation-saved');
     }
 
+    /** Format a UTC Carbon datetime in Amsterdam local time. */
+    private function localFmt(?\Illuminate\Support\Carbon $dt, string $fmt = 'H:i:s'): ?string
+    {
+        return $dt?->setTimezone('Europe/Amsterdam')->format($fmt);
+    }
+
     /** A zoom window [from,to] that contains every marker, with 5 min margin on each side. */
     private function windowAround(array $markers): array
     {
         $ms = array_values($markers);
+        if (empty($ms)) {
+            $d = Carbon::parse($this->date);
+            return [$d->copy()->startOfDay(), $d->copy()->endOfDay()];
+        }
         return [
             Carbon::createFromTimestampMs(min($ms))->subMinutes(5),
             Carbon::createFromTimestampMs(max($ms))->addMinutes(5),
@@ -173,6 +208,12 @@ class CoinExplorer extends Component
             // OUR fire detail (brain only): buy/sell from our sell-engine; legacy result = reference.
             $markers = ['buy' => $f->datetime->getTimestampMs()];
             if ($f->selling_datetime) $markers['sell'] = $f->selling_datetime->getTimestampMs();
+            // best reachable price WITHIN our hold (buy → our sell) — what the sell-engine left on the table
+            $bestSellPct = ($f->best_sell_price && $f->buy_price)
+                ? round(($f->best_sell_price - $f->buy_price) / $f->buy_price * 100, 2) : null;
+            if ($f->best_sell_datetime && $bestSellPct !== null) {
+                $markers['bestsell'] = $f->best_sell_datetime->getTimestampMs();
+            }
             // overlay the promising period this fire belongs to (if any): band + best entry + peak
             if ($f->period_id && ($per = CoinPeriod::find($f->period_id))) {
                 $markers['pfrom'] = $per->period_from->getTimestampMs();
@@ -182,20 +223,30 @@ class CoinExplorer extends Component
             }
             [$from, $to] = $this->windowAround($markers);
             return [
-                'type' => 'fire', 'id' => $f->id, 'title' => "Trade · rule {$f->rule} · {$f->datetime->format('d M H:i:s')}",
+                'type' => 'fire', 'id' => $f->id,
+                'title' => "Trade · rule {$f->rule} · " . $this->localFmt($f->datetime, 'd M H:i:s'),
+                'manual_klasse' => $this->manualKlasse,
+                'is_executed' => $f->is_executed,
+                'auto_klasse' => $f->autoKlasseKey(),
+                'bestsell_pct' => $bestSellPct,
                 'price' => $this->priceBetween($from, $to),
                 'markers' => $markers,
                 'stats' => array_filter([
                     'rule' => $f->rule,
-                    'uitkomst' => ! $f->is_executed ? '↳ schaduw van ' . optional($f->shadow_parent)->format('H:i:s') : $f->klasse()[0],
-                    'beste upside %' => $f->best_upside,
+                    'uitkomst' => ! $f->is_executed ? '↳ schaduw van ' . $this->localFmt($f->shadow_parent) : $f->klasse()[0],
+                    'beste upside % (60min)' => $f->best_upside,
+                    'beste upside om' => isset($per) ? $this->localFmt($per->peak_datetime) : null,
                     'aankoopprijs' => $f->buy_price,
                     'verkoopprijs (onze sell)' => $f->selling_price,
                     'winst % (onze sell)' => $f->is_executed ? $f->profit_loss : null,
+                    'beste sell binnen hold' => ($f->is_executed && $f->best_sell_price && $bestSellPct !== null)
+                        ? rtrim(rtrim(number_format($f->best_sell_price, 6, '.', ''), '0'), '.')
+                          . ' (' . ($bestSellPct >= 0 ? '+' : '') . $bestSellPct . '%)'
+                        : null,
+                    'beste sell om' => $f->is_executed ? $this->localFmt($f->best_sell_datetime) : null,
                     'legacy result' => [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$f->legacy_result] ?? null,
                     'legacy P&L' => $f->legacy_profit_loss,
                 ], fn ($v) => $v !== null && $v !== ''),
-                'legacy_remark' => null,
             ];
         }
         $p = CoinPeriod::find($this->selId);
@@ -209,17 +260,18 @@ class CoinExplorer extends Component
         }
         [$from, $to] = $this->windowAround($markers);
         return [
-            'type' => 'period', 'id' => $p->id, 'title' => "Promising · {$p->best_entry->format('d M H:i:s')}",
+            'type' => 'period', 'id' => $p->id,
+            'title' => "Promising · " . $this->localFmt($p->best_entry, 'd M H:i:s'),
+            'manual_klasse' => '',
             'price' => $this->priceBetween($from, $to),
             'markers' => $markers,
             'stats' => array_filter([
-                'beste instap' => $p->best_entry->format('H:i:s'),
-                'piek / verkoop' => $p->peak_datetime?->format('H:i:s'),
+                'beste instap' => $this->localFmt($p->best_entry),
+                'piek / verkoop' => $this->localFmt($p->peak_datetime),
                 'upside %' => $p->best_upside,
                 'vroege dip %' => $p->best_lowest10,
                 'momenten' => $p->n_moments,
             ], fn ($v) => $v !== null && $v !== ''),
-            'legacy_remark' => null,
         ];
     }
 
@@ -233,6 +285,15 @@ class CoinExplorer extends Component
             ->orderBy('period_from')->get();
         $fires = CoinFire::query()->where('trading_symbol_id', $this->coin)
             ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->get();
+
+        // attach manual moment-labels (source=manual) so klasseKey() applies the override on the
+        // chart + table; lives in coin_moment_labels so it survives the persist re-fire.
+        $mlabels = CoinMomentLabel::query()->where('trading_symbol_id', $this->coin)->where('source', 'manual')
+            ->whereBetween('datetime', [$start, $end])->get()
+            ->keyBy(fn ($l) => CoinMomentLabel::mapKey($l->datetime, $l->rule));
+        foreach ($fires as $f) {
+            $f->manualLabel = $mlabels->get(CoinMomentLabel::mapKey($f->datetime, $f->rule));
+        }
 
         // annotations for this day's targets
         $ann = CoinAnnotation::query()->where('trading_symbol_id', $this->coin)
