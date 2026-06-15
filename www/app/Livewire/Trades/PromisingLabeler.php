@@ -2,12 +2,12 @@
 
 namespace App\Livewire\Trades;
 
+use App\Livewire\Trades\Concerns\InteractsWithCoinChart;
 use App\Models\CoinAnnotation;
 use App\Models\CoinFire;
 use App\Models\CoinMomentLabel;
 use App\Models\CoinPeriod;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -25,7 +25,13 @@ use Livewire\Component;
 #[Layout('layouts.trading')]
 class PromisingLabeler extends Component
 {
+    use InteractsWithCoinChart;
+
     public const HORIZONS = [5, 10, 15, 30, 45, 60];
+
+    /** Request-scoped memo of the day's fires (render + a same-request action share one query set). */
+    private ?\Illuminate\Support\Collection $fireMemo = null;
+    private ?string $fireMemoKey = null;
 
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
@@ -78,6 +84,12 @@ class PromisingLabeler extends Component
         $this->closeDetail();
     }
 
+    /** Filter wijzigt de zichtbare set → sluit de modal zodat selId niet buiten dayFireIds() valt. */
+    public function updatedOnlyExecuted(): void
+    {
+        $this->closeDetail();
+    }
+
     public function selectFire(int $id): void { $this->open($id); }
 
     private function open(int $id): void
@@ -111,21 +123,26 @@ class PromisingLabeler extends Component
         if (! $this->selId) return;
         $f = CoinFire::find($this->selId);
         if (! $f) return;
-        CoinMomentLabel::updateOrCreate(
-            ['trading_symbol_id' => $f->trading_symbol_id, 'datetime' => $f->datetime, 'rule' => $f->rule, 'source' => 'manual'],
-            [
-                'symbol' => $f->symbol,
-                'decision' => $this->decision ?: null,
-                'manual_klasse' => $this->klasse ?: null,
-                'category' => $this->category ?: null,
-                'comment' => $this->comment ?: null,
-                'set_by' => auth()->user()?->email,
-                'set_at' => now(),
-            ],
-        );
-        // best-effort back-compat cache on the fire (re-fire wipes it)
-        $f->manual_klasse = $this->klasse ?: null;
-        $f->save();
+
+        $key = ['trading_symbol_id' => $f->trading_symbol_id, 'datetime' => $f->datetime, 'rule' => $f->rule, 'source' => 'manual'];
+
+        // niets ingevuld? trek een eventueel bestaand label in i.p.v. een lege rij te schrijven
+        if (! ($this->decision || $this->klasse || $this->category || trim($this->comment))) {
+            CoinMomentLabel::where($key)->delete();
+            $this->dispatch('label-saved');
+            return;
+        }
+
+        // coin_moment_labels is de enige bron — geen mirror naar de dode coin_fires.manual_klasse
+        CoinMomentLabel::updateOrCreate($key, [
+            'symbol' => $f->symbol,
+            'decision' => $this->decision ?: null,
+            'manual_klasse' => $this->klasse ?: null,
+            'category' => $this->category ?: null,
+            'comment' => $this->comment ?: null,
+            'set_by' => auth()->user()?->email,
+            'set_at' => now(),
+        ]);
         $this->dispatch('label-saved');
     }
 
@@ -143,9 +160,13 @@ class PromisingLabeler extends Component
         return $this->dayFires()->pluck('id')->all();
     }
 
-    /** This day's fires (filtered), with manual + legacy labels attached. */
+    /** This day's fires (filtered), with manual labels attached. Memoized per (coin, date, filter). */
     private function dayFires()
     {
+        $key = "{$this->coin}|{$this->date}|" . (int) $this->onlyExecuted;
+        if ($this->fireMemo !== null && $this->fireMemoKey === $key) {
+            return $this->fireMemo;
+        }
         $start = Carbon::parse($this->date)->startOfDay();
         $end = (clone $start)->endOfDay();
         $q = CoinFire::query()->where('trading_symbol_id', $this->coin)
@@ -154,48 +175,17 @@ class PromisingLabeler extends Component
             $q->where('is_executed', true);
         }
         $fires = $q->get();
+        CoinMomentLabel::attachManual($fires, $this->coin, $start, $end);
 
-        $manual = CoinMomentLabel::query()->where('trading_symbol_id', $this->coin)->where('source', 'manual')
-            ->whereBetween('datetime', [$start, $end])->get()
-            ->keyBy(fn ($l) => CoinMomentLabel::mapKey($l->datetime, $l->rule));
-        foreach ($fires as $f) {
-            $f->manualLabel = $manual->get(CoinMomentLabel::mapKey($f->datetime, $f->rule));
-        }
+        $this->fireMemo = $fires;
+        $this->fireMemoKey = $key;
         return $fires;
-    }
-
-    /** Format a UTC Carbon datetime in Amsterdam local time. */
-    private function localFmt(?Carbon $dt, string $fmt = 'H:i:s'): ?string
-    {
-        return $dt?->setTimezone('Europe/Amsterdam')->format($fmt);
-    }
-
-    private function windowAround(array $markers): array
-    {
-        $ms = array_values(array_filter($markers, fn ($v) => $v !== null));
-        return [
-            Carbon::createFromTimestampMs(min($ms))->subMinutes(5),
-            Carbon::createFromTimestampMs(max($ms))->addMinutes(5),
-        ];
-    }
-
-    /** Downsampled volumeud price between two datetimes (read from brain.indicators). */
-    private function priceBetween($from, $to, int $cap = 400): array
-    {
-        $rows = DB::table('indicators')
-            ->select('datetime', 'price')->where('trading_symbol_id', $this->coin)
-            ->where('indicator', 'volumeud')->whereNotNull('price')
-            ->whereBetween('datetime', [$from, $to])->orderBy('datetime')->get();
-        $step = max(1, (int) ceil($rows->count() / $cap));
-        return $rows->values()->filter(fn ($r, $i) => $i % $step === 0)
-            ->map(fn ($r) => ['x' => Carbon::parse($r->datetime)->getTimestampMs(), 'y' => (float) $r->price])
-            ->values()->all();
     }
 
     private function detail(): ?array
     {
         if (! $this->selId) return null;
-        $f = CoinFire::find($this->selId);
+        $f = CoinFire::with('period')->find($this->selId);
         if (! $f) return null;
 
         $markers = ['buy' => $f->datetime->getTimestampMs()];
@@ -205,12 +195,14 @@ class PromisingLabeler extends Component
         // horizon peak markers (where each horizon's max sits) + the period band
         $hz = $f->horizons ?? [];
         foreach (self::HORIZONS as $h) {
-            $peakAt = $hz[(string) $h]['peak_at'] ?? null;
+            $entry = $hz[(string) $h] ?? null;
+            $peakAt = is_array($entry) ? ($entry['peak_at'] ?? null) : null;
             if ($peakAt) $markers["h{$h}"] = Carbon::parse($peakAt)->getTimestampMs();
         }
-        if ($f->period_id && ($per = CoinPeriod::find($f->period_id))) {
+        if ($per = $f->period) {
             $markers['pfrom'] = $per->period_from->getTimestampMs();
             $markers['pto'] = $per->period_to->getTimestampMs();
+            $markers['pbest'] = $per->best_entry->getTimestampMs();
             if ($per->peak_datetime) $markers['peak'] = $per->peak_datetime->getTimestampMs();
         }
         [$from, $to] = $this->windowAround($markers);
@@ -240,16 +232,20 @@ class PromisingLabeler extends Component
         ];
     }
 
-    /** [{h, up, peak_at}] for the horizon columns/tooltips. */
+    /** [{h, up, peak_at}] for the horizon columns/tooltips. Null-safe: a horizon may be absent
+     *  (window had no forward data → persist omits it). */
     private function horizonRow(CoinFire $f): array
     {
         $hz = $f->horizons ?? [];
-        return collect(self::HORIZONS)->map(fn ($h) => [
-            'h' => $h,
-            'up' => $hz[(string) $h]['up'] ?? null,
-            'peak_at' => isset($hz[(string) $h]['peak_at'])
-                ? $this->localFmt(Carbon::parse($hz[(string) $h]['peak_at'])) : null,
-        ])->all();
+        return collect(self::HORIZONS)->map(function ($h) use ($hz) {
+            $e = $hz[(string) $h] ?? null;
+            $e = is_array($e) ? $e : [];
+            return [
+                'h' => $h,
+                'up' => $e['up'] ?? null,
+                'peak_at' => isset($e['peak_at']) ? $this->localFmt(Carbon::parse($e['peak_at'])) : null,
+            ];
+        })->all();
     }
 
     public function render()

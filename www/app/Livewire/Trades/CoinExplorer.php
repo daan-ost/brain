@@ -2,12 +2,12 @@
 
 namespace App\Livewire\Trades;
 
+use App\Livewire\Trades\Concerns\InteractsWithCoinChart;
 use App\Models\CoinAnnotation;
 use App\Models\CoinFire;
 use App\Models\CoinMomentLabel;
 use App\Models\CoinPeriod;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -23,6 +23,8 @@ use Livewire\Component;
 #[Layout('layouts.trading')]
 class CoinExplorer extends Component
 {
+    use InteractsWithCoinChart;
+
     /** Max trade hold in minutes — must match engine config.py FORWARD_MINUTES. */
     public const HOLD_MINUTES = 60;
 
@@ -104,15 +106,11 @@ class CoinExplorer extends Component
         if ($this->selType !== 'fire' || ! $this->selId) return;
         $f = CoinFire::find($this->selId);
         if (! $f) return;
-        $klasse = $this->manualKlasse ?: null;
-        // authoritative store — survives the persist_to_brain re-fire (which deletes coin_fires)
+        // coin_moment_labels is the single source of truth — survives the persist_to_brain re-fire
         CoinMomentLabel::updateOrCreate(
             ['trading_symbol_id' => $f->trading_symbol_id, 'datetime' => $f->datetime, 'rule' => $f->rule, 'source' => 'manual'],
-            ['symbol' => $f->symbol, 'manual_klasse' => $klasse, 'set_by' => auth()->user()?->email, 'set_at' => now()],
+            ['symbol' => $f->symbol, 'manual_klasse' => $this->manualKlasse ?: null, 'set_by' => auth()->user()?->email, 'set_at' => now()],
         );
-        // best-effort back-compat cache on the fire (re-fire wipes it; re-filled from labels)
-        $f->manual_klasse = $klasse;
-        $f->save();
         $this->dispatch('annotation-saved');
     }
 
@@ -161,40 +159,6 @@ class CoinExplorer extends Component
         $this->dispatch('annotation-saved');
     }
 
-    /** Format a UTC Carbon datetime in Amsterdam local time. */
-    private function localFmt(?\Illuminate\Support\Carbon $dt, string $fmt = 'H:i:s'): ?string
-    {
-        return $dt?->setTimezone('Europe/Amsterdam')->format($fmt);
-    }
-
-    /** A zoom window [from,to] that contains every marker, with 5 min margin on each side. */
-    private function windowAround(array $markers): array
-    {
-        $ms = array_values($markers);
-        if (empty($ms)) {
-            $d = Carbon::parse($this->date);
-            return [$d->copy()->startOfDay(), $d->copy()->endOfDay()];
-        }
-        return [
-            Carbon::createFromTimestampMs(min($ms))->subMinutes(5),
-            Carbon::createFromTimestampMs(max($ms))->addMinutes(5),
-        ];
-    }
-
-    /** Downsampled volumeud price between two datetimes, from the read-only source. */
-    private function priceBetween($from, $to, int $cap = 400): array
-    {
-        // price comes from brain.indicators (the imported series) — screens read only brain
-        $rows = DB::table('indicators')
-            ->select('datetime', 'price')->where('trading_symbol_id', $this->coin)
-            ->where('indicator', 'volumeud')->whereNotNull('price')
-            ->whereBetween('datetime', [$from, $to])->orderBy('datetime')->get();
-        $step = max(1, (int) ceil($rows->count() / $cap));
-        return $rows->values()->filter(fn ($r, $i) => $i % $step === 0)
-            ->map(fn ($r) => ['x' => Carbon::parse($r->datetime)->getTimestampMs(), 'y' => (float) $r->price])
-            ->values()->all();
-    }
-
     private function detail(): ?array
     {
         if (! $this->selType || ! $this->selId) {
@@ -205,6 +169,7 @@ class CoinExplorer extends Component
             if (! $f) {
                 return null;
             }
+            CoinMomentLabel::attachOne($f);   // so klasse()/uitkomst reflects the manual override
             // OUR fire detail (brain only): buy/sell from our sell-engine; legacy result = reference.
             $markers = ['buy' => $f->datetime->getTimestampMs()];
             if ($f->selling_datetime) $markers['sell'] = $f->selling_datetime->getTimestampMs();
@@ -286,14 +251,9 @@ class CoinExplorer extends Component
         $fires = CoinFire::query()->where('trading_symbol_id', $this->coin)
             ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->get();
 
-        // attach manual moment-labels (source=manual) so klasseKey() applies the override on the
-        // chart + table; lives in coin_moment_labels so it survives the persist re-fire.
-        $mlabels = CoinMomentLabel::query()->where('trading_symbol_id', $this->coin)->where('source', 'manual')
-            ->whereBetween('datetime', [$start, $end])->get()
-            ->keyBy(fn ($l) => CoinMomentLabel::mapKey($l->datetime, $l->rule));
-        foreach ($fires as $f) {
-            $f->manualLabel = $mlabels->get(CoinMomentLabel::mapKey($f->datetime, $f->rule));
-        }
+        // attach manual moment-labels so klasseKey() applies the override on the chart + table
+        // (single source of truth = coin_moment_labels, survives the persist re-fire).
+        CoinMomentLabel::attachManual($fires, $this->coin, $start, $end);
 
         // annotations for this day's targets
         $ann = CoinAnnotation::query()->where('trading_symbol_id', $this->coin)

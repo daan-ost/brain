@@ -34,9 +34,10 @@ class CoinFire extends Model
     ];
 
     /**
-     * A hand label (source='manual') attached in bulk by a screen, so klasseKey() can apply the
-     * override without an N+1 query. Authoritative store is coin_moment_labels (survives re-fire);
-     * the coin_fires.manual_klasse column is a deprecated back-compat cache only.
+     * The hand label (source='manual') for this fire, attached by a screen via
+     * CoinMomentLabel::attachManual()/attachOne() before klasseKey() is read. coin_moment_labels is
+     * the single source of truth for the override (it survives the persist re-fire); the
+     * coin_fires.manual_klasse column is dead and no longer read or written.
      */
     public ?CoinMomentLabel $manualLabel = null;
 
@@ -54,13 +55,10 @@ class CoinFire extends Model
         };
     }
 
-    /** Effective buy-quality class: manual label > deprecated column > computed best_upside. */
+    /** Effective buy-quality class: manual label (coin_moment_labels) > computed best_upside. */
     public function klasseKey(): string
     {
-        $manual = $this->manualLabel?->manual_klasse ?? $this->manual_klasse;
-        if ($manual) return $manual;
-
-        return $this->autoKlasseKey();
+        return $this->manualLabel?->manual_klasse ?: $this->autoKlasseKey();
     }
 
     /** The pure auto-classification from best_upside, ignoring any manual override. */

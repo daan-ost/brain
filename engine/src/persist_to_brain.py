@@ -104,8 +104,7 @@ def horizons_at(dt, buy):
     for h in HORIZONS:
         hi = bisect.bisect_right(DT, dt + _dt.timedelta(minutes=h))
         if lo >= hi:
-            out[str(h)] = None
-            continue
+            continue                                     # geen forward-data: horizon weglaten (geen null-key)
         seg = PX[lo:hi]
         mx = max(seg)
         k = lo + seg.index(mx)                       # first datetime the peak is reached

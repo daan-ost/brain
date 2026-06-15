@@ -43,8 +43,9 @@ for sym in syms:
                 "(trading_symbol_id, symbol, datetime, rule, decision, manual_klasse, "
                 " source, legacy_result, set_by, set_at, created_at, updated_at) "
                 "VALUES (%s,%s,%s,%s,%s,%s,'legacy',%s,'import',NOW(),NOW(),NOW()) "
-                "ON DUPLICATE KEY UPDATE decision=VALUES(decision), manual_klasse=VALUES(manual_klasse), "
-                " legacy_result=VALUES(legacy_result), updated_at=NOW()",
+                # COALESCE: een binnenkomende NULL (middel heeft geen yes/no) overschrijft geen bestaande waarde
+                "ON DUPLICATE KEY UPDATE decision=COALESCE(VALUES(decision), decision), "
+                " manual_klasse=VALUES(manual_klasse), legacy_result=VALUES(legacy_result), updated_at=NOW()",
                 (sym, symbol, row["datetime"], row["rule"], DECISION.get(res), KLASSE.get(res), res))
             n += 1
     dst.commit()
