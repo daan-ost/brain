@@ -1,7 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Green circle background -->
-  <circle cx="50" cy="50" r="48" fill="#10b981" stroke="#059669" stroke-width="2"/>
-
-  <!-- White "D" for Dev -->
-  <text x="50" y="70" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="white" text-anchor="middle">D</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#059669"/>
+  <path d="M16 22.5 C13 23 9.5 21.5 7.5 18.5 C5.5 15.5 5.5 11 7.5 8.5 C9.5 6.5 12 6.5 14.5 8.5 C15.2 9.3 15.6 10.3 16 10.8 L16 22.5Z" fill="white"/>
+  <path d="M16 22.5 C19 23 22.5 21.5 24.5 18.5 C26.5 15.5 26.5 11 24.5 8.5 C22.5 6.5 20 6.5 17.5 8.5 C16.8 9.3 16.4 10.3 16 10.8 L16 22.5Z" fill="white"/>
+  <line x1="16" y1="10.5" x2="16" y2="22.5" stroke="#059669" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M8.5 13 C10.5 12 12.5 12 14.5 13.5" fill="none" stroke="#059669" stroke-width="0.85" stroke-linecap="round"/>
+  <path d="M8 17.5 C10 16.5 12.5 17 14 18.5" fill="none" stroke="#059669" stroke-width="0.85" stroke-linecap="round"/>
+  <path d="M23.5 13 C21.5 12 19.5 12 17.5 13.5" fill="none" stroke="#059669" stroke-width="0.85" stroke-linecap="round"/>
+  <path d="M24 17.5 C22 16.5 19.5 17 18 18.5" fill="none" stroke="#059669" stroke-width="0.85" stroke-linecap="round"/>
 </svg>
