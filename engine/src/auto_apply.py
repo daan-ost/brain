@@ -37,7 +37,7 @@ def _refire():
 
 
 def _totals():
-    """(total executed good, {rule: (good, slecht)}) over both coins."""
+    """(total executed good, total executed slecht, {rule: (good, slecht)}) over both coins."""
     conn = brain()
     with conn.cursor() as c:
         c.execute("SELECT rule, SUM(best_upside>=3) g, SUM(best_upside<0.5) s "
@@ -45,7 +45,7 @@ def _totals():
         rows = c.fetchall()
     conn.close()
     per = {r["rule"]: (int(r["g"]), int(r["s"])) for r in rows}
-    return sum(g for g, _ in per.values()), per
+    return sum(g for g, _ in per.values()), sum(s for _, s in per.values()), per
 
 
 def _insert(cand):
@@ -87,7 +87,7 @@ def apply_safe(emit):
         if c["rule"] not in strongest or c["drop_insample"] > strongest[c["rule"]]["drop_insample"]:
             strongest[c["rule"]] = c
 
-    base_good, base_per = _totals()
+    base_good, base_slecht, base_per = _totals()
     applied, rejected = [], 0
     for rule in sorted(strongest):
         cand = strongest[rule]
@@ -95,20 +95,23 @@ def apply_safe(emit):
         label = f"{cand['indicator']}/{cand['calc']}/lb{cand['lookback']} {bnd} {round(cand['threshold'], 5)}"
         sid = _insert(cand)
         _refire()
-        now_good, now_per = _totals()
+        now_good, now_slecht, now_per = _totals()
         slecht_before = base_per.get(rule, (0, 0))[1]
         slecht_after = now_per.get(rule, (0, 0))[1]
-        if now_good >= base_good and slecht_after < slecht_before:
+        # GATE: keep only if NO good lost overall AND TOTAL slecht strictly drops (a tightening can
+        # reshuffle bad onto another rule via the single-position dedup; the total is what counts).
+        if now_good >= base_good and now_slecht < base_slecht:
             emit(f"rule {rule}: subrule toegevoegd ({label}). Slecht {slecht_before}→{slecht_after} "
-                 f"op deze rule, totaal goede trades behouden ({base_good}→{now_good}).",
-                 "change", rule, {"candidate": cand, "good_total": [base_good, now_good]})
-            base_good, base_per = now_good, now_per     # cumulative baseline
+                 f"op deze rule; totaal slecht {base_slecht}→{now_slecht}, goede trades behouden "
+                 f"({base_good}→{now_good}).", "change", rule,
+                 {"candidate": cand, "good_total": [base_good, now_good], "slecht_total": [base_slecht, now_slecht]})
+            base_good, base_slecht, base_per = now_good, now_slecht, now_per   # cumulative baseline
             applied.append((rule, cand, slecht_before, slecht_after))
         else:
             _delete(sid)
             _refire()
             reason = (f"zou {base_good - now_good} goede trade(s) verliezen" if now_good < base_good
-                      else "geen daling van slechte trades (inert)")
+                      else "totaal slechte trades daalt niet (dedup verschuift evenveel bad)")
             emit(f"rule {rule}: kandidaat {label} AFGEWEZEN door engine-refire — {reason}. Teruggedraaid.",
                  "info", rule, {"candidate": cand})
             rejected += 1
