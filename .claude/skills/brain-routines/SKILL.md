@@ -7,10 +7,21 @@ How the brain project automates rule improvement: scheduled **Local** Claude Cod
 `engine/src/routines.py` on the Mac, which reaches the local MAMP `brain` DB. (Cloud routines can't —
 the DB is local. So routines must be **Local**: they only run while the Mac is awake + MAMP up.)
 
+## Sets
+
+A **set** is a named ordered chain of routines with a shared goal. The current set is
+**`rule-precision`** ("eliminate existing bad trades from the rules") — its `SET_KEY`/`SET_NAME` live
+in `routines.py` and are written onto every `routine_runs` row (`set_key`/`set_name`), shown per run
+on `/routines`. As more goals appear, add a new set (its own REGISTRY + name, scheduled separately).
+
+The rule-precision set covers BOTH ways to eliminate bad without finding new trades: **tighten existing
+rules** (add a subrule — done, `rule-optimization`+`auto-apply`) and **outlier-split into a new rule**
+(2b — coming, an over-wide band caused by one outlier good trade → move that good to its own rule).
+
 ## The runner (`engine/src/routines.py`)
 
 One ordered chain, one journaled run. `REGISTRY = [(key, fn), ...]` runs each routine in sequence and
-writes a `routine_runs` header + `routine_run_log` lines (shown on the `/routines` screen). Today:
+writes a `routine_runs` header (with the set) + `routine_run_log` lines (shown on `/routines`). Today:
 
 1. **`rule-optimization`** — `daily_optimization.run_optimization()`: refire both coins → rebuild the
    `indicator_metrics` cache → `rq1_tighten.py all` → diff SAFE candidates vs already-applied. Logs the
