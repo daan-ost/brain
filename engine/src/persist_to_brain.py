@@ -16,7 +16,7 @@ import datetime as _dt
 import json
 import sys
 
-from align import snap_to_tick
+from align import align_legacy_dt
 from config import CLUSTER_GAP_MINUTES, FORWARD_MINUTES
 from db import brain, legacy
 from promising import PromisingEngine
@@ -128,8 +128,8 @@ leg = legacy()
 with leg.cursor() as c:
     c.execute("SELECT datetime, rule, result, profit_loss FROM wp_trading_simulation "
               "WHERE trading_symbol_id=%s AND rule IN (20,21,22,23)", (SYM,))
-    # legacy buys are ~5s after the signal tick — snap to our tick grid (DT) so the join hits
-    legmap = {(r["rule"], snap_to_tick(r["datetime"], DT)): r for r in c.fetchall()}
+    # legacy buys = signal tick + 5s (live wait) — subtract it + snap to our grid (DT) so the join hits
+    legmap = {(r["rule"], align_legacy_dt(r["datetime"], DT)): r for r in c.fetchall()}
 leg.close()
 
 # greedy single-position dedup + our sell-engine P&L

@@ -12,7 +12,7 @@ Usage: import_legacy_labels.py [symbol_id ...]   (default: 2525 244)
 """
 import sys
 
-from align import snap_to_tick
+from align import align_legacy_dt
 from db import brain, legacy
 
 KLASSE = {1: "goed", 2: "middel", 3: "slecht"}
@@ -48,7 +48,7 @@ for sym in syms:
     with dst.cursor() as c:
         for row in rows:
             res = int(row["result"])
-            dt = snap_to_tick(row["datetime"], ticks)     # 16:24:01 -> 16:23:56
+            dt = align_legacy_dt(row["datetime"], ticks)   # -5s live wait -> 16:24:01 = signal 16:23:56
             if dt != row["datetime"]:
                 snapped_n += 1
             c.execute(

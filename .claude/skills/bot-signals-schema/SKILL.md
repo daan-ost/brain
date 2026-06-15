@@ -36,6 +36,14 @@ description: The legacy bot_signals (read-only) MySQL schema — tables, key col
 
 ## Gotchas
 
+- **+5s buy-time offset (CRITICAL when mapping legacy → brain).** In the LIVE system the rule-engine
+  ran continuously on incoming indicators; after a positive signal it waited **exactly 5 seconds** (to
+  see if another indicator arrived) and only then recorded the buy. So `wp_trading_simulation.datetime`
+  (and the manual `result` labels on it) = the signal tick **+ 5 seconds**. Our brain fires/ticks are at
+  the raw indicator datetimes, so an EXACT-datetime join misses ~100% (verified: 0/822 DOGEAI, 0/697 NOS).
+  **When importing or joining legacy trades, SUBTRACT 5 seconds** (then snap to the nearest tick for
+  jitter). Encoded in `engine/src/align.py` (`LIVE_SIGNAL_DELAY = 5s`, `align_legacy_dt()`), used by
+  `import_legacy_labels.py` and `persist_to_brain.py`. Example: legacy `16:24:01` = signal tick `16:23:56`.
 - **Boundary drift**: bands widened over time. To validate a rule at datetime T, use the boundary in the oracle row's `settings`, NOT the current `b_min`/`b_max`.
 - **As-of**: a subrule value at T uses the indicator value at/before T (`value_condition` `{diff_number:1}`).
 - Column casing is inconsistent (`trading_symbol_id` in indicator vs `trading_symbol_ID` in the oracle table) — match exactly.

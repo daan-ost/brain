@@ -57,10 +57,18 @@ Read-only via the `bot_signals` connection. Verified counts (Jun 2026): **4.161 
 11/8/169** — heavily slecht-skewed, which is exactly why success criterion 1 (#goed ≥ 2×#slecht)
 fails and why per-moment precision matters.
 
-`persist_to_brain.py` already joins `wp_trading_simulation` as `coin_fires.legacy_result` /
-`legacy_profit_loss` (reference only). The import turns those into `coin_moment_labels` rows with
-`source='legacy'`, idempotent `updateOrCreate` on the natural key: `{1:goed,2:middel,3:slecht}` →
-`manual_klasse`, `{1:yes,3:no}` → `decision`, `result` → `legacy_result`. Show legacy vs manual side
+**+5s offset (critical):** legacy buy datetimes = the signal tick **+ 5s** (the live engine's wait —
+see [[bot-signals-schema]]), so an exact join misses ~100%. The import and `persist_to_brain.py`'s
+legacy join both `align_legacy_dt()` (subtract 5s + snap to the nearest tick, `engine/src/align.py`)
+so labels land on the real moment (16:24:01 → 16:23:56). Without it `coin_fires.legacy_result` is 100%
+NULL and the labeler shows no legacy labels. The labeler reads legacy per moment via
+`CoinMomentLabel::legacyByMoment()` (so it shows on non-trade moments too, not just via the fire).
+
+`persist_to_brain.py` joins `wp_trading_simulation` (aligned) as `coin_fires.legacy_result` /
+`legacy_profit_loss`. The import turns those into `coin_moment_labels` rows with `source='legacy'`
+(rebuild: it DELETEs the coin's legacy rows first, since aligning changes their datetime), mapping
+`{1:goed,2:middel,3:slecht}` → `manual_klasse`, `{1:yes,3:no}` → `decision`, `result` → `legacy_result`.
+Show legacy vs manual side
 by side in the labeler — divergence is the learning signal; it often comes down to a single datetime.
 
 ## Feedback loop (decision: visible-only first)
