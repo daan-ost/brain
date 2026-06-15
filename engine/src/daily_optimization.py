@@ -90,22 +90,26 @@ def new_safe_candidates():
     return out
 
 
+def run_optimization(rebuild=True):
+    """Run the pipeline and return structured results — the entry point for routines.py.
+    {ratios: {rule: (good, bad)}, new: [candidate dicts], rebuilt: bool}. Applies nothing."""
+    if rebuild:
+        for c in COINS:
+            run("persist_to_brain.py", c)
+        run("build_indicator_metrics.py")
+    run("rq1_tighten.py", "all", 5)
+    return {"ratios": current_ratios(), "new": new_safe_candidates(), "rebuilt": rebuild}
+
+
 def main():
     os.makedirs(REPORT_DIR, exist_ok=True)
     date = today()
     log = [f"# Dagelijkse rule-optimalisatie — {date}", ""]
+    log.append("**Data ververst:** re-fire + cache herbouwd over beide coins." if not NO_REBUILD
+               else "**Analyse-only** (`--no-rebuild`): data niet ververst.")
 
-    if not NO_REBUILD:
-        log.append("**Data ververst:** re-fire + cache herbouwd over beide coins.")
-        for c in COINS:
-            run("persist_to_brain.py", c)
-        run("build_indicator_metrics.py")          # both coins
-    else:
-        log.append("**Analyse-only** (`--no-rebuild`): data niet ververst.")
-
-    run("rq1_tighten.py", "all", 5)                # writes rq1_tighten_all.json
-    ratios = current_ratios()
-    new = new_safe_candidates()
+    res = run_optimization(rebuild=not NO_REBUILD)
+    ratios, new = res["ratios"], res["new"]
 
     log += ["", "## Ratio per rule (executed, best_upside-klasse)", "",
             "| rule | goed | slecht | ratio |", "|---|---|---|---|"]

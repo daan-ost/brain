@@ -39,6 +39,11 @@
                       {{ request()->routeIs('engine.*') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
                 <span class="w-2 h-2 rounded-full {{ request()->routeIs('engine.*') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Engine
             </a>
+            <a href="{{ route('routines.index') }}"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 transition
+                      {{ request()->routeIs('routines.*') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
+                <span class="w-2 h-2 rounded-full {{ request()->routeIs('routines.*') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Routines
+            </a>
         </nav>
         <div class="border-t border-white/10 px-3 py-3">
             <form method="POST" action="{{ route('logout') }}">
