@@ -231,7 +231,7 @@
 function flashMsg() { return { shown: false, flash() { this.shown = true; setTimeout(() => { this.shown = false; }, 1500); } }; }
 function __annReg() { if (window.__annReg !== true && window['chartjs-plugin-annotation']) { Chart.register(window['chartjs-plugin-annotation']); window.__annReg = true; } }
 function __xaxis() { return { type: 'linear', ticks: { color: '#64748b', maxTicksLimit: 10,
-    callback: (v) => new Date(v).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) },
+    callback: (v) => new Date(v).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) },
     grid: { color: 'rgba(51,65,85,0.3)' } }; }
 
 const __crosshair = { id: 'crosshair', afterDraw(chart) {
@@ -248,7 +248,7 @@ function __baseOptions(withZoom) {
         interaction: { mode: 'index', intersect: false },
         scales: { x: __xaxis(), y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(51,65,85,0.3)' } } },
         plugins: { legend: { display: false }, tooltip: { callbacks: {
-            title: (it) => new Date(it[0].parsed.x).toLocaleTimeString('nl-NL'),
+            title: (it) => new Date(it[0].parsed.x).toLocaleTimeString('nl-NL', { timeZone: 'UTC' }),
             label: (it) => 'prijs: ' + it.parsed.y } } },
     };
     if (withZoom) o.plugins.zoom = {

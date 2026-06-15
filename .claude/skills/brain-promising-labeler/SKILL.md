@@ -104,6 +104,16 @@ trade(rule) | ok? | +5..+60m | max up% | dip% | OUR sell% | auto | legacy | my l
 positive upside but negative profit_loss = sell-engine left money behind. Sidebar link in
 `layouts/trading.blade.php` after "Coin explorer", using the `route()` + `routeIs()` pattern.
 
+## Display + moment source
+
+- **Times are shown AS-STORED (UTC = the indicator/legacy tables), no Amsterdam conversion.** Converting
+  to Amsterdam (+1h) made the screen mismatch the source data the owner cross-references (a UTC 16:26:12
+  tick showed as 17:26:12). `InteractsWithCoinChart::localFmt()` does NOT setTimezone; the chart JS forces
+  `timeZone:'UTC'`. Keep it that way.
+- **Moments = volumeud ticks only** (where a price exists — you can only "buy" there). Other indicators
+  (vzo, obv-x-value, mfi, phobos) tick at their OWN datetimes; those seconds are NOT labelable moments and
+  correctly have no row. E.g. 16:26:08 has vzo+obv but no volumeud → no row; 16:26:12 has volumeud → a row.
+
 ## Gotchas
 
 - Validate `manual_klasse` against the enum on write — the old string column silently accepted typos.
