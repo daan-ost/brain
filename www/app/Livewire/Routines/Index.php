@@ -27,7 +27,7 @@ class Index extends Component
         $this->error = null;
         $engine = realpath(base_path('../engine'));
         $result = Process::path($engine.'/src')->timeout(120)->run([
-            $engine.'/.venv/bin/python', 'routines.py', '--no-rebuild', '--trigger', 'manual',
+            $engine.'/.venv/bin/python', 'routines.py', '--no-rebuild', '--force', '--trigger', 'manual',
         ]);
         if (! $result->successful()) {
             $this->error = 'Run mislukt: '.trim($result->errorOutput() ?: $result->output());
@@ -37,7 +37,8 @@ class Index extends Component
     public function render()
     {
         $runs = RoutineRun::with('logs')->orderByDesc('id')->limit(20)->get();
+        $state = \Illuminate\Support\Facades\DB::table('routine_state')->where('set_key', 'rule-precision')->first();
 
-        return view('livewire.routines.index', compact('runs'));
+        return view('livewire.routines.index', compact('runs', 'state'));
     }
 }

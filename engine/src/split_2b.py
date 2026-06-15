@@ -153,7 +153,13 @@ def analyse(long, subrules, cov):
                     bad_df["_split"] = in_stretch
                     per_coin = {int(s): int(v["_split"].sum())
                                 for s, v in bad_df.groupby("sym") if v["_split"].sum()}
-                    isolation = round(gap / iqr(cluster), 3) if iqr(cluster) > 1e-9 else float("inf")
+                    # cross-coin strength: how much slecht drops on the WEAKER of the two coins
+                    syms_with_bad = [int(s) for s, v in bad.groupby("sym")]
+                    min_coin_drop = min(per_coin.get(s, 0) for s in syms_with_bad) if syms_with_bad else 0
+                    n_coins_drop = len(per_coin)
+                    cl_iqr = iqr(cluster)
+                    cl_distinct = int(len(np.unique(np.round(cluster, 6))))
+                    isolation = round(gap / cl_iqr, 3) if cl_iqr > 1e-9 else float("inf")
 
                     sac = []
                     for _, r in outliers.iterrows():
@@ -179,6 +185,8 @@ def analyse(long, subrules, cov):
                         "bad_dropped_total_to_edge": n_total_drop,
                         "baseline_rq1_drop": baseline,           # slecht RQ1 already removes (0 good lost)
                         "per_coin_split_drop": per_coin,
+                        "min_coin_drop": int(min_coin_drop),     # cross-coin floor (0 = single-coin only)
+                        "n_coins_drop": n_coins_drop,
                         "n_good": int(len(gv)),
                         "n_bad": int(len(bv)),
                         "good_kept": int(len(gv) - k),
@@ -188,6 +196,8 @@ def analyse(long, subrules, cov):
                         "nearest_outlier_value": round(nearest_outlier, 5),
                         "gap": round(gap, 5),
                         "isolation_gap_over_iqr": isolation,
+                        "cluster_n_distinct": cl_distinct,
+                        "degenerate_discrete": bool(cl_iqr <= 1e-9 or cl_distinct < 5),
                         "scale_unsafe": bool(o.scale_unsafe(ind, calc)),
                         "touches_existing_subrule_ind": ind in rmeta["ind"],
                         "touches_existing_subrule_ind_lb": (ind, int(lb)) in rmeta["ind_lb"],
@@ -195,6 +205,38 @@ def analyse(long, subrules, cov):
                         "n_sacrificed_covered_elsewhere": n_covered,
                     })
     return pd.DataFrame(cands)
+
+
+ISO_GENUINE = 2.0       # gap >= 2x cluster IQR -> a real outlier gap (not a continuous-tail trim)
+
+
+def detail_gap(long, rule, ind, lb, calc, tail, k=1):
+    """Show the actual sorted good values + the slecht that sit in the stretch zone, so a reviewer can
+    SEE the gap (genuine outlier) vs a metric artefact. Returns a printable string."""
+    g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
+             (long["lookback"] == lb) & (long["calc"] == calc)]
+    good = g[g["cls"] == "goed"].sort_values("value")
+    bad = g[g["cls"] == "slecht"].sort_values("value")
+    gv = good["value"].to_numpy(float)
+    if tail == "upper":
+        cluster_edge = float(np.sort(gv)[-(k + 1)])
+        outliers = good[good["value"] > cluster_edge]
+        stretch = bad[(bad["value"] > cluster_edge) & (bad["value"] <= gv.max())]
+        top_cluster = np.sort(gv)[-(k + 6):-(k)]
+    else:
+        cluster_edge = float(np.sort(gv)[k])
+        outliers = good[good["value"] < cluster_edge]
+        stretch = bad[(bad["value"] < cluster_edge) & (bad["value"] >= gv.min())]
+        top_cluster = np.sort(gv)[k:k + 6]
+    L = [f"  rule {rule} {ind}/{calc}/lb{lb} [{tail}]  cluster_edge={round(cluster_edge,4)}",
+         f"    outlier good ({len(outliers)}): " +
+         ", ".join(f"{round(float(r.value),3)}@{('DOGE' if int(r.sym)==o.DOGEAI else 'NOS')}"
+                   f"(bu{round(float(r.best_upside),1)})" for _, r in outliers.iterrows()),
+         f"    nearest cluster good: {[round(float(x),3) for x in top_cluster]}",
+         f"    slecht IN the gap ({len(stretch)}): " +
+         ", ".join(f"{round(float(r.value),3)}@{('DOGE' if int(r.sym)==o.DOGEAI else 'NOS')}"
+                   for _, r in stretch.iterrows())]
+    return "\n".join(L)
 
 
 def main():
@@ -207,59 +249,74 @@ def main():
         print("no split candidates")
         return
 
+    df["genuine"] = ((df["isolation_gap_over_iqr"] >= ISO_GENUINE)
+                     & np.isfinite(df["isolation_gap_over_iqr"])
+                     & (~df["degenerate_discrete"]) & (~df["scale_unsafe"]))
     df = df.sort_values(
-        ["bad_dropped_by_split", "scale_unsafe", "good_sacrificed", "isolation_gap_over_iqr"],
-        ascending=[False, True, True, False]).reset_index(drop=True)
+        ["bad_dropped_by_split", "min_coin_drop", "isolation_gap_over_iqr", "good_sacrificed"],
+        ascending=[False, False, False, True]).reset_index(drop=True)
 
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, "split_2b.json")
     with open(path, "w") as f:
         json.dump(df.to_dict("records"), f, indent=2, default=str)
 
-    pd.set_option("display.width", 200, "display.max_columns", 30)
-    cols = ["rule", "indicator", "lookback", "calc", "tail", "k_outliers",
-            "bad_dropped_by_split", "baseline_rq1_drop", "per_coin_split_drop",
-            "isolation_gap_over_iqr", "scale_unsafe", "n_sacrificed_covered_elsewhere",
+    pd.set_option("display.width", 220, "display.max_columns", 30)
+    cols = ["rule", "indicator", "lookback", "calc", "tail",
+            "bad_dropped_by_split", "min_coin_drop", "per_coin_split_drop", "baseline_rq1_drop",
+            "isolation_gap_over_iqr", "n_sacrificed_covered_elsewhere",
             "touches_existing_subrule_ind_lb"]
 
-    print("\n================= ALL split candidates (k=1, scale-safe), ranked =================")
-    safe1 = df[(df["k_outliers"] == 1) & (~df["scale_unsafe"])]
-    print(safe1[cols].head(40).to_string(index=False))
+    # GENUINE = real gap (iso>=2), scale-safe, k=1, drops slecht on BOTH coins (cross-coin robust)
+    gen = df[df["genuine"] & (df["k_outliers"] == 1) & (df["min_coin_drop"] >= 1)]
+    print("\n========== GENUINE split candidates — real gap, scale-safe, cross-coin (both coins) ==========")
+    print(gen[cols].head(40).to_string(index=False))
 
-    print("\n================= per-rule TOP (k=1, scale-safe, ≥2 slecht weg, cross-coin) =================")
+    print("\n========== per-rule TOP genuine split candidate (with the gap shown) ==========")
     for rule in (20, 21, 22, 23):
-        r = safe1[(safe1["rule"] == rule) & (safe1["bad_dropped_by_split"] >= 2)]
-        # prefer candidates whose dropped slecht is not single-coin
-        print(f"\n--- rule {rule} ({len(r)} candidates ≥2) ---")
+        r = gen[gen["rule"] == rule]
+        print(f"\n--- rule {rule}: {len(r)} genuine cross-coin candidates ---")
         if r.empty:
-            print("  (none ≥2 slecht)")
-            continue
-        print(r[cols].head(8).to_string(index=False))
+            # fall back to single-coin genuine
+            r2 = df[df["genuine"] & (df["k_outliers"] == 1) & (df["rule"] == rule)]
+            if r2.empty:
+                print("  (no genuine-gap split candidate)")
+                continue
+            print("  (none cross-coin; strongest single-coin genuine:)")
+            r = r2
+        top = r.iloc[0]
+        print(f"  {top['indicator']}/{top['calc']}/lb{top['lookback']} [{top['tail']}] "
+              f"drops {top['bad_dropped_by_split']} slecht (per coin {top['per_coin_split_drop']}, "
+              f"min/coin {top['min_coin_drop']}), isolation {top['isolation_gap_over_iqr']}, "
+              f"baseline RQ1 {top['baseline_rq1_drop']}, "
+              f"existing-subrule={top['touches_existing_subrule_ind_lb']}")
+        print(detail_gap(long, int(top["rule"]), top["indicator"], int(top["lookback"]),
+                         top["calc"], top["tail"], int(top["k_outliers"])))
 
-    print("\n================= SCALE-UNSAFE candidates that would look strong but are INERT =========")
-    unsafe = df[(df["k_outliers"] == 1) & (df["scale_unsafe"]) & (df["bad_dropped_by_split"] >= 3)]
+    print("\n========== SCALE-UNSAFE 'strong' candidates that are INERT in the engine (excluded) ==========")
+    unsafe = df[(df["k_outliers"] == 1) & (df["scale_unsafe"]) & (df["bad_dropped_by_split"] >= 4)]
     print(unsafe[["rule", "indicator", "lookback", "calc", "tail",
-                  "bad_dropped_by_split"]].head(15).to_string(index=False))
+                  "bad_dropped_by_split"]].head(12).to_string(index=False))
 
-    # which good trades are outliers across MANY metrics -> structural split targets
-    print("\n================= good trades that need their OWN rule (outlier across metrics) =======")
+    # which good trades are outliers across many GENUINE candidates -> structural split targets
+    print("\n========== good trades that need their OWN rule (genuine-gap outlier across metrics) ==========")
     rows = []
-    for _, c in safe1[safe1["bad_dropped_by_split"] >= 2].iterrows():
+    for _, c in df[df["genuine"] & (df["k_outliers"] == 1)].iterrows():
         for s in c["sacrificed_good"]:
             rows.append({"rule": c["rule"], "coin": s["coin"], "datetime": s["datetime"],
                          "best_upside": s["best_upside"], "covered": bool(s["covered_by_other_rule"]),
-                         "metric": f"{c['indicator']}/{c['calc']}/lb{c['lookback']}/{c['tail']}",
-                         "bad_dropped": c["bad_dropped_by_split"]})
+                         "ind": c["indicator"], "bad_dropped": c["bad_dropped_by_split"],
+                         "min_coin": c["min_coin_drop"]})
     g = pd.DataFrame(rows)
     if not g.empty:
         agg = (g.groupby(["rule", "coin", "datetime", "best_upside", "covered"])
-                 .agg(n_metrics=("metric", "nunique"),
+                 .agg(n_genuine_metrics=("ind", "size"), n_indicators=("ind", "nunique"),
                       max_bad_dropped=("bad_dropped", "max"),
-                      sum_bad_dropped=("bad_dropped", "sum"))
-                 .reset_index().sort_values(["n_metrics", "max_bad_dropped"], ascending=False))
-        print(agg.head(25).to_string(index=False))
+                      best_cross_coin=("min_coin", "max"))
+                 .reset_index().sort_values(["n_indicators", "max_bad_dropped"], ascending=False))
+        print(agg.head(20).to_string(index=False))
 
-    print(f"\nwrote {path}  ({len(df)} candidates, {len(safe1)} scale-safe k=1)")
+    print(f"\nwrote {path}  ({len(df)} candidates; {int(df['genuine'].sum())} genuine-gap scale-safe)")
 
 
 if __name__ == "__main__":

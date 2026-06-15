@@ -12,6 +12,7 @@ apply anything unless you wire an apply-routine in explicitly.
 Usage: routines.py [--no-rebuild] [--date YYYY-MM-DD] [--trigger routine|manual|api]
 """
 import datetime
+import hashlib
 import json
 import sys
 
@@ -20,8 +21,25 @@ import daily_optimization as opt
 
 NO_REBUILD = "--no-rebuild" in sys.argv
 APPLY = "--apply" in sys.argv          # actually apply safe candidates; without it, propose-only
+FORCE = "--force" in sys.argv          # bypass the data-changed gate (manual preview / testing)
 RUN_DATE = sys.argv[sys.argv.index("--date") + 1] if "--date" in sys.argv else None
 TRIGGER = sys.argv[sys.argv.index("--trigger") + 1] if "--trigger" in sys.argv else "manual"
+
+
+def input_fingerprint():
+    """Signature of everything that determines the analysis outcome: the raw `indicators` per coin
+    (count + latest datetime) AND the active `rules` (count + latest change). New data OR a rule
+    change (auto-applied last run, or a manual edit) bumps it; a converged run with no new data
+    leaves it stable → the gate skips. coin_periods/coin_fires are derived, so not needed here."""
+    conn = brain()
+    with conn.cursor() as c:
+        c.execute("SELECT trading_symbol_id s, COUNT(*) n, MAX(datetime) mx FROM indicators GROUP BY trading_symbol_id ORDER BY s")
+        ind = c.fetchall()
+        c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM rules WHERE active=1")
+        rules = c.fetchone()
+    conn.close()
+    sig = "|".join(f"{r['s']}:{r['n']}:{r['mx']}" for r in ind) + f"#rules:{rules['n']}:{rules['mx']}"
+    return hashlib.md5(sig.encode()).hexdigest()
 
 
 class Journal:
@@ -89,10 +107,38 @@ REGISTRY = [
 
 
 # --------------------------------------------------------------------------- runner
+def _state(conn, key):
+    with conn.cursor() as c:
+        c.execute("SELECT fingerprint FROM routine_state WHERE set_key=%s", (key,))
+        return c.fetchone()
+
+
+def _save_state(conn, key, fp, now, ran, outcome):
+    with conn.cursor() as c:
+        c.execute(
+            "INSERT INTO routine_state (set_key, fingerprint, last_checked_at, last_ran_at, last_outcome, "
+            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+            "fingerprint=VALUES(fingerprint), last_checked_at=VALUES(last_checked_at), "
+            "last_ran_at=COALESCE(VALUES(last_ran_at), routine_state.last_ran_at), "
+            "last_outcome=VALUES(last_outcome), updated_at=VALUES(updated_at)",
+            (key, fp, now, ran, outcome, now, now))
+    conn.commit()
+
+
 def main():
     now = datetime.datetime.now()
     run_date = RUN_DATE or now.date().isoformat()
     conn = brain()
+
+    # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
+    fp = input_fingerprint()
+    prev = _state(conn, SET_KEY)
+    if prev and prev["fingerprint"] == fp and not FORCE:
+        _save_state(conn, SET_KEY, fp, now, None, "geen wijziging — overgeslagen")
+        conn.close()
+        print(f"[{run_date}] geen data- of rule-wijziging sinds laatste run — overgeslagen (gebruik --force om toch te draaien).")
+        return
+
     with conn.cursor() as c:
         c.execute("INSERT INTO routine_runs (set_key, set_name, run_date, started_at, status, `trigger`, "
                   "created_at, updated_at) VALUES (%s,%s,%s,%s,'running',%s,%s,%s)",
@@ -124,12 +170,15 @@ def main():
             conn.commit()
             summaries.append(f"{key}: {summary}")
     finally:
+        end = datetime.datetime.now()
         with conn.cursor() as c:
             c.execute("UPDATE routine_runs SET finished_at=%s, status=%s, n_routines=%s, summary=%s, "
                       "updated_at=%s WHERE id=%s",
-                      (datetime.datetime.now(), status, len(REGISTRY), " | ".join(summaries),
-                       datetime.datetime.now(), run_id))
+                      (end, status, len(REGISTRY), " | ".join(summaries), end, run_id))
         conn.commit()
+        # store the START fingerprint of this executed run: if a routine changed the rules, the next
+        # run's fingerprint differs (→ re-runs, compounding); if nothing changed, it matches (→ skips).
+        _save_state(conn, SET_KEY, fp, end, end, " | ".join(summaries)[:160])
         conn.close()
 
     print(f"routine-run #{run_id} [{status}] {run_date}")

@@ -24,6 +24,15 @@
         <div class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{{ $error }}</div>
     @endif
 
+    @if ($state)
+        <div class="rounded-lg border border-gray-100 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-600 flex flex-wrap gap-x-6 gap-y-1">
+            <span>Set <span class="font-medium text-gray-800">Rule-precisie</span></span>
+            <span>Laatst gedraaid: <span class="font-medium text-gray-800">{{ $state->last_ran_at ? \Illuminate\Support\Carbon::parse($state->last_ran_at)->format('d-m-Y H:i') : '—' }}</span></span>
+            <span>Laatst gecheckt: <span class="font-medium text-gray-800">{{ $state->last_checked_at ? \Illuminate\Support\Carbon::parse($state->last_checked_at)->format('d-m-Y H:i') : '—' }}</span></span>
+            @if ($state->last_outcome)<span class="text-gray-400">· {{ \Illuminate\Support\Str::limit($state->last_outcome, 60) }}</span>@endif
+        </div>
+    @endif
+
     @forelse ($runs as $run)
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             {{-- run header --}}
