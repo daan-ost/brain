@@ -110,9 +110,11 @@ positive upside but negative profit_loss = sell-engine left money behind. Sideba
   to Amsterdam (+1h) made the screen mismatch the source data the owner cross-references (a UTC 16:26:12
   tick showed as 17:26:12). `InteractsWithCoinChart::localFmt()` does NOT setTimezone; the chart JS forces
   `timeZone:'UTC'`. Keep it that way.
-- **Moments = volumeud ticks only** (where a price exists — you can only "buy" there). Other indicators
-  (vzo, obv-x-value, mfi, phobos) tick at their OWN datetimes; those seconds are NOT labelable moments and
-  correctly have no row. E.g. 16:26:08 has vzo+obv but no volumeud → no row; 16:26:12 has volumeud → a row.
+- **Moments = EVERY distinct indicator datetime** (not just volumeud). Every indicator row (vzo,
+  obv-x-value, mfi, phobos, volumeud) carries the market `price` and they agree at a given datetime, so
+  the price path is built from all of them (`series()` / `priceBetween()` GROUP BY datetime, MAX(price)).
+  Each unique datetime is therefore an analysable row. ~1415 distinct/day for DOGEAI vs only 447 volumeud
+  — using volumeud-only hid ~⅔ of the moments. `ROW_CAP=3000` covers a full day (max ~2951 distinct).
 
 ## Gotchas
 
