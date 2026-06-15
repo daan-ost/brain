@@ -4,8 +4,8 @@
         <div>
             <h1 class="text-2xl font-semibold text-gray-900">Routines</h1>
             <p class="text-sm text-gray-500">
-                Logboek van de geautomatiseerde routines. Routine 1 = dagelijkse rule-optimalisatie.
-                Voorstellen worden gelogd, niet automatisch toegepast.
+                Logboek per routine-set. De set <span class="font-medium text-gray-700">Rule-precisie</span>
+                scherpt bestaande rules aan om slechte trades te elimineren (0 goede verloren).
             </p>
         </div>
         <button wire:click="runNow" wire:loading.attr="disabled" wire:target="runNow"
@@ -34,6 +34,9 @@
                     @endphp
                     <span class="w-2.5 h-2.5 rounded-full {{ $dot }}"></span>
                     <span class="text-sm font-medium text-gray-900">Run #{{ $run->id }}</span>
+                    @if ($run->set_name)
+                        <span class="text-xs rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 font-medium">{{ $run->set_name }}</span>
+                    @endif
                     <span class="text-xs text-gray-500">{{ $run->started_at?->format('d-m-Y H:i') }}</span>
                     <span class="text-xs rounded-full bg-gray-100 px-2 py-0.5 text-gray-600">{{ $run->trigger }}</span>
                     @if ($run->durationSeconds() !== null)

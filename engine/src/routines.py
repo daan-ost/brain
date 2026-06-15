@@ -76,10 +76,15 @@ def routine_auto_apply(j):
     return auto_apply.apply_safe(lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data))
 
 
-# Ordered chain. Append future routines here; they run after each other in one journaled run.
+# A SET is a named chain of routines with a shared goal. This set = eliminate existing bad trades
+# from the rules (tighten existing rules now; outlier-split into new rules = 2b, coming). Append
+# routines below; they run after each other in one journaled run, under this set's name.
+SET_KEY = "rule-precision"
+SET_NAME = "Rule-precisie — bestaande slechte trades elimineren"
 REGISTRY = [
-    ("rule-optimization", routine_rule_optimization),
-    ("auto-apply", routine_auto_apply),
+    ("rule-optimization", routine_rule_optimization),   # sweep all calcs×lookbacks → tighten existing rules
+    ("auto-apply", routine_auto_apply),                 # apply the strongest safe tightening (engine-gated)
+    # ("outlier-split", routine_outlier_split),          # 2b: pull an outlier good trade into a new rule
 ]
 
 
@@ -89,8 +94,9 @@ def main():
     run_date = RUN_DATE or now.date().isoformat()
     conn = brain()
     with conn.cursor() as c:
-        c.execute("INSERT INTO routine_runs (run_date, started_at, status, `trigger`, created_at, updated_at) "
-                  "VALUES (%s,%s,'running',%s,%s,%s)", (run_date, now, TRIGGER, now, now))
+        c.execute("INSERT INTO routine_runs (set_key, set_name, run_date, started_at, status, `trigger`, "
+                  "created_at, updated_at) VALUES (%s,%s,%s,%s,'running',%s,%s,%s)",
+                  (SET_KEY, SET_NAME, run_date, now, TRIGGER, now, now))
         run_id = c.lastrowid
     conn.commit()
 
