@@ -57,4 +57,24 @@ principle 1 here because rule 20 had no single safe option). Worked: rule 20 vzo
 
 Live record of every added condition: `add_tuned_subrules.py` (source='tuned-precision', idempotent).
 
+## Scale-validity guard (volumeud cache-vs-engine mismatch) — MUST obey
+
+The `indicator_metrics` cache stores **volumeud** as RELATIVE volume (`raw / min_volume`), but the
+rule engine evaluates subrule metrics on the RAW volumeud series. A cache-derived threshold is only
+valid in the engine if the metric is **scale-invariant**. LEVEL/absolute volumeud metrics
+(`median_value`, `*_value`, `diff_number_*`, `max_diff_number`, `standard_deviation`,
+`average_reversal_size`) become a silent **no-op** when added to a rule — the threshold is in the
+wrong units. INVARIANT metrics (percentage/ratio/count/shape: `*_percentage`, `range_percentage`,
+`volatility`, `skewness`, counts, `sideways_*`) are safe. Non-volumeud indicators are never affected.
+`opt_lib.scale_unsafe(indicator, calc)` enforces this; `rq1_tighten.py` flags such candidates
+`SCALE_UNSAFE` so they can't surface as SAFE. **Always engine-validate a tightening via a full re-fire
+(`add_tuned_subrules.py` → `persist_to_brain.py` → ratio) — a cache-only number can be inert.**
+
+## Provenance: `rules_history`
+
+Every rules mutation is logged append-only to `brain.rules_history` (one row per changed rule:
+full snapshot + diff vs previous + per-rule toelichting), written by `rules_history.py` (hooked into
+`add_tuned_subrules.py`). `rules_history.py show [rule]` prints the changelog. Reconstruct rule R at
+version N = latest row for R with version ≤ N.
+
 Related: [[brain-indicator-metrics]] (the calc cache), [[brain-engine]] (rule evaluation).

@@ -45,6 +45,8 @@ def singles(long, rule):
     for _, r in sw.iterrows():
         splits = o.full_validation(long, rule, r["indicator"], int(r["lookback"]), r["calc"], r["bound"])
         verdict, keeps = classify(splits)
+        if o.scale_unsafe(r["indicator"], r["calc"]):
+            verdict = "SCALE_UNSAFE"   # cache threshold invalid in the engine (volumeud level-metric)
         out.append({"kind": "single", "rule": rule, "indicator": r["indicator"],
                     "calc": r["calc"], "lookback": int(r["lookback"]), "bound": r["bound"],
                     "threshold": float(r["threshold"]), "drop_insample": int(r["drop_insample"]),
@@ -114,6 +116,8 @@ def pairs(long, rule, top_k=14):
                 splits[f"{tr_s}->{te_s}"] = {"good_keep": round(r[0], 3), "bad_drop": round(r[1], 3),
                                              "n_te_good": r[3], "n_te_bad": r[4]}
         verdict, keeps = classify(splits)
+        if o.scale_unsafe(a["indicator"], a["calc"]) or o.scale_unsafe(b["indicator"], b["calc"]):
+            verdict = "SCALE_UNSAFE"   # either leg's cache threshold is invalid in the engine
         rows.append({"kind": "pair", "rule": rule,
                      "a": {"indicator": a["indicator"], "calc": a["calc"], "lookback": int(a["lookback"]),
                            "bound": a["bound"], "threshold": a["threshold"]},
@@ -134,7 +138,9 @@ def main():
         report[rule] = {"singles": s, "pairs": p}
         print(f"\n===== RULE {rule} =====")
         safe_s = [c for c in s if c["verdict"] == "SAFE"]
-        print(f"singles: {len(s)} candidates (drop>={MIN_DROP}), {len(safe_s)} SAFE out-of-sample")
+        n_scale = sum(1 for c in s if c["verdict"] == "SCALE_UNSAFE")
+        print(f"singles: {len(s)} candidates (drop>={MIN_DROP}), {len(safe_s)} SAFE out-of-sample"
+              + (f", {n_scale} uitgesloten (SCALE_UNSAFE: volumeud level-metric)" if n_scale else ""))
         for c in safe_s[:6]:
             print(f"  SAFE  {c['indicator']}/{c['calc']}/lb{c['lookback']} {c['bound']}<= {c['threshold']} "
                   f"| drops {c['drop_insample']} bad in-sample | min_good_keep={c['min_good_keep']} "

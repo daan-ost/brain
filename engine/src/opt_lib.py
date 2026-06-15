@@ -32,6 +32,34 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 METRICS_GLOB = os.path.join(HERE, "..", "data", "metrics", "indicator_metrics_*.parquet")
 CALC_COLS = list(WINDOW_METRIC_KEYS)
 
+# ---------------------------------------------------------------------------
+# Scale-validity guard (cache-vs-engine mismatch protection).
+# The indicator_metrics cache stores `volumeud` as RELATIVE volume (raw / min_volume), but the
+# rule-engine evaluates subrule metrics on the RAW volumeud series. A threshold derived from the
+# cache is therefore only valid in the engine if the metric is INVARIANT under scaling by a positive
+# constant. LEVEL metrics (scale with the constant) are NOT — a cache-derived threshold on them is
+# meaningless in the engine (it silently becomes a no-op). See docs/optimization/...rule-set... and
+# memory note volumeud-cache-engine-scale. Only volumeud is normalised, so only it is affected.
+SCALE_NORMALIZED_INDICATORS = {"volumeud"}
+# absolute/level calcs: value scales linearly with the series -> cache != engine for volumeud.
+LEVEL_CALCS = {
+    "current_value", "first_value", "last_value", "diff_previous_number", "max_diff_number",
+    "diff_number_prev_max", "diff_number_prev_min", "lowest_value", "highest_value", "sum_value",
+    "diff_lowest_value_period", "diff_highest_value_period", "standard_deviation",
+    "average_reversal_size", "median_value",
+}
+# everything else in WINDOW_METRIC_KEYS is scale-invariant (percentage/ratio/count/shape):
+# diff_*_percentage, range_percentage, volatility (=std/first), skewness, *_increases/_decreases,
+# reversal_count, count_positive/negative, max_same_value (relative margin), sideways_* (percentage).
+assert LEVEL_CALCS <= set(WINDOW_METRIC_KEYS), LEVEL_CALCS - set(WINDOW_METRIC_KEYS)
+
+
+def scale_unsafe(indicator, calc):
+    """True if a threshold derived from the indicator_metrics cache would be INVALID in the rule
+    engine because of the volumeud relative-vs-raw scale mismatch. Such a candidate must never be
+    shipped from a cache-only sweep — flag it SCALE_UNSAFE, not SAFE."""
+    return indicator in SCALE_NORMALIZED_INDICATORS and calc in LEVEL_CALCS
+
 
 def _cls(u):
     return "goed" if u >= GOOD_UPSIDE else ("slecht" if u < BAD_UPSIDE else "middel")
@@ -268,6 +296,16 @@ if __name__ == "__main__":
     # upper: good max 30; lowest bad above none -> no upper condition
     assert not [c for c in conds if c["bound"] == "upper"], conds
     print("unit-test bad_edge_conditions: PASS", low[0])
+
+    # 1b) unit-test the scale-validity guard against the report's worked case:
+    #     volumeud/median_value (level) is UNSAFE; volumeud/range_percentage (ratio) is SAFE;
+    #     a non-normalised indicator is never affected.
+    assert scale_unsafe("volumeud", "median_value")            # the rejected rule-22 candidate
+    assert scale_unsafe("volumeud", "diff_number_prev_min")    # the rejected rule-21 fallback
+    assert not scale_unsafe("volumeud", "range_percentage")    # the accepted rule-22 replacement
+    assert not scale_unsafe("volumeud", "diff_percentage_prev_max")  # accepted rule-21 primary
+    assert not scale_unsafe("vzo", "median_value")             # vzo is not normalised -> safe
+    print("unit-test scale_unsafe: PASS")
 
     # 2) smoke-test the cache join + sweep on real data
     long = load_long()

@@ -53,3 +53,18 @@ with b.cursor() as c:
     for r in c.fetchall():
         print(f"  rule {r['rule_number']}: {r['subrulename']} van {r['indicator']} lb{int(r['def1_value'])} <= {r['b_max']}")
 b.close()
+
+# record this rule-set state in the append-only history (snapshot + diff + per-rule toelichting)
+import rules_history as _h
+
+_TOELICHTING = {
+    20: "Precisie: vzo/skewness lb13 + mfi/diff_number_prev_min lb17 (veilig paar) + "
+        "RQ1 vzo/range_percentage lb17 >= -44.30. Ratio 1.42 -> 1.80, 0 goede verloren.",
+    21: "Precisie: mfi/last_value lb13 + mfi/diff_previous_number lb4 + RQ1 "
+        "volumeud/diff_percentage_prev_max lb9 >= 158.84 (schaal-invariant). Ratio 0.66 -> 0.83.",
+    22: "Precisie: obv-x-value/volatility lb13 + RQ1 volumeud/range_percentage lb5 >= 15.17 "
+        "(herzien; median_value verworpen wegens volumeud scale-mismatch). Ratio 1.01 -> 1.19.",
+    23: "Precisie: vzo/sum_average_positive_percentage lb16 + RQ1 vzo/diff_number_prev_min lb20 "
+        "<= -1.2. Ratio 0.89 -> 1.24, 0 goede verloren.",
+}
+_h.record(_TOELICHTING, source="tuned-precision", author="claude")
