@@ -39,7 +39,8 @@ _BASE_VOLUME = dict(
 _VOLUME_OVERRIDES = {
     20: dict(maximal_relative_volume=24, max_price_diff_percentage=16, min_price_diff_percentage=0.1,
              multiplier_volume_sum_max=41, multiplier_volume_sum_min=3.4, minimal_relative_volume=0.35),
-    21: dict(multiplier_volume_sum_min=2.1, min_price_diff_percentage=0.03),
+    21: dict(multiplier_volume_sum_min=2.1, min_price_diff_percentage=0.03,
+            trigger_minimal_volume_relative=0.023),   # volume-sweep: robuuste cross-coin winst (−1 slecht/coin), plateau 0.020–0.026
     22: dict(multiplier_volume_sum_min=3.1, minimal_relative_volume=-0.04, trigger_minimal_volume_relative=0.03,
              multiplier_volume_sum_max=79, maximal_relative_volume=23, max_price_diff_percentage=27,
              min_price_diff_percentage=0.03),
