@@ -12,6 +12,11 @@ GOOD trade = executed, `best_upside >= 3%` (the opportunity was real — see bra
 BAD trade = executed, `best_upside < 0.5%` (slecht — to prevent). Middel (0.5-3%) is the grey zone.
 Quality is the best available exit, NOT our sell P&L (the sell-engine is separate, Epic S).
 
+**Success bar** (see memory rule-success-criterion): a rule is "successful" iff (1) `#goed ≥ 2×#slecht`
+AND (2) `Σbest_upside(goed) ≥ 3×Σbest_upside(slecht)`. As of 2026-06: criterion 2 is met everywhere;
+the BINDING gap is criterion 1 (count) — all rules sit at 1.2–1.85×. So the routine's job is to push
+the count ratio to ≥2 via tighten (drop slecht) + loosen (add goed).
+
 ## Principle 1 — as FEW subrules per main rule as possible
 
 Every subrule is an AND. The more conditions, the more **potential good trades you lose** because
