@@ -30,7 +30,7 @@ class PromisingLabeler extends Component
     use InteractsWithCoinChart;
 
     public const HORIZONS = [5, 10, 15, 30, 45, 60];
-    public const ROW_CAP = 3000;            // dekt een volledige dag (max ~2951 distinct datumtijden)
+    public const ROW_CAP = 1500;            // dekt een volledige dag volumeud-ticks (max ~1163/dag)
 
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
@@ -163,9 +163,11 @@ class PromisingLabeler extends Component
     // ---- data ----
 
     /**
-     * Raw (un-downsampled) price series for [startOfDay, endOfDay + 60min]; needed for the horizons.
-     * EVERY distinct indicator datetime (each carries the market price) is a candidate moment — not
-     * just volumeud — so every unique datetime becomes an analysable row.
+     * Raw (un-downsampled) volumeud price series for [startOfDay, endOfDay + 60min]; the candidate
+     * MOMENTS. Only volumeud ticks are valid buy-moments: every buy rule (20-23) has a volumeud
+     * `currentvalue` subrule with time_ago=5 (the volumeud must be ≤5s fresh), so on a non-volumeud
+     * datetime the last volumeud is stale and the rule can't fire. The other indicators are still
+     * available AS-OF at each volumeud tick (the engine reads their last-known value ≤ T).
      */
     private function series(): array
     {
@@ -175,10 +177,10 @@ class PromisingLabeler extends Component
         }
         $start = Carbon::parse($this->date)->startOfDay();
         $tail = (clone $start)->endOfDay()->addMinutes(max(self::HORIZONS));
-        $rows = DB::table('indicators')->selectRaw('datetime, MAX(price) as price')
-            ->where('trading_symbol_id', $this->coin)->whereNotNull('price')
-            ->whereBetween('datetime', [$start, $tail])
-            ->groupBy('datetime')->orderBy('datetime')->get();
+        $rows = DB::table('indicators')->select('datetime', 'price')
+            ->where('trading_symbol_id', $this->coin)->where('indicator', 'volumeud')
+            ->whereNotNull('price')->whereBetween('datetime', [$start, $tail])
+            ->orderBy('datetime')->get();
         $dt = $px = [];
         foreach ($rows as $r) { $dt[] = Carbon::parse($r->datetime); $px[] = (float) $r->price; }
         $this->seriesMemo = [$dt, $px];

@@ -39,16 +39,16 @@ trait InteractsWithCoinChart
     }
 
     /**
-     * Downsampled price between two datetimes (read from brain.indicators). Uses EVERY indicator's
-     * price (one per distinct datetime — they agree), not just volumeud, so the price path is as
-     * fine-grained as the data: every indicator tick is a known market price.
+     * Downsampled volumeud price between two datetimes (read from brain.indicators). The volumeud
+     * series is the trade price path: only volumeud ticks are valid buy-moments (the volumeud
+     * currentvalue/time_ago=5 freshness gate), so the chart + upside use that series.
      */
     protected function priceBetween($from, $to, int $cap = 400): array
     {
         $rows = DB::table('indicators')
-            ->selectRaw('datetime, MAX(price) as price')->where('trading_symbol_id', $this->coin)
-            ->whereNotNull('price')->whereBetween('datetime', [$from, $to])
-            ->groupBy('datetime')->orderBy('datetime')->get();
+            ->select('datetime', 'price')->where('trading_symbol_id', $this->coin)
+            ->where('indicator', 'volumeud')->whereNotNull('price')
+            ->whereBetween('datetime', [$from, $to])->orderBy('datetime')->get();
         $step = max(1, (int) ceil($rows->count() / $cap));
         return $rows->values()->filter(fn ($r, $i) => $i % $step === 0)
             ->map(fn ($r) => ['x' => Carbon::parse($r->datetime)->getTimestampMs(), 'y' => (float) $r->price])

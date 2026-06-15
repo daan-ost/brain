@@ -2,8 +2,9 @@
 
 **Phase:** 0 — Foundation (build now)
 **Status:** GEBOUWD (stap 0–5) + reviewed. Afwijkingen t.o.v. het oorspronkelijke plan, na overleg met Daan:
-het scherm is **moment-niveau** (itereert élke distinct indicator-datumtijd van de dag — alle
-indicatoren dragen de marktprijs, niet alleen volumeud; ~1415/dag i.p.v. 447), met on-the-fly horizon-berekening, een **filter** (`promising`/`all`/`trades`/`executed`,
+het scherm is **moment-niveau** op de **volumeud-ticks** (de geldige koopmomenten — elke buy-rule heeft
+een volumeud currentvalue/time_ago=5 freshness-gate, dus niet-volumeud-momenten zijn geen koopmoment;
+de andere indicatoren zijn er wel, as-of beschikbaar), met on-the-fly horizon-berekening, een **filter** (`promising`/`all`/`trades`/`executed`,
 promising = max +5..+60 ≥ instelbare drempel, default 3%), en **inline ok/niet-ok** (direct opslaan,
 geen modal). Handmatige labels zijn moment-niveau (`coin_moment_labels`, `rule=MOMENT_RULE=0`); legacy
 blijft per-rule als referentie. Stap 6–7 (feedback-loop) nog niet gebouwd. Zie [[brain-promising-labeler]].

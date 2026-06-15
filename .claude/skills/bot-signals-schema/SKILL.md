@@ -39,7 +39,10 @@ description: The legacy bot_signals (read-only) MySQL schema — tables, key col
 - **+5s buy-time offset (CRITICAL when mapping legacy → brain).** In the LIVE system the rule-engine
   ran continuously on incoming indicators; after a positive signal it waited **exactly 5 seconds** (to
   see if another indicator arrived) and only then recorded the buy. So `wp_trading_simulation.datetime`
-  (and the manual `result` labels on it) = the signal tick **+ 5 seconds**. Our brain fires/ticks are at
+  (and the manual `result` labels on it) = the signal tick **+ 5 seconds**. This pairs with the volumeud
+  **`currentvalue` subrule** on every buy rule (IDs 1199/1228/1260/1283, `operator=time_ago condition_rule=5`):
+  the volumeud must be **≤5s fresh**, so a valid buy-moment is a volumeud tick (a non-volumeud datetime
+  has stale volumeud → can't fire). The other indicators are read AS-OF (last value ≤ T) at that tick. Our brain fires/ticks are at
   the raw indicator datetimes, so an EXACT-datetime join misses ~100% (verified: 0/822 DOGEAI, 0/697 NOS).
   **When importing or joining legacy trades, SUBTRACT 5 seconds** (then snap to the nearest tick for
   jitter). Encoded in `engine/src/align.py` (`LIVE_SIGNAL_DELAY = 5s`, `align_legacy_dt()`), used by

@@ -110,11 +110,13 @@ positive upside but negative profit_loss = sell-engine left money behind. Sideba
   to Amsterdam (+1h) made the screen mismatch the source data the owner cross-references (a UTC 16:26:12
   tick showed as 17:26:12). `InteractsWithCoinChart::localFmt()` does NOT setTimezone; the chart JS forces
   `timeZone:'UTC'`. Keep it that way.
-- **Moments = EVERY distinct indicator datetime** (not just volumeud). Every indicator row (vzo,
-  obv-x-value, mfi, phobos, volumeud) carries the market `price` and they agree at a given datetime, so
-  the price path is built from all of them (`series()` / `priceBetween()` GROUP BY datetime, MAX(price)).
-  Each unique datetime is therefore an analysable row. ~1415 distinct/day for DOGEAI vs only 447 volumeud
-  — using volumeud-only hid ~⅔ of the moments. `ROW_CAP=3000` covers a full day (max ~2951 distinct).
+- **Moments = volumeud ticks** (the valid buy-moments), NOT every indicator datetime. Every buy rule
+  (20-23) has a volumeud `currentvalue` subrule with **operator=time_ago, condition_rule=5** (legacy IDs
+  1199/1228/1260/1283) — the volumeud must be **≤5s fresh**. On a non-volumeud datetime (an obv/vzo tick)
+  the last volumeud is stale → that subrule can't fire → it's not a valid buy-moment. So `series()` /
+  `priceBetween()` use volumeud only. The OTHER indicators ARE present and read AS-OF (last value ≤ T)
+  at each volumeud tick — "all indicators in it" = available as-of, not "every indicator's tick is a row".
+  (This is why a legacy buy = volumeud signal tick + ≤5s; see [[bot-signals-schema]] +5s offset.)
 
 ## Gotchas
 
