@@ -40,6 +40,18 @@ reshuffle bad onto another rule via the single-position dedup, so only the total
 subrule per rule per run (principle 1). Every kept change is logged (`level=change`, "rule X: slecht
 A→B, totaal slecht …, goede behouden") and recorded in `rules_history` (source `auto-applied`).
 
+## The data-changed gate (`routine_state`)
+
+Before the expensive chain runs, the runner fingerprints the INPUT — per-coin `indicators`
+(count + max datetime) **and** the active `rules` (count + max `updated_at`) — and compares it to
+`routine_state.fingerprint` (one row per set). Same fingerprint and no `--force` → **skip** (update
+`last_checked_at` only, no run). Because the fingerprint includes `rules`, an applied/manual rule
+change bumps it → the next run proceeds (this is what lets one tightening unlock the next, the
+compounding effect). A converged run with no new data leaves it stable → it skips. It stores the
+**start** fingerprint of the run that executed. `--force` bypasses the gate (the "Nu draaien" button
+uses it so the preview always works). So you can schedule it as often as you like — it only does real
+work when data or rules actually changed.
+
 ## The `/routines` screen
 
 `www` Livewire `Routines/Index` (route `/routines`, admin, trading layout). Lists recent runs with
