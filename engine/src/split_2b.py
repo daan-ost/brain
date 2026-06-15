@@ -11,6 +11,14 @@ threshold at the bad edge, so it can NEVER drop a bad trade that sits *inside* t
 between the good cluster and an outlier good. 2b deliberately drops the outlier good (→ own rule) so
 that exact in-band slecht can be removed.
 
+NOTE ON FRAMING: in practice the winning metric is usually NOT one of the rule's existing subrules,
+so the move is "ADD a splitting subrule whose band = the good cluster" (which excludes the outlier
+good and the in-gap slecht), not "narrow an existing band". `is_existing_subrule_calc` distinguishes
+the two. Either way the slecht-drop count is valid on the EXECUTED set (executed trades passed ALL
+existing subrules; an AND-subrule is monotonic — it can only remove fires), but an ADDED subrule
+needs the mandatory full-period engine re-fire even more, because it filters the whole history on a
+dimension that was never a rule constraint.
+
 Method (cache-only, both coins; NO new calculations, NO ML):
   Reuse opt_lib.load_long() (executed trades × indicator_metrics Parquet cache). For each rule R and
   each metric (indicator, lookback, calc), with pooled good values G and bad values B (both coins):
@@ -53,6 +61,20 @@ MIN_BAD = 5
 MIN_CLUSTER = 6       # cluster left after removing k outliers
 TOL_MIN = 3           # coverage tolerance (matches rule_overlap default)
 
+# subrulename -> cache calc column, for the cases where a subrule directly constrains a cache metric
+# (used to honestly flag whether a candidate metric is ALREADY a subrule of the rule, on the SAME calc —
+# not merely the same indicator/lookback). Conservative: only direct, unambiguous correspondences.
+SUBRULE_CALC = {
+    "currentvalue": "current_value", "last_value": "last_value", "skewness": "skewness",
+    "volatility": "volatility", "range_percentage": "range_percentage",
+    "diff_number_prev_max": "diff_number_prev_max", "diff_number_prev_min": "diff_number_prev_min",
+    "diff_percentage_prev_max": "diff_percentage_prev_max", "max_diff_number": "max_diff_number",
+    "sum_average_positive_percentage": "sum_average_positive_percentage",
+    "diff_previous_number": "diff_previous_number", "sideways_upper": "sideways_upper",
+    # previous_value/futureprice*/missingdata/volume_check have no single clean cache-calc -> not mapped
+}
+ISO_CAP = 30.0         # above this, isolation is a near-constant-cluster artefact, not a clean gap
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "out", "opt")
 
@@ -68,10 +90,14 @@ def load_rule_subrules():
     conn.close()
     by_rule = {}
     for r in rows:
-        d = by_rule.setdefault(r["rule_number"], {"ind": set(), "ind_lb": set(), "subrules": []})
+        d = by_rule.setdefault(r["rule_number"], {"ind": set(), "ind_lb": set(),
+                                                  "ind_calc": set(), "subrules": []})
         d["ind"].add(r["indicator"])
         if r["def1_value"] is not None:
             d["ind_lb"].add((r["indicator"], int(r["def1_value"])))
+        calc = SUBRULE_CALC.get(r["subrulename"])
+        if calc:
+            d["ind_calc"].add((r["indicator"], calc))   # the rule constrains this indicator ON this calc
         d["subrules"].append(r)
     return by_rule
 
@@ -105,7 +131,7 @@ def iqr(a):
 def analyse(long, subrules, cov):
     cands = []
     for rule, sub in long.groupby("rule"):
-        rmeta = subrules.get(int(rule), {"ind": set(), "ind_lb": set()})
+        rmeta = subrules.get(int(rule), {"ind": set(), "ind_lb": set(), "ind_calc": set()})
         for (ind, lb, calc), g in sub.groupby(["indicator", "lookback", "calc"]):
             good = g[g["cls"] == "goed"]
             bad = g[g["cls"] == "slecht"]
@@ -198,9 +224,13 @@ def analyse(long, subrules, cov):
                         "isolation_gap_over_iqr": isolation,
                         "cluster_n_distinct": cl_distinct,
                         "degenerate_discrete": bool(cl_iqr <= 1e-9 or cl_distinct < 5),
+                        "degenerate_iso": bool(np.isfinite(isolation) and isolation > ISO_CAP),
+                        "balance_ratio": round(min_coin_drop / n_split, 3) if n_split else 0.0,
                         "scale_unsafe": bool(o.scale_unsafe(ind, calc)),
-                        "touches_existing_subrule_ind": ind in rmeta["ind"],
-                        "touches_existing_subrule_ind_lb": (ind, int(lb)) in rmeta["ind_lb"],
+                        # rule already evaluates this indicator at this lookback (NOT necessarily same calc):
+                        "rule_evaluates_indicator_at_lb": (ind, int(lb)) in rmeta["ind_lb"],
+                        # the rule ALREADY constrains this exact (indicator, calc) -> it's a band-tighten, not a new subrule:
+                        "is_existing_subrule_calc": (ind, calc) in rmeta["ind_calc"],
                         "sacrificed_good": sac,
                         "n_sacrificed_covered_elsewhere": n_covered,
                     })
@@ -208,6 +238,55 @@ def analyse(long, subrules, cov):
 
 
 ISO_GENUINE = 2.0       # gap >= 2x cluster IQR -> a real outlier gap (not a continuous-tail trim)
+
+
+def _edge(good_vals, tail, k=1):
+    g = np.sort(np.asarray(good_vals, dtype=float))
+    if len(g) <= k:
+        return None
+    return float(g[-(k + 1)]) if tail == "upper" else float(g[k])
+
+
+def oos_2b(long, rule, ind, lb, calc, tail, k=1):
+    """Out-of-sample check for a 2b split (cluster-edge threshold). Derive the cluster edge on TRAIN
+    good (sacrificing train's k outliers) and score on held-out good/bad. Two protocols:
+    - time: per-coin first 70% train / last 30% test (opt_lib's split column).
+    - cross-coin: derive on coin A, test on coin B (both directions).
+    good_keep = fraction of held-out GOOD that stays in the cluster (NOT sacrificed) — a clean rare
+    outlier => ~1.0. bad_drop = fraction of held-out SLECHT removed. Returns dict of splits."""
+    g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
+             (long["lookback"] == lb) & (long["calc"] == calc)]
+
+    def score(tr, te):
+        tr_good = tr[tr["cls"] == "goed"]["value"].to_numpy(float)
+        te_good = te[te["cls"] == "goed"]["value"].to_numpy(float)
+        te_bad = te[te["cls"] == "slecht"]["value"].to_numpy(float)
+        if len(tr_good) < 5 or len(te_good) < 3 or len(te_bad) < 3:
+            return None
+        edge = _edge(tr_good, tail, k)
+        if edge is None:
+            return None
+        if tail == "upper":
+            good_keep = float((te_good <= edge).mean())
+            bad_drop = float((te_bad > edge).mean())
+            te_good_sacrificed = int((te_good > edge).sum())
+        else:
+            good_keep = float((te_good >= edge).mean())
+            bad_drop = float((te_bad < edge).mean())
+            te_good_sacrificed = int((te_good < edge).sum())
+        return {"edge": round(edge, 4), "good_keep": round(good_keep, 3),
+                "bad_drop": round(bad_drop, 3), "n_te_good": len(te_good),
+                "n_te_bad": len(te_bad), "te_good_sacrificed": te_good_sacrificed}
+
+    res = {}
+    t = score(g[g["split"] == "train"], g[g["split"] == "test"])
+    if t:
+        res["time"] = t
+    for a, b, name in ((o.DOGEAI, o.NOS, "2525->244"), (o.NOS, o.DOGEAI, "244->2525")):
+        cc = score(g[g["sym"] == a], g[g["sym"] == b])
+        if cc:
+            res[name] = cc
+    return res
 
 
 def detail_gap(long, rule, ind, lb, calc, tail, k=1):
@@ -250,10 +329,13 @@ def main():
         return
 
     df["genuine"] = ((df["isolation_gap_over_iqr"] >= ISO_GENUINE)
+                     & (df["isolation_gap_over_iqr"] <= ISO_CAP)
                      & np.isfinite(df["isolation_gap_over_iqr"])
                      & (~df["degenerate_discrete"]) & (~df["scale_unsafe"]))
+    # cross-coin BALANCED = the weaker coin still carries a real share of the drop (not just 1)
+    df["cross_coin_balanced"] = (df["balance_ratio"] >= 0.3) & (df["min_coin_drop"] >= 2)
     df = df.sort_values(
-        ["bad_dropped_by_split", "min_coin_drop", "isolation_gap_over_iqr", "good_sacrificed"],
+        ["bad_dropped_by_split", "balance_ratio", "isolation_gap_over_iqr", "good_sacrificed"],
         ascending=[False, False, False, True]).reset_index(drop=True)
 
     os.makedirs(OUT, exist_ok=True)
@@ -261,37 +343,51 @@ def main():
     with open(path, "w") as f:
         json.dump(df.to_dict("records"), f, indent=2, default=str)
 
-    pd.set_option("display.width", 220, "display.max_columns", 30)
+    pd.set_option("display.width", 230, "display.max_columns", 30)
     cols = ["rule", "indicator", "lookback", "calc", "tail",
-            "bad_dropped_by_split", "min_coin_drop", "per_coin_split_drop", "baseline_rq1_drop",
-            "isolation_gap_over_iqr", "n_sacrificed_covered_elsewhere",
-            "touches_existing_subrule_ind_lb"]
+            "bad_dropped_by_split", "min_coin_drop", "balance_ratio", "per_coin_split_drop",
+            "baseline_rq1_drop", "isolation_gap_over_iqr", "n_sacrificed_covered_elsewhere",
+            "is_existing_subrule_calc"]
 
-    # GENUINE = real gap (iso>=2), scale-safe, k=1, drops slecht on BOTH coins (cross-coin robust)
+    # GENUINE = real bounded gap (2<=iso<=30), scale-safe, k=1, slecht drops on BOTH coins
     gen = df[df["genuine"] & (df["k_outliers"] == 1) & (df["min_coin_drop"] >= 1)]
-    print("\n========== GENUINE split candidates — real gap, scale-safe, cross-coin (both coins) ==========")
-    print(gen[cols].head(40).to_string(index=False))
+    print("\n===== GENUINE split candidates — bounded gap (2..30 IQR), scale-safe, cross-coin (k=1) =====")
+    print(gen[cols].head(35).to_string(index=False))
 
-    print("\n========== per-rule TOP genuine split candidate (with the gap shown) ==========")
+    print("\n========== per-rule BEST split candidate (gap + OOS-gated good_keep>=0.90) ==========")
+    OOS_GK = 0.90
     for rule in (20, 21, 22, 23):
         r = gen[gen["rule"] == rule]
         print(f"\n--- rule {rule}: {len(r)} genuine cross-coin candidates ---")
         if r.empty:
-            # fall back to single-coin genuine
-            r2 = df[df["genuine"] & (df["k_outliers"] == 1) & (df["rule"] == rule)]
-            if r2.empty:
-                print("  (no genuine-gap split candidate)")
-                continue
-            print("  (none cross-coin; strongest single-coin genuine:)")
-            r = r2
-        top = r.iloc[0]
+            print("  (no genuine-gap split candidate)")
+            continue
+        # compute OOS for the top-by-drop genuine candidates and keep those whose held-out good survive
+        passed = []
+        for _, c in r.head(25).iterrows():
+            oos = oos_2b(long, int(c["rule"]), c["indicator"], int(c["lookback"]),
+                         c["calc"], c["tail"], int(c["k_outliers"]))
+            gks = [v["good_keep"] for v in oos.values()]
+            min_gk = min(gks) if gks else float("nan")
+            passed.append((min_gk, c, oos))
+        ok = [p for p in passed if not np.isnan(p[0]) and p[0] >= OOS_GK]
+        pool = ok if ok else passed
+        # rank survivors by in-sample drop, then OOS good_keep
+        pool.sort(key=lambda p: (p[1]["bad_dropped_by_split"], p[0]), reverse=True)
+        min_gk, top, oos = pool[0]
+        flag = "" if ok else "  [NONE pass OOS gk>=0.90 — strongest shown, treat as weak]"
         print(f"  {top['indicator']}/{top['calc']}/lb{top['lookback']} [{top['tail']}] "
               f"drops {top['bad_dropped_by_split']} slecht (per coin {top['per_coin_split_drop']}, "
-              f"min/coin {top['min_coin_drop']}), isolation {top['isolation_gap_over_iqr']}, "
-              f"baseline RQ1 {top['baseline_rq1_drop']}, "
-              f"existing-subrule={top['touches_existing_subrule_ind_lb']}")
+              f"balance {top['balance_ratio']}), iso {top['isolation_gap_over_iqr']}, "
+              f"OOS min good_keep={round(min_gk,3)}, baseline RQ1 {top['baseline_rq1_drop']}, "
+              f"existing-subrule-calc={top['is_existing_subrule_calc']}, "
+              f"sac-good-covered={bool(top['n_sacrificed_covered_elsewhere'])}{flag}")
         print(detail_gap(long, int(top["rule"]), top["indicator"], int(top["lookback"]),
                          top["calc"], top["tail"], int(top["k_outliers"])))
+        oos_s = " | ".join(f"{kk}: gk={vv['good_keep']} bad_drop={vv['bad_drop']} "
+                           f"(te {vv['n_te_good']}g/{vv['n_te_bad']}b, sac {vv['te_good_sacrificed']})"
+                           for kk, vv in oos.items()) or "insufficient data"
+        print(f"    OOS  {oos_s}")
 
     print("\n========== SCALE-UNSAFE 'strong' candidates that are INERT in the engine (excluded) ==========")
     unsafe = df[(df["k_outliers"] == 1) & (df["scale_unsafe"]) & (df["bad_dropped_by_split"] >= 4)]
