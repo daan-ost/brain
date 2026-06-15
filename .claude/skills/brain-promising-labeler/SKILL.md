@@ -32,6 +32,13 @@ Natural key `(trading_symbol_id, datetime, rule, source)`. `source` = 'manual' |
 Columns: `decision` (yes/no/no_volume = legacy ok_trade), `manual_klasse` (goed/middel/slecht,
 overrides `klasseKey`), `category` + `comment` (`CoinAnnotation::CATEGORIES`), `legacy_result` (1/2/3).
 
+**Manual labels are MOMENT-level** (rule-independent): "was this datetime a good entry?" doesn't
+depend on which rule fired, and it feeds the per-datetime promising tuning. So Daan's own labels use
+`rule = CoinMomentLabel::MOMENT_RULE (0)` and are matched to fires/moments by datetime only
+(`CoinMomentLabel::momentKey()` / `manualByMoment()` / `attachManual()` / `attachOne()` / `setManual()`).
+Imported legacy labels stay per-rule (a legacy trade had a rule) as reference. `setManual()` writes the
+row, or DELETES it when all fields are empty (clearing a label = intrekken; never an empty row).
+
 **WHY a separate table — the overschrijf-risk:** `engine/src/persist_to_brain.py:45-46` does
 `DELETE FROM coin_fires` + `DELETE FROM coin_periods` per symbol on EVERY re-fire and re-inserts
 WITHOUT any manual label (the INSERT column list has no `manual_klasse`). Anything stored on
@@ -71,14 +78,23 @@ by side in the labeler — divergence is the learning signal; it often comes dow
 ## The labeler screen
 
 Route `/promising-labeler` (`trades.labeler`), Livewire `App\Livewire\Trades\PromisingLabeler`,
-admin-only, fire-level (legacy `simulate_buy.php` was per buy-moment). Coin + day navigation like
-`CoinExplorer`. Reuse CoinExplorer's `zoomChart()` / `coinChart()` chart stack verbatim (
-`coin-explorer.blade.php:224-277`); add horizon-peak markers. Columns: time | rule | bought |
-+5/+10/+15/+30/+45/+60m upside (tooltip: peak price+time) | best_upside | peak@ | early dip |
-OUR sell profit_loss | auto-verdict | legacy label | my label. Red row = positive upside but
-negative profit_loss = sell-engine left money on the table. Sidebar link in
-`layouts/trading.blade.php` after "Coin explorer" (~line 35), using the `route()` + `routeIs()`
-active-state pattern.
+admin-only. **MOMENT-level**, not fire-level: it iterates EVERY distinct volumeud datetime of the day
+(`series()` loads the raw day + 60min tail; `dayMoments()` dedups by `momentKey`), so moments where NO
+rule fired are visible too. Per moment the +5/+10/+15/+30/+45/+60m upside + early dip are computed on
+the fly (`metricsFrom()`, single forward pass — horizons nest, so one pass snapshots all).
+
+Filter (`$view`): `promising` (default — max horizon upside ≥ `$minUpside`, default 3%) | `all` |
+`trades` | `executed`. Non-promising views compute horizons only for rendered rows; promising must
+compute for all to filter. Rows capped at `ROW_CAP=1500` (a full day ≈ 1000–1160 distinct datetimes
+for the slice coins, so `all` rarely truncates); a banner shows the total when capped.
+
+Quick **inline ok/niet-ok** (✓/✗ buttons, `wire:click.stop="setDecision(key, 'yes'|'no')"`) saves the
+moment decision INSTANTLY — no modal; clicking the active one again clears it. Quality + reason go via
+the row's modal (`selectMoment` → `saveLabel`). Uses the shared `InteractsWithCoinChart` trait +
+`zoomChart()`/`labelerChart()` Chart.js stack; horizon-peak markers on the zoom chart. Columns: time |
+trade(rule) | ok? | +5..+60m | max up% | dip% | OUR sell% | auto | legacy | my label. Red row =
+positive upside but negative profit_loss = sell-engine left money behind. Sidebar link in
+`layouts/trading.blade.php` after "Coin explorer", using the `route()` + `routeIs()` pattern.
 
 ## Gotchas
 

@@ -6,12 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 /**
- * A hand (or imported-legacy) label on one buy-moment, keyed by (coin, datetime, rule, source).
+ * A hand (or imported-legacy) label on one buy-MOMENT, keyed by (coin, datetime, rule, source).
  * Stored apart from coin_fires so it survives the persist_to_brain re-fire (which deletes fires).
+ *
+ * Daan's own labels (source='manual') are MOMENT-level: "was this datetime a good entry?" is
+ * rule-independent (it feeds the per-datetime promising tuning), so they use rule=MOMENT_RULE (0).
+ * Imported legacy labels (source='legacy') stay per-rule (a legacy trade had a rule) as reference.
  *
  * decision      = legacy ok_trade: yes / no / no_volume
  * manual_klasse = buy-moment quality override (goed/middel/slecht) on CoinFire::klasseKey()
- * source        = 'manual' (Daan) | 'legacy' (imported wp_trading_simulation.result)
  */
 class CoinMomentLabel extends Model
 {
@@ -24,6 +27,8 @@ class CoinMomentLabel extends Model
 
     public const DECISIONS = ['yes', 'no', 'no_volume'];
     public const KLASSES = ['goed', 'middel', 'slecht'];
+    /** Manual labels are moment-level (rule-independent) — stored under this sentinel rule. */
+    public const MOMENT_RULE = 0;
 
     /** Map a legacy result (1/2/3) to a klasse. */
     public static function klasseFromLegacy(?int $result): ?string
@@ -31,38 +36,56 @@ class CoinMomentLabel extends Model
         return [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$result] ?? null;
     }
 
-    /** The day-keyed map screens use to attach labels in bulk: "Y-m-d H:i:s|rule" => label. */
-    public static function mapKey(\DateTimeInterface $dt, int $rule): string
+    /** The moment key screens use to attach labels in bulk: "Y-m-d H:i:s" (rule-independent). */
+    public static function momentKey(\DateTimeInterface $dt): string
     {
-        return $dt->format('Y-m-d H:i:s') . '|' . $rule;
+        return $dt->format('Y-m-d H:i:s');
     }
 
     /**
-     * Attach the manual labels (source=manual) to a fires collection in bulk, so CoinFire::klasseKey()
-     * applies the override without an N+1. The single place the (datetime, rule) match lives.
-     *
-     * A label belongs to a (coin, datetime, rule) MOMENT, not to a fire-id: if two fires share that
-     * key (e.g. an executed + a shadow on the same tick) they correctly get the same label.
+     * Attach the manual (moment-level) labels to a fires collection in bulk, so CoinFire::klasseKey()
+     * applies the override without an N+1. A label belongs to a (coin, datetime) MOMENT — every fire
+     * on that datetime (executed or shadow, any rule) gets the same label.
      */
     public static function attachManual(Collection $fires, int|string $coin, $start, $end): void
     {
         if ($fires->isEmpty()) {
             return;
         }
-        $labels = static::query()->where('trading_symbol_id', $coin)->where('source', 'manual')
-            ->whereBetween('datetime', [$start, $end])->get()
-            ->keyBy(fn ($l) => static::mapKey($l->datetime, $l->rule));
+        $labels = static::manualByMoment($coin, $start, $end);
         foreach ($fires as $f) {
-            $f->manualLabel = $labels->get(static::mapKey($f->datetime, $f->rule));
+            $f->manualLabel = $labels->get(static::momentKey($f->datetime));
         }
     }
 
-    /** Attach the manual label to a single fire (detail views), so klasseKey() is correct there too. */
+    /** The day's manual labels, keyed by moment ("Y-m-d H:i:s"). One query, reused by both screens. */
+    public static function manualByMoment(int|string $coin, $start, $end): Collection
+    {
+        return static::query()->where('trading_symbol_id', $coin)->where('source', 'manual')
+            ->whereBetween('datetime', [$start, $end])->get()
+            ->keyBy(fn ($l) => static::momentKey($l->datetime));
+    }
+
+    /** Attach the manual moment-label to a single fire (detail views), so klasseKey() is correct. */
     public static function attachOne(CoinFire $f): ?self
     {
         $f->manualLabel = static::query()->where('trading_symbol_id', $f->trading_symbol_id)
-            ->where('datetime', $f->datetime)->where('rule', $f->rule)
-            ->where('source', 'manual')->first();
+            ->where('datetime', $f->datetime)->where('source', 'manual')->first();
         return $f->manualLabel;
+    }
+
+    /** Write/clear a moment-level manual label (rule=MOMENT_RULE). Returns the row, or null if cleared. */
+    public static function setManual(int|string $coin, ?string $symbol, \DateTimeInterface $dt, array $fields, ?string $by = null): ?self
+    {
+        $key = ['trading_symbol_id' => $coin, 'datetime' => $dt, 'rule' => self::MOMENT_RULE, 'source' => 'manual'];
+        $hasAny = ($fields['decision'] ?? null) || ($fields['manual_klasse'] ?? null)
+            || ($fields['category'] ?? null) || trim((string) ($fields['comment'] ?? ''));
+        if (! $hasAny) {
+            static::query()->where($key)->delete();   // intrekken i.p.v. een lege rij
+            return null;
+        }
+        return static::updateOrCreate($key, array_merge($fields, [
+            'symbol' => $symbol, 'set_by' => $by, 'set_at' => now(),
+        ]));
     }
 }

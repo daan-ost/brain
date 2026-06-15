@@ -90,9 +90,9 @@ class CoinExplorer extends Component
         $this->annComment = $ann?->comment ?? '';
         $this->manualKlasse = '';
         if ($type === 'fire' && ($f = CoinFire::find($id))) {
+            // moment-level label (rule-independent)
             $this->manualKlasse = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
-                ->where('datetime', $f->datetime)->where('rule', $f->rule)
-                ->where('source', 'manual')->value('manual_klasse') ?? '';
+                ->where('datetime', $f->datetime)->where('source', 'manual')->value('manual_klasse') ?? '';
         }
     }
 
@@ -106,11 +106,9 @@ class CoinExplorer extends Component
         if ($this->selType !== 'fire' || ! $this->selId) return;
         $f = CoinFire::find($this->selId);
         if (! $f) return;
-        // coin_moment_labels is the single source of truth — survives the persist_to_brain re-fire
-        CoinMomentLabel::updateOrCreate(
-            ['trading_symbol_id' => $f->trading_symbol_id, 'datetime' => $f->datetime, 'rule' => $f->rule, 'source' => 'manual'],
-            ['symbol' => $f->symbol, 'manual_klasse' => $this->manualKlasse ?: null, 'set_by' => auth()->user()?->email, 'set_at' => now()],
-        );
+        // moment-level label in coin_moment_labels (single source of truth; survives the re-fire)
+        CoinMomentLabel::setManual($f->trading_symbol_id, $f->symbol, $f->datetime,
+            ['manual_klasse' => $this->manualKlasse ?: null], auth()->user()?->email);
         $this->dispatch('annotation-saved');
     }
 

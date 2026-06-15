@@ -1,7 +1,12 @@
 # EPIC L: Promising labeler — per-moment koopkwaliteit labelen + classificatie tunen
 
 **Phase:** 0 — Foundation (build now)
-**Status:** Voorgesteld. Bouwt voort op de `/coin-explorer` chart/modal-stack en de `coin_fires.manual_klasse` aanzet (die wordt vervangen door een veilig opslagmodel).
+**Status:** GEBOUWD (stap 0–5) + reviewed. Afwijkingen t.o.v. het oorspronkelijke plan, na overleg met Daan:
+het scherm is **moment-niveau** (itereert élke distinct volumeud-datumtijd van de dag, niet alleen
+fires), met on-the-fly horizon-berekening, een **filter** (`promising`/`all`/`trades`/`executed`,
+promising = max +5..+60 ≥ instelbare drempel, default 3%), en **inline ok/niet-ok** (direct opslaan,
+geen modal). Handmatige labels zijn moment-niveau (`coin_moment_labels`, `rule=MOMENT_RULE=0`); legacy
+blijft per-rule als referentie. Stap 6–7 (feedback-loop) nog niet gebouwd. Zie [[brain-promising-labeler]].
 **Depends on:** Epic A (coin_periods + coin_fires + persist_to_brain.py), Epic R (rule-succes-telling in `daily_optimization.py`), `promising.py` (de promising-verdict + `_validate`).
 **Refines:** E02 (labeling) — dit is de hand-labeler die de auto-classificatie corrigeert en tunet.
 

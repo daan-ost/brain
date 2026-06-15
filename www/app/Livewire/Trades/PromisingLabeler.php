@@ -8,19 +8,21 @@ use App\Models\CoinFire;
 use App\Models\CoinMomentLabel;
 use App\Models\CoinPeriod;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Promising labeler (Epic L) — the rebuilt legacy simulate_buy review table. Per buy-moment
- * (coin_fire) it shows the multi-horizon upside (+5/+10/+15/+30/+45/+60 min, sell-INdependent
- * buy-moment quality) next to OUR sell-engine result (profit_loss), the auto-verdict, the
- * imported legacy label, and Daan's own label. A row with positive upside but negative
- * profit_loss is a sell-engine defect, not a bad buy-moment.
+ * Promising labeler (Epic L) — the rebuilt legacy simulate_buy review grid. Iterates EVERY distinct
+ * volumeud datetime of the day (not just rule-fires) and, per moment, computes the multi-horizon
+ * upside (+5/+10/+15/+30/+45/+60 min, sell-INdependent buy-quality) on the fly. A "promising" filter
+ * (max upside over the horizons ≥ a threshold) keeps the shown set small so you don't render every tick.
  *
- * Labels live in coin_moment_labels (natural key coin+datetime+rule) so they survive the
- * persist_to_brain re-fire that wipes coin_fires.
+ * Quick ok/niet-ok ticks inline (no modal), saved instantly; quality + reason via the modal. Labels are
+ * MOMENT-level (coin_moment_labels, rule=MOMENT_RULE) so they survive the persist re-fire and feed the
+ * per-datetime promising tuning. A row that was also a trade shows its rule + OUR sell profit_loss; a
+ * high upside with a negative profit_loss is a sell-engine defect, not a bad buy-moment.
  */
 #[Layout('layouts.trading')]
 class PromisingLabeler extends Component
@@ -28,21 +30,25 @@ class PromisingLabeler extends Component
     use InteractsWithCoinChart;
 
     public const HORIZONS = [5, 10, 15, 30, 45, 60];
-
-    /** Request-scoped memo of the day's fires (render + a same-request action share one query set). */
-    private ?\Illuminate\Support\Collection $fireMemo = null;
-    private ?string $fireMemoKey = null;
+    public const ROW_CAP = 1500;            // bovengrens getoonde rijen (anders melding)
 
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
-    #[Url] public bool $onlyExecuted = true;     // labeler focuses on real trades (shadows didn't trade)
+    #[Url] public string $view = 'promising';   // promising | all | trades | executed
+    #[Url] public float $minUpside = 3.0;       // promising-drempel (% max over de horizons)
 
     // modal / label state
-    public ?int $selId = null;
+    public ?string $selKey = null;              // 'Y-m-d H:i:s' van het geselecteerde moment
     public string $decision = '';
     public string $klasse = '';
     public string $category = '';
     public string $comment = '';
+
+    /** Request-scoped memo's. */
+    private ?array $seriesMemo = null;
+    private ?string $seriesMemoKey = null;
+    private ?array $momentMemo = null;
+    private ?string $momentMemoKey = null;
 
     public function mount(): void
     {
@@ -72,32 +78,56 @@ class PromisingLabeler extends Component
         $i = $days->search($this->date);
         if ($i === false) {
             $this->date = $days->first() ?? $this->date;
-            return;
+        } else {
+            $this->date = $days[max(0, min($days->count() - 1, $i + $dir))];
         }
-        $this->date = $days[max(0, min($days->count() - 1, $i + $dir))];
+        $this->resetMemo();
         $this->closeDetail();
     }
 
     public function updatedCoin(): void
     {
         $this->date = optional($this->dayList()->first())?->format('Y-m-d') ?? $this->date;
+        $this->resetMemo();
         $this->closeDetail();
     }
 
-    /** Filter wijzigt de zichtbare set → sluit de modal zodat selId niet buiten dayFireIds() valt. */
-    public function updatedOnlyExecuted(): void
+    public function updatedDate(): void { $this->resetMemo(); $this->closeDetail(); }
+    public function updatedView(): void { $this->resetMemo(); $this->closeDetail(); }
+    public function updatedMinUpside(): void { $this->resetMemo(); }
+
+    private function resetMemo(): void
     {
-        $this->closeDetail();
+        $this->seriesMemo = $this->seriesMemoKey = $this->momentMemo = $this->momentMemoKey = null;
     }
 
-    public function selectFire(int $id): void { $this->open($id); }
+    // ---- inline quick tick (no modal) ----
 
-    private function open(int $id): void
+    /** Toggle the ok/niet-ok decision for a moment and save instantly. */
+    public function setDecision(string $key, string $val): void
     {
-        $f = CoinFire::find($id);
-        if (! $f) return;
-        $this->selId = $id;
-        $l = $this->label($f, 'manual');
+        $dt = Carbon::parse($key);
+        $existing = CoinMomentLabel::where('trading_symbol_id', $this->coin)
+            ->where('datetime', $dt)->where('source', 'manual')->first();
+        $new = ($existing?->decision === $val) ? null : $val;   // klik op de actieve = uitzetten
+        CoinMomentLabel::setManual($this->coin, $existing?->symbol, $dt, [
+            'decision' => $new,
+            'manual_klasse' => $existing?->manual_klasse,
+            'category' => $existing?->category,
+            'comment' => $existing?->comment,
+        ], auth()->user()?->email);
+        $this->momentMemo = $this->momentMemoKey = null;   // row reflecteert de nieuwe staat
+    }
+
+    // ---- modal ----
+
+    public function selectMoment(string $key): void { $this->open($key); }
+
+    private function open(string $key): void
+    {
+        $this->selKey = $key;
+        $l = CoinMomentLabel::where('trading_symbol_id', $this->coin)
+            ->where('datetime', Carbon::parse($key))->where('source', 'manual')->first();
         $this->decision = $l?->decision ?? '';
         $this->klasse = $l?->manual_klasse ?? '';
         $this->category = $l?->category ?? '';
@@ -106,100 +136,190 @@ class PromisingLabeler extends Component
 
     public function closeDetail(): void
     {
-        $this->reset(['selId', 'decision', 'klasse', 'category', 'comment']);
+        $this->reset(['selKey', 'decision', 'klasse', 'category', 'comment']);
     }
 
-    /** Step to the next/previous fire of the same day inside the modal. */
     public function navDetail(int $dir): void
     {
-        $ids = $this->dayFireIds();
-        $i = array_search($this->selId, $ids, true);
+        $keys = array_column($this->dayMoments()['rows'], 'key');
+        $i = array_search($this->selKey, $keys, true);
         if ($i === false) return;
-        $this->open($ids[max(0, min(count($ids) - 1, $i + $dir))]);
+        $this->open($keys[max(0, min(count($keys) - 1, $i + $dir))]);
     }
 
     public function saveLabel(): void
     {
-        if (! $this->selId) return;
-        $f = CoinFire::find($this->selId);
-        if (! $f) return;
-
-        $key = ['trading_symbol_id' => $f->trading_symbol_id, 'datetime' => $f->datetime, 'rule' => $f->rule, 'source' => 'manual'];
-
-        // niets ingevuld? trek een eventueel bestaand label in i.p.v. een lege rij te schrijven
-        if (! ($this->decision || $this->klasse || $this->category || trim($this->comment))) {
-            CoinMomentLabel::where($key)->delete();
-            $this->dispatch('label-saved');
-            return;
-        }
-
-        // coin_moment_labels is de enige bron — geen mirror naar de dode coin_fires.manual_klasse
-        CoinMomentLabel::updateOrCreate($key, [
-            'symbol' => $f->symbol,
+        if (! $this->selKey) return;
+        CoinMomentLabel::setManual($this->coin, null, Carbon::parse($this->selKey), [
             'decision' => $this->decision ?: null,
             'manual_klasse' => $this->klasse ?: null,
             'category' => $this->category ?: null,
             'comment' => $this->comment ?: null,
-            'set_by' => auth()->user()?->email,
-            'set_at' => now(),
-        ]);
+        ], auth()->user()?->email);
+        $this->momentMemo = $this->momentMemoKey = null;
         $this->dispatch('label-saved');
     }
 
-    // ---- helpers ----
+    // ---- data ----
 
-    private function label(CoinFire $f, string $source): ?CoinMomentLabel
+    /** Raw (un-downsampled) volumeud series for [startOfDay, endOfDay + 60min]; needed for the horizons. */
+    private function series(): array
     {
-        return CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
-            ->where('datetime', $f->datetime)->where('rule', $f->rule)
-            ->where('source', $source)->first();
+        $key = "{$this->coin}|{$this->date}";
+        if ($this->seriesMemo !== null && $this->seriesMemoKey === $key) {
+            return $this->seriesMemo;
+        }
+        $start = Carbon::parse($this->date)->startOfDay();
+        $tail = (clone $start)->endOfDay()->addMinutes(max(self::HORIZONS));
+        $rows = DB::table('indicators')->select('datetime', 'price')
+            ->where('trading_symbol_id', $this->coin)->where('indicator', 'volumeud')
+            ->whereNotNull('price')->whereBetween('datetime', [$start, $tail])
+            ->orderBy('datetime')->get();
+        $dt = $px = [];
+        foreach ($rows as $r) { $dt[] = Carbon::parse($r->datetime); $px[] = (float) $r->price; }
+        $this->seriesMemo = [$dt, $px];
+        $this->seriesMemoKey = $key;
+        return $this->seriesMemo;
     }
 
-    private function dayFireIds(): array
+    /** Multi-horizon upside + early dip from a start index (single forward pass). */
+    private function metricsFrom(array $dt, array $px, int $i): array
     {
-        return $this->dayFires()->pluck('id')->all();
+        $buy = $px[$i];
+        $n = count($dt);
+        $j = $i; $runMax = $buy; $runMaxAt = $dt[$i]; $maxAll = $buy;
+        $hz = [];
+        foreach (self::HORIZONS as $h) {
+            $limit = $dt[$i]->copy()->addMinutes($h);
+            while ($j < $n && $dt[$j] <= $limit) {
+                if ($px[$j] > $runMax) { $runMax = $px[$j]; $runMaxAt = $dt[$j]; }
+                $j++;
+            }
+            $hz[$h] = [
+                'up' => $buy > 0 ? round(($runMax - $buy) / $buy * 100, 3) : null,
+                'peak_at' => $runMaxAt,
+            ];
+            $maxAll = max($maxAll, $runMax);
+        }
+        $low = $buy;
+        for ($k = $i; $k < min($i + 10, $n); $k++) {
+            if ($px[$k] < $low) $low = $px[$k];
+        }
+        return [
+            'max' => $buy > 0 ? round(($maxAll - $buy) / $buy * 100, 3) : null,
+            'low10' => $buy > 0 ? round(($low - $buy) / $buy * 100, 3) : null,
+            'hz' => $hz,
+        ];
     }
 
-    /** This day's fires (filtered), with manual labels attached. Memoized per (coin, date, filter). */
-    private function dayFires()
+    private static function klasseFromUpside(?float $u): string
     {
-        $key = "{$this->coin}|{$this->date}|" . (int) $this->onlyExecuted;
-        if ($this->fireMemo !== null && $this->fireMemoKey === $key) {
-            return $this->fireMemo;
+        if ($u === null) return 'onbekend';
+        if ($u >= 3) return 'goed';
+        if ($u >= 0.5) return 'middel';
+        return 'slecht';
+    }
+
+    /** The day's rows after the view filter + a row cap. Memoized per (coin,date,view,minUpside). */
+    private function dayMoments(): array
+    {
+        $key = "{$this->coin}|{$this->date}|{$this->view}|{$this->minUpside}";
+        if ($this->momentMemo !== null && $this->momentMemoKey === $key) {
+            return $this->momentMemo;
         }
         $start = Carbon::parse($this->date)->startOfDay();
         $end = (clone $start)->endOfDay();
-        $q = CoinFire::query()->where('trading_symbol_id', $this->coin)
-            ->whereBetween('datetime', [$start, $end])->orderBy('datetime');
-        if ($this->onlyExecuted) {
-            $q->where('is_executed', true);
-        }
-        $fires = $q->get();
-        CoinMomentLabel::attachManual($fires, $this->coin, $start, $end);
+        [$dt, $px] = $this->series();
 
-        $this->fireMemo = $fires;
-        $this->fireMemoKey = $key;
-        return $fires;
+        // fires of the day keyed by moment (pick the executed one if present)
+        $fires = CoinFire::query()->where('trading_symbol_id', $this->coin)
+            ->whereBetween('datetime', [$start, $end])->orderByDesc('is_executed')->get()
+            ->groupBy(fn ($f) => CoinMomentLabel::momentKey($f->datetime))
+            ->map(fn ($g) => $g->first());            // executed wins (sorted desc)
+        $labels = CoinMomentLabel::manualByMoment($this->coin, $start, $end);
+
+        $rows = [];
+        $total = 0;
+        $seen = [];
+        $endTs = $end->getTimestamp();
+        foreach ($dt as $i => $when) {
+            if ($when->getTimestamp() > $endTs) break;     // tail (forward window) is not its own row
+            $k = CoinMomentLabel::momentKey($when);
+            if (isset($seen[$k])) continue;                // distinct datumtijd
+            $seen[$k] = true;
+            $fire = $fires->get($k);
+
+            // view-filter dat geen horizons nodig heeft eerst
+            if ($this->view === 'trades' && ! $fire) continue;
+            if ($this->view === 'executed' && ! ($fire && $fire->is_executed)) continue;
+
+            // horizons alleen berekenen waar nodig (promising-filter, of binnen de render-cap)
+            $m = null;
+            if ($this->view === 'promising') {
+                $m = $this->metricsFrom($dt, $px, $i);
+                if (($m['max'] ?? -1) < $this->minUpside) continue;
+            }
+
+            $total++;
+            if (count($rows) >= self::ROW_CAP) continue;   // tel door, render begrensd
+            $m ??= $this->metricsFrom($dt, $px, $i);
+
+            $label = $labels->get($k);
+            $rows[] = [
+                'key' => $k,
+                'time' => $this->localFmt($when),
+                'is_trade' => (bool) $fire,
+                'rule' => $fire?->rule,
+                'is_executed' => (bool) ($fire?->is_executed),
+                'horizons' => collect(self::HORIZONS)->map(fn ($h) => [
+                    'h' => $h, 'up' => $m['hz'][$h]['up'],
+                    'peak_at' => $this->localFmt($m['hz'][$h]['peak_at']),
+                ])->all(),
+                'max_up' => $m['max'],
+                'low10' => $m['low10'],
+                'profit_loss' => ($fire && $fire->is_executed) ? $fire->profit_loss : null,
+                'auto' => self::klasseFromUpside($m['max']),
+                'legacy' => $fire?->legacyKlasseKey(),
+                'manual' => $label?->manual_klasse,
+                'decision' => $label?->decision,
+                'sell_gap' => ($fire && $fire->is_executed && ($m['max'] ?? 0) > 1
+                               && $fire->profit_loss !== null && $fire->profit_loss < 0),
+            ];
+        }
+
+        $this->momentMemo = [
+            'rows' => $rows,
+            'total' => $total,
+            'truncated' => $total > count($rows),
+            'labeled' => collect($rows)->filter(fn ($r) => $r['manual'] || $r['decision'])->count(),
+        ];
+        $this->momentMemoKey = $key;
+        return $this->momentMemo;
     }
 
     private function detail(): ?array
     {
-        if (! $this->selId) return null;
-        $f = CoinFire::with('period')->find($this->selId);
-        if (! $f) return null;
+        if (! $this->selKey) return null;
+        $when = Carbon::parse($this->selKey);
+        [$dt, $px] = $this->series();
+        $i = null;
+        foreach ($dt as $idx => $d) { if ($d->eq($when)) { $i = $idx; break; } }
+        if ($i === null) return null;
+        $m = $this->metricsFrom($dt, $px, $i);
+        $buy = $px[$i];
 
-        $markers = ['buy' => $f->datetime->getTimestampMs()];
-        if ($f->selling_datetime) $markers['sell'] = $f->selling_datetime->getTimestampMs();
-        if ($f->best_sell_datetime) $markers['bestsell'] = $f->best_sell_datetime->getTimestampMs();
+        $start = Carbon::parse($this->date)->startOfDay();
+        $end = (clone $start)->endOfDay();
+        $fire = CoinFire::query()->where('trading_symbol_id', $this->coin)->where('datetime', $when)
+            ->orderByDesc('is_executed')->first();
 
-        // horizon peak markers (where each horizon's max sits) + the period band
-        $hz = $f->horizons ?? [];
+        $markers = ['buy' => $when->getTimestampMs()];
+        if ($fire?->selling_datetime) $markers['sell'] = $fire->selling_datetime->getTimestampMs();
+        if ($fire?->best_sell_datetime) $markers['bestsell'] = $fire->best_sell_datetime->getTimestampMs();
         foreach (self::HORIZONS as $h) {
-            $entry = $hz[(string) $h] ?? null;
-            $peakAt = is_array($entry) ? ($entry['peak_at'] ?? null) : null;
-            if ($peakAt) $markers["h{$h}"] = Carbon::parse($peakAt)->getTimestampMs();
+            $markers["h{$h}"] = $m['hz'][$h]['peak_at']->getTimestampMs();
         }
-        if ($per = $f->period) {
+        if ($fire && $fire->period_id && ($per = CoinPeriod::find($fire->period_id))) {
             $markers['pfrom'] = $per->period_from->getTimestampMs();
             $markers['pto'] = $per->period_to->getTimestampMs();
             $markers['pbest'] = $per->best_entry->getTimestampMs();
@@ -207,94 +327,55 @@ class PromisingLabeler extends Component
         }
         [$from, $to] = $this->windowAround($markers);
 
-        $manualLabel = $this->label($f, 'manual');
-
         return [
-            'id' => $f->id,
-            'title' => 'Trade · rule ' . $f->rule . ' · ' . $this->localFmt($f->datetime, 'd M H:i:s'),
-            'is_executed' => $f->is_executed,
-            'auto_klasse' => $f->autoKlasseKey(),
-            'legacy_klasse' => $f->legacyKlasseKey(),
-            'manual_klasse' => $manualLabel?->manual_klasse ?? '',
+            'key' => $this->selKey,
+            'title' => 'Moment · ' . $this->localFmt($when, 'd M H:i:s') . ($fire ? " · trade rule {$fire->rule}" : ' · geen trade'),
+            'is_trade' => (bool) $fire,
+            'auto_klasse' => self::klasseFromUpside($m['max']),
+            'legacy_klasse' => $fire?->legacyKlasseKey(),
             'price' => $this->priceBetween($from, $to),
             'markers' => $markers,
-            'horizons' => $this->horizonRow($f),
+            'horizons' => collect(self::HORIZONS)->map(fn ($h) => [
+                'h' => $h, 'up' => $m['hz'][$h]['up'], 'peak_at' => $this->localFmt($m['hz'][$h]['peak_at']),
+            ])->all(),
             'stats' => array_filter([
-                'rule' => $f->rule,
-                'beste upside % (60m)' => $f->best_upside,
-                'vroege dip %' => $f->lowest10,
-                'aankoopprijs' => $f->buy_price,
-                'onze sell-winst %' => $f->is_executed ? $f->profit_loss : null,
-                'beste sell binnen hold' => ($f->best_sell_price && $f->buy_price)
-                    ? round(($f->best_sell_price - $f->buy_price) / $f->buy_price * 100, 2) . '%' : null,
-                'legacy P&L' => $f->legacy_profit_loss,
+                'beste upside % (60m)' => $m['max'],
+                'vroege dip %' => $m['low10'],
+                'aankoopprijs' => $buy,
+                'onze sell-winst %' => ($fire && $fire->is_executed) ? $fire->profit_loss : null,
+                'legacy P&L' => $fire?->legacy_profit_loss,
             ], fn ($v) => $v !== null && $v !== ''),
         ];
-    }
-
-    /** [{h, up, peak_at}] for the horizon columns/tooltips. Null-safe: a horizon may be absent
-     *  (window had no forward data → persist omits it). */
-    private function horizonRow(CoinFire $f): array
-    {
-        $hz = $f->horizons ?? [];
-        return collect(self::HORIZONS)->map(function ($h) use ($hz) {
-            $e = $hz[(string) $h] ?? null;
-            $e = is_array($e) ? $e : [];
-            return [
-                'h' => $h,
-                'up' => $e['up'] ?? null,
-                'peak_at' => isset($e['peak_at']) ? $this->localFmt(Carbon::parse($e['peak_at'])) : null,
-            ];
-        })->all();
     }
 
     public function render()
     {
         $start = Carbon::parse($this->date)->startOfDay();
         $end = (clone $start)->endOfDay();
+        $data = $this->dayMoments();
 
-        $fires = $this->dayFires();
+        $fires = CoinFire::query()->where('trading_symbol_id', $this->coin)->where('is_executed', true)
+            ->whereBetween('datetime', [$start, $end])->get();
+        CoinMomentLabel::attachManual($fires, $this->coin, $start, $end);
 
         $chart = [
             'price' => $this->priceBetween($start, $end, 600),
-            'fires' => $fires->where('is_executed', true)->map(fn ($f) => [
-                'id' => $f->id, 'x' => $f->datetime->getTimestampMs(),
-                'rule' => $f->rule, 'klasse' => $f->klasseKey(), 'best' => $f->best_upside,
+            'fires' => $fires->map(fn ($f) => [
+                'x' => $f->datetime->getTimestampMs(), 'rule' => $f->rule, 'klasse' => $f->klasseKey(),
             ])->values(),
         ];
 
-        // rows for the table
-        $rows = $fires->map(fn ($f) => [
-            'id' => $f->id,
-            'time' => $this->localFmt($f->datetime),
-            'rule' => $f->rule,
-            'is_executed' => $f->is_executed,
-            'shadow_parent' => $this->localFmt($f->shadow_parent),
-            'horizons' => $this->horizonRow($f),
-            'best_upside' => $f->best_upside,
-            'lowest10' => $f->lowest10,
-            'profit_loss' => $f->is_executed ? $f->profit_loss : null,
-            'auto' => $f->autoKlasseKey(),
-            'legacy' => $f->legacyKlasseKey(),
-            'manual' => $f->manualLabel?->manual_klasse,
-            'decision' => $f->manualLabel?->decision,
-            // sell-engine left money on the table: positive upside, negative realised P&L
-            'sell_gap' => ($f->is_executed && $f->best_upside !== null && $f->best_upside > 1
-                           && $f->profit_loss !== null && $f->profit_loss < 0),
-        ])->values();
-
-        $labeled = $fires->filter(fn ($f) => $f->manualLabel?->manual_klasse)->count();
-
         return view('livewire.trades.promising-labeler', [
-            'rows' => $rows,
+            'rows' => $data['rows'],
+            'total' => $data['total'],
+            'truncated' => $data['truncated'],
+            'labeledCount' => $data['labeled'],
             'chart' => $chart,
             'detail' => $this->detail(),
             'horizons' => self::HORIZONS,
             'categories' => CoinAnnotation::CATEGORIES,
-            'decisions' => CoinMomentLabel::DECISIONS,
             'dayCount' => $this->dayList()->count(),
-            'fireCount' => $fires->count(),
-            'labeledCount' => $labeled,
+            'rowCap' => self::ROW_CAP,
         ]);
     }
 }
