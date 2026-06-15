@@ -20,7 +20,6 @@ description: The legacy bot_signals (read-only) MySQL schema — tables, key col
 | `wp_trading_allrules` | Strategies. `ID` (== rule_number), `SL_settings` JSON (stop-loss params: min_sl1, minutes_in_trade1, etc.). |
 | `wp_trading_symbols` | Coins. `stoploss_multiplier` (0.9996 DOGEAI), `roundingup` (16). |
 | `wp_trading_symbols_rule` | Per-symbol per-rule settings. `settings` JSON → `min_volume` (drives `check_volumeud_3`). |
-| `wp_trading_indicator` | (see above) |
 
 ## Key IDs & values
 

@@ -36,7 +36,25 @@ the maximum room for good trades. **Favor not-missing-good over dropping-every-l
 The gap between the good edge and the bad edge is what makes a condition SAFE. No gap (good and bad
 overlap/adjacent) → no clean threshold → don't use that feature.
 
-## Workflow (dry run first, always)
+## Two paths: automated (default) vs manual
+
+There are now TWO ways tightenings reach `brain.rules`, distinguished by the `source` column:
+
+- **`auto-applied`** — the daily routine. `routines.py --trigger routine --apply` runs the chain in
+  `daily_optimization.py` (refire → rebuild cache → `rq1_tighten.py` → diff vs already-applied) and
+  then `auto_apply.py` applies the **single strongest new SAFE rq1 candidate per rule** behind a real
+  engine-refire gate: keep ONLY if 0 good trades lost AND total slecht strictly drops, else revert.
+  Every run is journaled to `routine_runs`/`routine_run_log` (the `/routines` screen). This is the
+  day-to-day driver — most new subrules now arrive this way.
+- **`tuned-precision`** — the manual loop below, for things the routine won't do on its own
+  (pairs/combos, exploratory candidates, anything you want to vet by hand).
+
+`rq1_tighten.py [rule|all] [min_drop] [--pairs]` is the SAFE-candidate generator both paths consume
+(writes `out/opt/rq1_tighten_all.json`); `daily_optimization.new_safe_candidates()` reads it.
+`band_gate.py` / `precision_gate.py` are the parquet-based exploratory gates (good-envelope [min,max]
+resp. out-of-sample p5-p95 bad-drop) — analysis only, they apply nothing.
+
+## Manual workflow (dry run first, always)
 
 1. `dry_run_subrules.py` — per rule, candidate conditions placed at the bad edge + how many bad they
    prevent (creates nothing).
@@ -73,8 +91,9 @@ wrong units. INVARIANT metrics (percentage/ratio/count/shape: `*_percentage`, `r
 ## Provenance: `rules_history`
 
 Every rules mutation is logged append-only to `brain.rules_history` (one row per changed rule:
-full snapshot + diff vs previous + per-rule toelichting), written by `rules_history.py` (hooked into
-`add_tuned_subrules.py`). `rules_history.py show [rule]` prints the changelog. Reconstruct rule R at
-version N = latest row for R with version ≤ N.
+full snapshot + diff vs previous + per-rule toelichting + `source`), written by `rules_history.py`
+(hooked into both `add_tuned_subrules.py` and `auto_apply.py`). `rules_history.py show [rule]` prints
+the changelog. Reconstruct rule R at version N = latest row for R with version ≤ N. The `source` on a
+subrule (`legacy-seed` / `tuned-precision` / `auto-applied`) tells you where it came from.
 
 Related: [[brain-indicator-metrics]] (the calc cache), [[brain-engine]] (rule evaluation).

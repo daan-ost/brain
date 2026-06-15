@@ -37,7 +37,8 @@ exactly what the precision analysis needs ("op aankoopdatum alle waardes").
 ## Fill / maintenance — THE RULE
 
 `engine/src/build_indicator_metrics.py [symbol_id ...]` rebuilds the cache for a coin (brain table
-+ Parquet mirror, idempotent per symbol). 
++ Parquet mirror, idempotent per symbol). No arg = rebuild all coins; the daily routine calls it
+without args via `daily_optimization.run("build_indicator_metrics.py")` right after the refire.
 
 **Keep it current: re-run for a coin whenever its trades or promising periods change** —
 - after `persist_to_brain.py` (new/changed trades or periods),

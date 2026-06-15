@@ -18,7 +18,11 @@ PHP:                 /Applications/MAMP/bin/php/php8.4.17/bin/php
 Python:              brain/engine/.venv/bin/python   (py3.10: lightgbm, sklearn, duckdb, pandas, pymysql, scipy)
 ```
 
-DOGEAI = `trading_symbol_id` 2525 (5m). First validated slice: ~25 Feb 2025.
+**Two coins** (everything is rebuilt for both; the optimization validates cross-coin DOGEAI↔NOS):
+- **DOGEAI** = `trading_symbol_id` 2525 (fast). First validated slice: ~25 Feb 2025.
+- **NOS** = `trading_symbol_id` 244 (slow).
+Only these two are in `brain` — screens/analysis show exactly DOGEAI + NOS. `volumeud` is normalised
+per coin (raw/min_volume); see the scale guard in [[brain-rule-tuning]].
 
 ## Module map (`engine/src/`)
 
@@ -27,7 +31,15 @@ DOGEAI = `trading_symbol_id` 2525 (5m). First validated slice: ~25 Feb 2025.
 - **`validate_period.py`** — THE validator. `validate_period.py [rule] [from] [to]`. Replays a rule at the oracle datetimes, compares value + pass + fire verdict.
 - **`validate_rule.py`** — single-datetime debug validator.
 - **`validate_sell.py` + `sell_rule101.py`** — sell-side replay vs oracle.
-- **`run_engine.py` / `populate_engine.py`** — replay + write to brain DB.
+- **`persist_to_brain.py`** — THE canonical re-fire/write path: replays rules 20-23 (`RULES` tuple)
+  over the in-scope range, applies single-position dedup (first fire opens a position; later overlapping
+  fires become `is_executed=0` shadows), and writes `coin_fires`/`coin_periods` with `best_upside` +
+  `in_good_period`. Used by `daily_optimization`, `auto_apply`, and the ratio re-measurement.
+  (`run_engine.py` / `populate_engine.py` are the older replay scripts; prefer `persist_to_brain.py`.)
+- **Automation / tuning layer** — `rq1_tighten.py` (SAFE bad-edge candidate generator), `auto_apply.py`
+  (engine-gated apply of the strongest candidate per rule), `daily_optimization.py` (propose-only daily
+  pipeline), `routines.py` (journaled routine runner → `/routines`), `rules_history.py` (append-only
+  rules audit-trail). See [[brain-rule-tuning]] for the tuning principles and the auto vs manual paths.
 - **`promising.py`** — port of legacy `find_promising_trades` (good-moment definition). `PromisingEngine(symbol, order)` loads the volumeud series; `.promising(entry_dt)` returns highest/lowest_10/checkpoints/verdict. **Order = ascending** (validated vs labels; DESC is a legacy quirk). `_validate()` checks vs result=1/3 labels (DOGEAI 95.1%).
 - **`cluster_promising.py`** — dedups overlapping promising moments into periods (`scan_periods`, `best_entry`). One best entry per rise.
 - **`rules_vs_promising.py`** — overlays actual legacy rule-fires on promising periods. Shows rules' low recall + low precision vs the good ground truth. Use the recorded-trade overlay (section A), not the current-boundary live re-eval (section B, drifts).
@@ -42,6 +54,17 @@ A rule (e.g. 20/21/22/23) is a **flat AND** of subrules from `wp_trading_rules` 
 - a `value_condition` JSON selecting the metric (`{diff_number:1}` = value at/before the datetime),
 - a `[b_min, b_max]` band.
 The rule fires when ALL subrules pass.
+
+## Adding a NEW rule_number (e.g. splitting an outlier good trade into its own rule)
+
+There is no single rule-list constant yet — `rule_number` is hardcoded in ~13 spots. To add a rule
+(say 24), update them all (or, better as a first step, centralise into one `RULES` constant):
+`rule_engine.py` (`RULES` tuple + the `IN (...)` query), `persist_to_brain.py` (`RULES` + the
+coin_fires query), `seed_rules.py`, `rq1_tighten.py`, `opt_lib.py`, `opt_diag.py`, `per_rule_band.py`,
+`rules_vs_promising.py`, `feature_store.py`, `dry_run_subrules.py`. Also the www screens/pulldowns
+(Trades/CoinExplorer) filter to 20-23. A new rule needs its own subrules in `brain.rules` and
+`coin_rule_settings` (min_volume) per coin. Validate with a full refire (`persist_to_brain.py`) and
+the engine-refire gate (0 good lost, total slecht drops) before keeping it.
 
 ## The oracle-validation method (critical)
 
