@@ -6,11 +6,13 @@ controlled and idempotent so a legacy re-seed never loses them. Each was validat
 sits at the BAD EDGE (brain-rule-tuning principle 2). Prefer one subrule per rule (principle 1);
 rule 20 needed a PAIR because no single safe condition existed (combo_subrules.py).
 
-Result (best_upside class, executed), cumulative over two rounds — 0 good trades lost throughout:
-  rule 20  1.42->1.68 (veilig paar: vzo skewness + mfi diff_number_prev_min)
-  rule 21  0.66->0.72->0.77 (twee subrules: mfi last_value, dan mfi diff_previous_number)
-  rule 22  1.01->1.14   rule 23  0.89->1.07
-Writes brain.rules only.
+Result (best_upside class, executed), cumulative over three rounds — 0 good trades lost throughout
+(round 3 even +1 good: a good shadow promotes to executed as a rule fires less):
+  rule 20  1.42->1.68->1.80   rule 21  0.66->0.72->0.77->0.83
+  rule 22  1.01->1.14->1.19   rule 23  0.89->1.07->1.24
+Round 3 = the report's RQ1 set (docs/optimization/2026-06-14-rule-set-optimization.md), engine-
+validated over the full history of both coins. Net 17 executed bad removed (cross-rule dedup makes
+the per-rule isolated counts non-additive). Writes brain.rules only.
 Usage: add_tuned_subrules.py
 """
 from db import brain
@@ -25,6 +27,15 @@ TUNED = [
     (21, "mfi", "diff_previous_number", 4, None, 14.4),                     # rule 21 #2: dropt ~10 slechte
     (20, "vzo", "skewness", 13, None, 1.4173),                             # rule 20 paar-a: dropt ~5 slechte
     (20, "mfi", "diff_number_prev_min", 17, -22.3, None),                  # rule 20 paar-b: dropt ~4 slechte
+    # derde ronde: de RQ1-set uit het optimalisatie-rapport (docs/optimization/2026-06-14-...).
+    # Engine-gevalideerd over de VOLLEDIGE periode van beide coins (rq2_refire_check.py <rule> rq1):
+    # 0 goede executed trades verloren, slecht weg per rule hieronder. ALLE volumeud-features hier zijn
+    # PERCENTAGE/ratio-metrics (schaal-invariant) -> cache == engine, geen scale-mismatch. Zie de
+    # kritieke-correctie in het rapport: volumeud LEVEL-metrics (median_value etc.) zijn verboden.
+    (20, "vzo", "range_percentage", 17, -44.30233, None),                  # RQ1: dropt 5 slecht (4+1)
+    (21, "volumeud", "diff_percentage_prev_max", 9, 158.83697, None),      # RQ1: dropt 8 slecht (6+2)
+    (22, "volumeud", "range_percentage", 5, 15.17012, None),               # RQ1: dropt 6 slecht (3+3), herzien
+    (23, "vzo", "diff_number_prev_min", 20, None, -1.2),                   # RQ1: dropt 5 slecht (3+2)
 ]
 
 b = brain()

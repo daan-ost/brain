@@ -203,12 +203,14 @@ def full_validation(long, rule, ind, lb, calc, bound):
     return res
 
 
-def load_executed_fires():
-    """All executed fires (both coins) with rule + class — the substrate for RQ3 redundancy."""
+def load_all_fires():
+    """ALL fires (executed AND shadow), both coins, with rule + best_upside class. Shadows matter
+    for redundancy: single-position dedup means only one rule executes at a time, so executed-only
+    overlap is always ~0 (an artefact). A shadow records that another rule ALSO fired there."""
     conn = brain()
     with conn.cursor() as c:
-        c.execute("SELECT trading_symbol_id AS sym, datetime, rule, best_upside "
-                  "FROM coin_fires WHERE is_executed=1 AND best_upside IS NOT NULL")
+        c.execute("SELECT trading_symbol_id AS sym, datetime, rule, is_executed, best_upside "
+                  "FROM coin_fires WHERE best_upside IS NOT NULL")
         df = pd.DataFrame(c.fetchall())
     conn.close()
     df["cls"] = df["best_upside"].apply(_cls)
@@ -216,40 +218,40 @@ def load_executed_fires():
 
 
 def rule_overlap(tol_minutes=3, fires=None):
-    """RQ3 — for each ordered rule pair (X,Y), the fraction of X's GOOD trades that are also
-    caught by Y (a GOOD Y-fire at the same datetime +/- tol_minutes, same coin). Plus, per rule,
-    the fraction of its good trades covered by the UNION of all OTHER rules. A rule whose good
-    trades are ~fully covered by others is a drop candidate. Read-only, exact (no cache)."""
+    """RQ3 — redundancy. Population per rule X = its EXECUTED GOOD trades. Coverage by rule Y = Y
+    has ANY fire (executed or shadow) within +/- tol_minutes (same coin) — i.e. if X were removed,
+    Y would have fired there too. union = ANY other rule fires there. A rule whose executed-good
+    trades are ~fully covered by others is a drop candidate. Uses all fires (shadows included)."""
     if fires is None:
-        fires = load_executed_fires()
-    good = fires[fires["cls"] == "goed"].copy()
+        fires = load_all_fires()
     tol = pd.Timedelta(minutes=tol_minutes)
-    rules = sorted(good["rule"].unique())
+    rules = sorted(fires["rule"].unique())
+    exec_good = fires[(fires["is_executed"] == 1) & (fires["cls"] == "goed")]
     pair_rows, union_rows = [], []
     for X in rules:
-        gx = good[good["rule"] == X]
+        gx = exec_good[exec_good["rule"] == X]
         if gx.empty:
             continue
         covered_union = 0
         for _, r in gx.iterrows():
-            others = good[(good["rule"] != X) & (good["sym"] == r["sym"]) &
-                          (good["datetime"] >= r["datetime"] - tol) &
-                          (good["datetime"] <= r["datetime"] + tol)]
+            others = fires[(fires["rule"] != X) & (fires["sym"] == r["sym"]) &
+                           (fires["datetime"] >= r["datetime"] - tol) &
+                           (fires["datetime"] <= r["datetime"] + tol)]
             if not others.empty:
                 covered_union += 1
-        union_rows.append({"rule": X, "n_good": len(gx), "covered_by_others": covered_union,
+        union_rows.append({"rule": X, "n_exec_good": len(gx), "covered_by_others": covered_union,
                            "pct_covered": round(covered_union / len(gx) * 100, 1)})
         for Y in rules:
             if Y == X:
                 continue
-            gy = good[good["rule"] == Y]
+            fy = fires[fires["rule"] == Y]
             cov = 0
             for _, r in gx.iterrows():
-                m = gy[(gy["sym"] == r["sym"]) & (gy["datetime"] >= r["datetime"] - tol) &
-                       (gy["datetime"] <= r["datetime"] + tol)]
+                m = fy[(fy["sym"] == r["sym"]) & (fy["datetime"] >= r["datetime"] - tol) &
+                       (fy["datetime"] <= r["datetime"] + tol)]
                 if not m.empty:
                     cov += 1
-            pair_rows.append({"X": X, "Y": Y, "n_good_X": len(gx), "covered_by_Y": cov,
+            pair_rows.append({"X": X, "Y": Y, "n_exec_good_X": len(gx), "covered_by_Y": cov,
                               "pct": round(cov / len(gx) * 100, 1)})
     return pd.DataFrame(pair_rows), pd.DataFrame(union_rows)
 
