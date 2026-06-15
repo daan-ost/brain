@@ -13,10 +13,14 @@ use Illuminate\Support\Facades\DB;
  */
 trait InteractsWithCoinChart
 {
-    /** Format a UTC Carbon datetime in Amsterdam local time. */
+    /**
+     * Format a UTC Carbon datetime in Amsterdam local time. MUST copy first: Carbon is mutable and
+     * setTimezone() shifts in place — without the copy it would corrupt shared series datetimes
+     * (e.g. a moment's peak_at points into the price series; formatting it would move that tick +1h).
+     */
     protected function localFmt(?Carbon $dt, string $fmt = 'H:i:s'): ?string
     {
-        return $dt?->setTimezone('Europe/Amsterdam')->format($fmt);
+        return $dt?->copy()->setTimezone('Europe/Amsterdam')->format($fmt);
     }
 
     /** A zoom window [from,to] that contains every (non-null) marker, with 5 min margin each side. */

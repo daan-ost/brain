@@ -66,6 +66,20 @@ class CoinMomentLabel extends Model
             ->keyBy(fn ($l) => static::momentKey($l->datetime));
     }
 
+    /**
+     * The day's imported legacy labels, keyed by moment. Imported datetimes are snapped to our tick
+     * grid (engine align.py), so they line up with the moment rows. If two legacy labels snap to the
+     * same moment, the strongest verdict wins (goed > middel > slecht) so a good moment stays visible.
+     */
+    public static function legacyByMoment(int|string $coin, $start, $end): Collection
+    {
+        $rank = ['goed' => 3, 'middel' => 2, 'slecht' => 1];
+        return static::query()->where('trading_symbol_id', $coin)->where('source', 'legacy')
+            ->whereBetween('datetime', [$start, $end])->get()
+            ->groupBy(fn ($l) => static::momentKey($l->datetime))
+            ->map(fn ($g) => $g->sortByDesc(fn ($l) => $rank[$l->manual_klasse] ?? 0)->first());
+    }
+
     /** Attach the manual moment-label to a single fire (detail views), so klasseKey() is correct. */
     public static function attachOne(CoinFire $f): ?self
     {

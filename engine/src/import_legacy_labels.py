@@ -12,6 +12,7 @@ Usage: import_legacy_labels.py [symbol_id ...]   (default: 2525 244)
 """
 import sys
 
+from align import snap_to_tick
 from db import brain, legacy
 
 KLASSE = {1: "goed", 2: "middel", 3: "slecht"}
@@ -24,6 +25,7 @@ leg = legacy()
 dst = brain()
 dst.autocommit(False)
 total = 0
+snapped_n = 0
 for sym in syms:
     with leg.cursor() as c:
         c.execute("SELECT datetime, rule, result FROM wp_trading_simulation "
@@ -32,12 +34,23 @@ for sym in syms:
     with dst.cursor() as c:
         c.execute("SELECT symbol FROM coins WHERE id=%s", (sym,))
         r = c.fetchone()
+        # tick grid for this coin — to snap the +5s legacy times onto our moments
+        c.execute("SELECT datetime FROM indicators WHERE trading_symbol_id=%s "
+                  "AND indicator='volumeud' AND price IS NOT NULL ORDER BY datetime", (sym,))
+        ticks = [t["datetime"] for t in c.fetchall()]
     symbol = r["symbol"] if r else str(sym)
+
+    # rebuild: drop this coin's legacy rows first (snapping changes their datetime → no stale dupes)
+    with dst.cursor() as c:
+        c.execute("DELETE FROM coin_moment_labels WHERE source='legacy' AND trading_symbol_id=%s", (sym,))
 
     n = 0
     with dst.cursor() as c:
         for row in rows:
             res = int(row["result"])
+            dt = snap_to_tick(row["datetime"], ticks)     # 16:24:01 -> 16:23:56
+            if dt != row["datetime"]:
+                snapped_n += 1
             c.execute(
                 "INSERT INTO coin_moment_labels "
                 "(trading_symbol_id, symbol, datetime, rule, decision, manual_klasse, "
@@ -46,7 +59,7 @@ for sym in syms:
                 # COALESCE: een binnenkomende NULL (middel heeft geen yes/no) overschrijft geen bestaande waarde
                 "ON DUPLICATE KEY UPDATE decision=COALESCE(VALUES(decision), decision), "
                 " manual_klasse=VALUES(manual_klasse), legacy_result=VALUES(legacy_result), updated_at=NOW()",
-                (sym, symbol, row["datetime"], row["rule"], DECISION.get(res), KLASSE.get(res), res))
+                (sym, symbol, dt, row["rule"], DECISION.get(res), KLASSE.get(res), res))
             n += 1
     dst.commit()
     print(f"  {symbol} ({sym}): {n} legacy labels imported")
@@ -54,4 +67,5 @@ for sym in syms:
 
 leg.close()
 dst.close()
-print(f"=== import_legacy_labels — {total} rows into coin_moment_labels (source=legacy) ===")
+print(f"=== import_legacy_labels — {total} rows into coin_moment_labels (source=legacy), "
+      f"{snapped_n} snapped to the nearest tick ===")

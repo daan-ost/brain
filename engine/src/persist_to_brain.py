@@ -16,15 +16,16 @@ import datetime as _dt
 import json
 import sys
 
+from align import snap_to_tick
 from config import CLUSTER_GAP_MINUTES, FORWARD_MINUTES
-
-# Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
-HORIZONS = [5, 10, 15, 30, 45, 60]
 from db import brain, legacy
 from promising import PromisingEngine
 from cluster_promising import scan_periods, best_entry
 from rule_engine import RuleEngine, RULES
 from sell_engine import SellEngine
+
+# Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
+HORIZONS = [5, 10, 15, 30, 45, 60]
 
 SYM = int(sys.argv[1]) if len(sys.argv) > 1 else 2525
 FROM = sys.argv[2] if len(sys.argv) > 2 else None
@@ -127,7 +128,8 @@ leg = legacy()
 with leg.cursor() as c:
     c.execute("SELECT datetime, rule, result, profit_loss FROM wp_trading_simulation "
               "WHERE trading_symbol_id=%s AND rule IN (20,21,22,23)", (SYM,))
-    legmap = {(r["rule"], r["datetime"]): r for r in c.fetchall()}
+    # legacy buys are ~5s after the signal tick — snap to our tick grid (DT) so the join hits
+    legmap = {(r["rule"], snap_to_tick(r["datetime"], DT)): r for r in c.fetchall()}
 leg.close()
 
 # greedy single-position dedup + our sell-engine P&L

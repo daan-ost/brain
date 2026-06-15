@@ -237,6 +237,7 @@ class PromisingLabeler extends Component
             ->groupBy(fn ($f) => CoinMomentLabel::momentKey($f->datetime))
             ->map(fn ($g) => $g->first());            // executed wins (sorted desc)
         $labels = CoinMomentLabel::manualByMoment($this->coin, $start, $end);
+        $legacy = CoinMomentLabel::legacyByMoment($this->coin, $start, $end);   // snapped to our ticks
 
         $rows = [];
         $total = 0;
@@ -279,7 +280,7 @@ class PromisingLabeler extends Component
                 'low10' => $m['low10'],
                 'profit_loss' => ($fire && $fire->is_executed) ? $fire->profit_loss : null,
                 'auto' => self::klasseFromUpside($m['max']),
-                'legacy' => $fire?->legacyKlasseKey(),
+                'legacy' => $legacy->get($k)?->manual_klasse,   // snapped legacy label on this moment
                 'manual' => $label?->manual_klasse,
                 'decision' => $label?->decision,
                 'sell_gap' => ($fire && $fire->is_executed && ($m['max'] ?? 0) > 1
@@ -327,12 +328,15 @@ class PromisingLabeler extends Component
         }
         [$from, $to] = $this->windowAround($markers);
 
+        $legacyLabel = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'legacy')
+            ->where('datetime', $when)->value('manual_klasse');
+
         return [
             'key' => $this->selKey,
             'title' => 'Moment · ' . $this->localFmt($when, 'd M H:i:s') . ($fire ? " · trade rule {$fire->rule}" : ' · geen trade'),
             'is_trade' => (bool) $fire,
             'auto_klasse' => self::klasseFromUpside($m['max']),
-            'legacy_klasse' => $fire?->legacyKlasseKey(),
+            'legacy_klasse' => $legacyLabel,
             'price' => $this->priceBetween($from, $to),
             'markers' => $markers,
             'horizons' => collect(self::HORIZONS)->map(fn ($h) => [
