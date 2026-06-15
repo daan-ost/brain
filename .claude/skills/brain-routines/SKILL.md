@@ -14,9 +14,10 @@ A **set** is a named ordered chain of routines with a shared goal. The current s
 in `routines.py` and are written onto every `routine_runs` row (`set_key`/`set_name`), shown per run
 on `/routines`. As more goals appear, add a new set (its own REGISTRY + name, scheduled separately).
 
-The rule-precision set covers BOTH ways to eliminate bad without finding new trades: **tighten existing
-rules** (add a subrule — done, `rule-optimization`+`auto-apply`) and **outlier-split into a new rule**
-(2b — coming, an over-wide band caused by one outlier good trade → move that good to its own rule).
+The rule-precision set improves the good/bad ratio both ways: **tighten** (rq1 — fewer slecht, `auto-apply`)
+and **loosen** (rq2 — more good, `auto-loosen`). Both behind a full-history + portfolio engine gate.
+Still to come: **outlier-split into a new rule** (2b — PARKED, see the roadmap memory; its companion-rule
+cost is not cache-measurable, needs a real rule_number-24 engine re-fire).
 
 ## The runner (`engine/src/routines.py`)
 
@@ -26,7 +27,13 @@ writes a `routine_runs` header (with the set) + `routine_run_log` lines (shown o
 1. **`rule-optimization`** — `daily_optimization.run_optimization()`: refire both coins → rebuild the
    `indicator_metrics` cache → `rq1_tighten.py all` → diff SAFE candidates vs already-applied. Logs the
    per-rule ratios + the new safe candidates as **proposals** (applies nothing).
-2. **`auto-apply`** — only acts with `--apply`; see the gate below.
+2. **`auto-apply`** — rq1 TIGHTEN: add the strongest safe subrule per rule. Only with `--apply`; gate below.
+3. **`auto-loosen`** — rq2 LOOSEN (`auto_loosen.py`): widen an existing band to admit MORE good (raise
+   the numerator). A loosening ADDS fires so it's riskier — gated by (1) a DiagEngine full-HISTORY
+   re-fire on BOTH coins (reject if ANY new slecht fire; the cheap per-coin in-sample "0 new bad" is
+   misleading — the report disqualified 3/11 that way) THEN (2) a persist portfolio confirm (keep iff
+   total good RISES and total slecht does NOT rise, else revert the band). Keeps the subrule's source;
+   the band change lands in rules_history. Only with `--apply`; max one loosening per rule per run.
 
 Flags: `--no-rebuild` (skip the refire/cache rebuild → fast, preview only), `--apply` (actually apply),
 `--trigger routine|manual|api`, `--date YYYY-MM-DD`.
