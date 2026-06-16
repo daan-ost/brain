@@ -5,6 +5,7 @@
     };
     $upc = function ($v) {
         if ($v === null) return 'text-slate-600';
+        if ($v < 0) return 'text-rose-400';
         if ($v >= 3) return 'text-emerald-400';
         if ($v >= 0.5) return 'text-amber-300';
         return 'text-slate-500';
@@ -35,12 +36,7 @@
             <option value="executed">alleen uitgevoerd</option>
         </select>
 
-        <label class="flex items-center gap-1 text-xs text-slate-400 {{ $view === 'promising' ? '' : 'opacity-40' }}">
-            drempel
-            <input type="number" step="0.5" min="0" wire:model.live.debounce.500ms="minUpside"
-                   class="w-16 bg-slate-800 border-slate-700 rounded-lg text-sm py-1 px-1.5 text-right" {{ $view === 'promising' ? '' : 'disabled' }}>
-            %
-        </label>
+        <span class="text-xs text-slate-500" title="promising = (+5m ≥ 0,5% OF +15m > 3%) EN vroege dip ≥ −0,5%">promising-regel ⓘ</span>
 
         <span class="text-xs text-slate-400">{{ $dayCount }} dagen</span>
 
@@ -52,7 +48,7 @@
 
     @if ($truncated)
         <div class="mb-4 text-xs text-amber-300 bg-amber-950/40 border border-amber-900/50 rounded-lg px-3 py-2">
-            {{ $total }} momenten voldoen aan het filter — eerste {{ $rowCap }} getoond. Verhoog de drempel of kies een filter om te verfijnen.
+            {{ $total }} momenten voldoen aan het filter — eerste {{ $rowCap }} getoond. Kies een ander filter om te verfijnen.
         </div>
     @endif
 
@@ -75,6 +71,7 @@
                 <tr>
                     <th class="text-left px-3 py-2">tijd</th>
                     <th class="text-left px-3 py-2">trade</th>
+                    <th class="text-center px-2 py-2" title="volume-rule (volume_found) op deze tick">vol</th>
                     <th class="text-center px-3 py-2">ok?</th>
                     @foreach ($horizons as $h)
                         <th class="text-right px-2 py-2">+{{ $h }}m</th>
@@ -102,6 +99,7 @@
                                 <span class="text-slate-600">—</span>
                             @endif
                         </td>
+                        <td class="px-2 py-1.5 text-center text-xs">{{ $r['vol'] ? '✓' : '' }}</td>
                         <td class="px-3 py-1.5 text-center">
                             <div class="inline-flex gap-1">
                                 <button wire:click.stop="setDecision('{{ $r['key'] }}', 'yes')"
@@ -115,8 +113,8 @@
                             </div>
                         </td>
                         @foreach ($r['horizons'] as $hz)
-                            <td class="px-2 py-1.5 text-right font-mono text-xs {{ $upc($hz['up']) }}"
-                                title="piek om {{ $hz['peak_at'] ?? '—' }}">{{ $fmt($hz['up']) }}</td>
+                            <td class="px-2 py-1.5 text-right font-mono text-xs {{ $upc($hz['val']) }}"
+                                title="piek om {{ $hz['peak_at'] ?? '—' }}">{{ $fmt($hz['val']) }}</td>
                         @endforeach
                         <td class="px-2 py-1.5 text-right font-mono text-xs {{ $upc($r['max_up']) }} font-semibold">{{ $fmt($r['max_up']) }}</td>
                         <td class="px-2 py-1.5 text-right font-mono text-xs {{ ($r['low10'] ?? 0) < -0.1 ? 'text-rose-400' : 'text-slate-500' }}">{{ $fmt($r['low10']) }}</td>
@@ -134,7 +132,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="{{ 9 + count($horizons) }}" class="px-3 py-4 text-center text-slate-500">Geen momenten voor dit filter.</td></tr>
+                    <tr><td colspan="{{ 10 + count($horizons) }}" class="px-3 py-4 text-center text-slate-500">Geen momenten voor dit filter.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -162,7 +160,7 @@
                         @foreach ($detail['horizons'] as $hz)
                             <div class="px-2.5 py-1 rounded-lg bg-slate-800/70 text-xs">
                                 <span class="text-slate-500">+{{ $hz['h'] }}m</span>
-                                <span class="font-mono {{ $upc($hz['up']) }}">{{ $fmt($hz['up']) }}%</span>
+                                <span class="font-mono {{ $upc($hz['val']) }}">{{ $fmt($hz['val']) }}%</span>
                             </div>
                         @endforeach
                     </div>
@@ -179,19 +177,22 @@
                     <div class="flex items-center gap-4 text-sm mb-4 border-t border-slate-800 pt-4">
                         <span><span class="text-slate-500">auto:</span> <span class="{{ $klc($detail['auto_klasse']) }}">{{ $detail['auto_klasse'] === 'onbekend' ? '—' : $detail['auto_klasse'] }}</span></span>
                         <span><span class="text-slate-500">legacy:</span> <span class="{{ $klc($detail['legacy_klasse']) }}">{{ $detail['legacy_klasse'] ?? '—' }}</span></span>
+                        <span><span class="text-slate-500">promising:</span> <span class="{{ $detail['promising'] ? 'text-emerald-400' : 'text-slate-400' }}">{{ $detail['promising'] ? 'ja' : 'nee' }}</span></span>
+                        <span><span class="text-slate-500">volume-rule:</span> <span class="{{ $detail['vol'] ? 'text-emerald-400' : 'text-slate-500' }}">{{ $detail['vol'] ? '✓' : '—' }}</span></span>
                     </div>
 
                     <div class="border-t border-slate-800 pt-4 space-y-3">
                         <h4 class="text-sm font-semibold text-slate-300">Label dit moment</h4>
                         <div class="flex flex-wrap items-center gap-3">
+                            @php $actCls = ['yes' => 'bg-emerald-600 border-emerald-500 text-white', 'no' => 'bg-rose-600 border-rose-500 text-white', 'no_volume' => 'bg-amber-600 border-amber-500 text-white']; @endphp
                             <div class="flex flex-col">
-                                <span class="text-xs text-slate-500 mb-0.5">beslissing</span>
-                                <select wire:model="decision" class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">
-                                    <option value="">—</option>
-                                    <option value="yes">ok (kopen)</option>
-                                    <option value="no">niet ok</option>
-                                    <option value="no_volume">geen volume</option>
-                                </select>
+                                <span class="text-xs text-slate-500 mb-0.5">beslissing (direct opgeslagen)</span>
+                                <div class="inline-flex gap-1">
+                                    @foreach (['yes' => 'ok (kopen)', 'no' => 'niet ok', 'no_volume' => 'geen volume'] as $val => $lbl)
+                                        <button wire:click="setDecision('{{ $detail['key'] }}', '{{ $val }}')"
+                                                class="px-3 py-1.5 rounded-lg text-sm border transition {{ $decision === $val ? $actCls[$val] : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' }}">{{ $lbl }}</button>
+                                    @endforeach
+                                </div>
                             </div>
                             <div class="flex flex-col">
                                 <span class="text-xs text-slate-500 mb-0.5">kwaliteit</span>

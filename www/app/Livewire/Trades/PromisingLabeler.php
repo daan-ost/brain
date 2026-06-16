@@ -32,10 +32,15 @@ class PromisingLabeler extends Component
     public const HORIZONS = [5, 10, 15, 30, 45, 60];
     public const ROW_CAP = 1500;            // dekt een volledige dag volumeud-ticks (max ~1163/dag)
 
+    // Unified promising-definitie (filter == auto). Promising = (up5 >= UP5_MIN OF up15 > REACH)
+    // EN vroege_dip >= DIP_MIN. Dit is ook de default auto-klasse en straks de default-invulling.
+    public const PROM_UP5 = 0.5;
+    public const PROM_REACH = 3.0;
+    public const PROM_DIP = -0.5;
+
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
     #[Url] public string $view = 'promising';   // promising | all | trades | executed
-    #[Url] public float $minUpside = 3.0;       // promising-drempel (% max over de horizons)
 
     // modal / label state
     public ?string $selKey = null;              // 'Y-m-d H:i:s' van het geselecteerde moment
@@ -94,7 +99,6 @@ class PromisingLabeler extends Component
 
     public function updatedDate(): void { $this->resetMemo(); $this->closeDetail(); }
     public function updatedView(): void { $this->resetMemo(); $this->closeDetail(); }
-    public function updatedMinUpside(): void { $this->resetMemo(); }
 
     private function resetMemo(): void
     {
@@ -116,6 +120,7 @@ class PromisingLabeler extends Component
             'category' => $existing?->category,
             'comment' => $existing?->comment,
         ], auth()->user()?->email);
+        if ($this->selKey === $key) $this->decision = $new ?? '';   // modal-radio reflecteren
         $this->momentMemo = $this->momentMemoKey = null;   // row reflecteert de nieuwe staat
     }
 
@@ -177,13 +182,13 @@ class PromisingLabeler extends Component
         }
         $start = Carbon::parse($this->date)->startOfDay();
         $tail = (clone $start)->endOfDay()->addMinutes(max(self::HORIZONS));
-        $rows = DB::table('indicators')->select('datetime', 'price')
+        $rows = DB::table('indicators')->select('datetime', 'price', 'volume_found')
             ->where('trading_symbol_id', $this->coin)->where('indicator', 'volumeud')
             ->whereNotNull('price')->whereBetween('datetime', [$start, $tail])
             ->orderBy('datetime')->get();
-        $dt = $px = [];
-        foreach ($rows as $r) { $dt[] = Carbon::parse($r->datetime); $px[] = (float) $r->price; }
-        $this->seriesMemo = [$dt, $px];
+        $dt = $px = $vf = [];
+        foreach ($rows as $r) { $dt[] = Carbon::parse($r->datetime); $px[] = (float) $r->price; $vf[] = (int) $r->volume_found; }
+        $this->seriesMemo = [$dt, $px, $vf];
         $this->seriesMemoKey = $key;
         return $this->seriesMemo;
     }
@@ -193,18 +198,21 @@ class PromisingLabeler extends Component
     {
         $buy = $px[$i];
         $n = count($dt);
-        $j = $i; $runMax = $buy; $runMaxAt = $dt[$i]; $maxAll = $buy;
+        $j = $i; $runMax = $buy; $runMin = $buy; $runMaxAt = $dt[$i]; $maxAll = $buy;
         $hz = [];
         foreach (self::HORIZONS as $h) {
             $limit = $dt[$i]->copy()->addMinutes($h);
             while ($j < $n && $dt[$j] <= $limit) {
                 if ($px[$j] > $runMax) { $runMax = $px[$j]; $runMaxAt = $dt[$j]; }
+                if ($px[$j] < $runMin) { $runMin = $px[$j]; }
                 $j++;
             }
-            $hz[$h] = [
-                'up' => $buy > 0 ? round(($runMax - $buy) / $buy * 100, 3) : null,
-                'peak_at' => $runMaxAt,
-            ];
+            $up = $buy > 0 ? round(($runMax - $buy) / $buy * 100, 3) : null;
+            $down = $buy > 0 ? round(($runMin - $buy) / $buy * 100, 3) : null;
+            // signed waarde: de upside als die er was, anders de (negatieve) drawdown — toont dat +5
+            // niet "0.00 vlak" maar negatief was (12:41:01).
+            $val = ($up !== null && $up > 0.005) ? $up : $down;
+            $hz[$h] = ['up' => $up, 'down' => $down, 'val' => $val, 'peak_at' => $runMaxAt];
             $maxAll = max($maxAll, $runMax);
         }
         $low = $buy;
@@ -218,24 +226,37 @@ class PromisingLabeler extends Component
         ];
     }
 
-    private static function klasseFromUpside(?float $u): string
+    /**
+     * THE unified promising-definitie — gebruikt door de filter én de auto-klasse (ze zijn hetzelfde).
+     * Promising = de stijging komt snel genoeg ((up5 >= UP5_MIN) OF (up15 > REACH)) EN er is geen
+     * diskwalificerende vroege dip (vroege_dip >= DIP_MIN).
+     */
+    public static function isPromising(?float $up5, ?float $up15, ?float $dip): bool
     {
-        if ($u === null) return 'onbekend';
-        if ($u >= 3) return 'goed';
-        if ($u >= 0.5) return 'middel';
+        if ($up5 === null || $up15 === null) return false;
+        return (($up5 >= self::PROM_UP5) || ($up15 > self::PROM_REACH)) && (($dip ?? -99) >= self::PROM_DIP);
+    }
+
+    /** Auto-klasse: goed == promising (zelfde definitie als de filter); anders middel/slecht op upside. */
+    private static function autoKlasse(array $m): string
+    {
+        if (self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'])) {
+            return 'goed';
+        }
+        if (($m['max'] ?? 0) >= 0.5) return 'middel';
         return 'slecht';
     }
 
-    /** The day's rows after the view filter + a row cap. Memoized per (coin,date,view,minUpside). */
+    /** The day's rows after the view filter + a row cap. Memoized per (coin,date,view). */
     private function dayMoments(): array
     {
-        $key = "{$this->coin}|{$this->date}|{$this->view}|{$this->minUpside}";
+        $key = "{$this->coin}|{$this->date}|{$this->view}";
         if ($this->momentMemo !== null && $this->momentMemoKey === $key) {
             return $this->momentMemo;
         }
         $start = Carbon::parse($this->date)->startOfDay();
         $end = (clone $start)->endOfDay();
-        [$dt, $px] = $this->series();
+        [$dt, $px, $vf] = $this->series();
 
         // fires of the day keyed by moment (pick the executed one if present)
         $fires = CoinFire::query()->where('trading_symbol_id', $this->coin)
@@ -264,7 +285,7 @@ class PromisingLabeler extends Component
             $m = null;
             if ($this->view === 'promising') {
                 $m = $this->metricsFrom($dt, $px, $i);
-                if (($m['max'] ?? -1) < $this->minUpside) continue;
+                if (! self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'])) continue;
             }
 
             $total++;
@@ -278,14 +299,15 @@ class PromisingLabeler extends Component
                 'is_trade' => (bool) $fire,
                 'rule' => $fire?->rule,
                 'is_executed' => (bool) ($fire?->is_executed),
+                'vol' => $vf[$i] === 1,                          // volume_found op deze tick (punt 6)
                 'horizons' => collect(self::HORIZONS)->map(fn ($h) => [
-                    'h' => $h, 'up' => $m['hz'][$h]['up'],
+                    'h' => $h, 'val' => $m['hz'][$h]['val'],     // signed: upside, of de negatieve dip
                     'peak_at' => $this->localFmt($m['hz'][$h]['peak_at']),
                 ])->all(),
                 'max_up' => $m['max'],
                 'low10' => $m['low10'],
                 'profit_loss' => ($fire && $fire->is_executed) ? $fire->profit_loss : null,
-                'auto' => self::klasseFromUpside($m['max']),
+                'auto' => self::autoKlasse($m),
                 'legacy' => $legacy->get($k)?->manual_klasse,   // snapped legacy label on this moment
                 'manual' => $label?->manual_klasse,
                 'decision' => $label?->decision,
@@ -308,7 +330,7 @@ class PromisingLabeler extends Component
     {
         if (! $this->selKey) return null;
         $when = Carbon::parse($this->selKey);
-        [$dt, $px] = $this->series();
+        [$dt, $px, $vf] = $this->series();
         $i = null;
         foreach ($dt as $idx => $d) { if ($d->eq($when)) { $i = $idx; break; } }
         if ($i === null) return null;
@@ -341,12 +363,14 @@ class PromisingLabeler extends Component
             'key' => $this->selKey,
             'title' => 'Moment · ' . $this->localFmt($when, 'd M H:i:s') . ($fire ? " · trade rule {$fire->rule}" : ' · geen trade'),
             'is_trade' => (bool) $fire,
-            'auto_klasse' => self::klasseFromUpside($m['max']),
+            'vol' => ($vf[$i] ?? 0) === 1,
+            'auto_klasse' => self::autoKlasse($m),
+            'promising' => self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10']),
             'legacy_klasse' => $legacyLabel,
             'price' => $this->priceBetween($from, $to),
             'markers' => $markers,
             'horizons' => collect(self::HORIZONS)->map(fn ($h) => [
-                'h' => $h, 'up' => $m['hz'][$h]['up'], 'peak_at' => $this->localFmt($m['hz'][$h]['peak_at']),
+                'h' => $h, 'val' => $m['hz'][$h]['val'], 'peak_at' => $this->localFmt($m['hz'][$h]['peak_at']),
             ])->all(),
             'stats' => array_filter([
                 'beste upside % (60m)' => $m['max'],
