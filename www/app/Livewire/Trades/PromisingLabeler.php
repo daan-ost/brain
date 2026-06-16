@@ -38,6 +38,9 @@ class PromisingLabeler extends Component
     public const PROM_REACH = 3.0;
     public const PROM_DIP = -0.5;
 
+    // Auto-groepering: opeenvolgende promising momenten <= dit aantal min apart = 1 stijging/trade.
+    public const GROUP_GAP_MIN = 15;
+
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
     #[Url] public string $view = 'promising';   // promising | all | trades | executed
@@ -266,36 +269,52 @@ class PromisingLabeler extends Component
         $labels = CoinMomentLabel::manualByMoment($this->coin, $start, $end);
         $legacy = CoinMomentLabel::legacyByMoment($this->coin, $start, $end);   // snapped to our ticks
 
-        $rows = [];
-        $total = 0;
-        $seen = [];
+        // pass 1: metrics + promising-flag voor ELKE in-day tick (nodig voor stabiele groepen los van de view)
         $endTs = $end->getTimestamp();
+        $moments = [];   // key => ['when','i','m','prom']
+        $seen = [];
         foreach ($dt as $i => $when) {
-            if ($when->getTimestamp() > $endTs) break;     // tail (forward window) is not its own row
+            if ($when->getTimestamp() > $endTs) break;     // tail (forward window) is geen eigen rij
             $k = CoinMomentLabel::momentKey($when);
             if (isset($seen[$k])) continue;                // distinct datumtijd
             $seen[$k] = true;
-            $fire = $fires->get($k);
+            $m = $this->metricsFrom($dt, $px, $i);
+            $moments[$k] = ['when' => $when, 'i' => $i, 'm' => $m,
+                'prom' => self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'])];
+        }
 
-            // view-filter dat geen horizons nodig heeft eerst
+        // pass 2: groepeer opeenvolgende promising momenten (gap <= GROUP_GAP_MIN) = 1 stijging/trade
+        $groupOf = []; $groups = []; $gid = 0; $prevTs = null;
+        foreach ($moments as $k => $mo) {
+            if (! $mo['prom']) continue;
+            $ts = $mo['when']->getTimestamp();
+            if ($prevTs === null || ($ts - $prevTs) > self::GROUP_GAP_MIN * 60) {
+                $groups[++$gid] = ['members' => []];
+            }
+            $groupOf[$k] = $gid;
+            $groups[$gid]['members'][] = [
+                'key' => $k, 'time' => $this->localFmt($mo['when']),
+                'decision' => $labels->get($k)?->decision, 'manual' => $labels->get($k)?->manual_klasse,
+            ];
+            $prevTs = $ts;
+        }
+
+        // pass 3: bouw de display-rijen per view-filter
+        $rows = []; $total = 0;
+        foreach ($moments as $k => $mo) {
+            $fire = $fires->get($k);
             if ($this->view === 'trades' && ! $fire) continue;
             if ($this->view === 'executed' && ! ($fire && $fire->is_executed)) continue;
-
-            // horizons alleen berekenen waar nodig (promising-filter, of binnen de render-cap)
-            $m = null;
-            if ($this->view === 'promising') {
-                $m = $this->metricsFrom($dt, $px, $i);
-                if (! self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'])) continue;
-            }
+            if ($this->view === 'promising' && ! $mo['prom']) continue;
 
             $total++;
             if (count($rows) >= self::ROW_CAP) continue;   // tel door, render begrensd
-            $m ??= $this->metricsFrom($dt, $px, $i);
-
+            $m = $mo['m']; $i = $mo['i'];
+            $g = $groupOf[$k] ?? null;
             $label = $labels->get($k);
             $rows[] = [
                 'key' => $k,
-                'time' => $this->localFmt($when),
+                'time' => $this->localFmt($mo['when']),
                 'is_trade' => (bool) $fire,
                 'rule' => $fire?->rule,
                 'is_executed' => (bool) ($fire?->is_executed),
@@ -311,6 +330,9 @@ class PromisingLabeler extends Component
                 'legacy' => $legacy->get($k)?->manual_klasse,   // snapped legacy label on this moment
                 'manual' => $label?->manual_klasse,
                 'decision' => $label?->decision,
+                'group' => $g,
+                'group_lead' => $g ? $groups[$g]['members'][0]['time'] : null,
+                'group_size' => $g ? count($groups[$g]['members']) : null,
                 'sell_gap' => ($fire && $fire->is_executed && ($m['max'] ?? 0) > 1
                                && $fire->profit_loss !== null && $fire->profit_loss < 0),
             ];
@@ -321,6 +343,8 @@ class PromisingLabeler extends Component
             'total' => $total,
             'truncated' => $total > count($rows),
             'labeled' => collect($rows)->filter(fn ($r) => $r['manual'] || $r['decision'])->count(),
+            'groups' => $groups,
+            'groupOf' => $groupOf,
         ];
         $this->momentMemoKey = $key;
         return $this->momentMemo;
@@ -359,8 +383,14 @@ class PromisingLabeler extends Component
         $legacyLabel = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'legacy')
             ->where('datetime', $when)->value('manual_klasse');
 
+        // groep waar dit moment bij hoort (zelfde stijging) — toont de andere instapmomenten + hun labels
+        $gd = $this->dayMoments();
+        $gid = $gd['groupOf'][$this->selKey] ?? null;
+        $group = $gid ? $gd['groups'][$gid]['members'] : [];
+
         return [
             'key' => $this->selKey,
+            'group' => $group,
             'title' => 'Moment · ' . $this->localFmt($when, 'd M H:i:s') . ($fire ? " · trade rule {$fire->rule}" : ' · geen trade'),
             'is_trade' => (bool) $fire,
             'vol' => ($vf[$i] ?? 0) === 1,

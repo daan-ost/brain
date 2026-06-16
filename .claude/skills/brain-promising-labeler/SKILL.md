@@ -108,6 +108,15 @@ trade(rule) | ok? | +5..+60m | max up% | dip% | OUR sell% | auto | legacy | my l
 positive upside but negative profit_loss = sell-engine left money behind. Sidebar link in
 `layouts/trading.blade.php` after "Coin explorer", using the `route()` + `routeIs()` pattern.
 
+## Grouping (one rise = one trade)
+
+Consecutive promising moments (auto='goed') ≤ `GROUP_GAP_MIN` (15 min) apart are auto-grouped into one
+group = one rise = one trade (`dayMoments` pass 2). E.g. 16:22:08/22:56/23:56/24:56/26:12/28:19 → one
+group. The table shows a coloured left border per group + a "groep" column (lead time · size); the modal
+lists the group's members (clickable) with their labels, so labeling one moment shows the others in the
+rise. Manual uncouple/regroup is NOT built yet (needs a group-override store that survives the re-fire) —
+the grouping is currently derived on the fly from the labeler's own isPromising + the gap.
+
 ## Display + moment source
 
 - **Times are shown AS-STORED (UTC = the indicator/legacy tables), no Amsterdam conversion.** Converting

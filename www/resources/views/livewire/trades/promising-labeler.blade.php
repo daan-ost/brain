@@ -11,6 +11,12 @@
         return 'text-slate-500';
     };
     $fmt = fn ($v, $d = 2) => $v === null ? '—' : number_format((float) $v, $d);
+    // gekleurde linker-rand per groep (zelfde stijging = zelfde kleur, opeenvolgende rijen verbonden)
+    $grpBorder = function ($g) {
+        if (! $g) return 'border-l-4 border-transparent';
+        $c = ['border-emerald-500', 'border-sky-500', 'border-violet-500', 'border-amber-500'];
+        return 'border-l-4 ' . $c[$g % 4];
+    };
 @endphp
 
 <div class="p-6 text-slate-200 bg-slate-950 min-h-screen">
@@ -82,12 +88,13 @@
                     <th class="text-left px-2 py-2">auto</th>
                     <th class="text-left px-2 py-2">legacy</th>
                     <th class="text-left px-2 py-2">mijn</th>
+                    <th class="text-left px-2 py-2" title="groep van instapmomenten in dezelfde stijging">groep</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse ($rows as $r)
                     <tr wire:key="row-{{ $r['key'] }}" wire:click="selectMoment('{{ $r['key'] }}')"
-                        class="border-t border-slate-800 cursor-pointer hover:bg-slate-800/40
+                        class="border-t border-slate-800 cursor-pointer hover:bg-slate-800/40 {{ $grpBorder($r['group']) }}
                                {{ $r['sell_gap'] ? 'bg-rose-950/40' : '' }}
                                {{ $selKey === $r['key'] ? 'bg-slate-800/60' : '' }}">
                         <td class="px-3 py-1.5 font-mono text-xs">{{ $r['time'] }}</td>
@@ -130,9 +137,10 @@
                                 <span class="text-slate-600">—</span>
                             @endif
                         </td>
+                        <td class="px-2 py-1.5 text-xs font-mono text-slate-400">{{ $r['group'] ? $r['group_lead'].' ·'.$r['group_size'] : '—' }}</td>
                     </tr>
                 @empty
-                    <tr><td colspan="{{ 10 + count($horizons) }}" class="px-3 py-4 text-center text-slate-500">Geen momenten voor dit filter.</td></tr>
+                    <tr><td colspan="{{ 11 + count($horizons) }}" class="px-3 py-4 text-center text-slate-500">Geen momenten voor dit filter.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -180,6 +188,23 @@
                         <span><span class="text-slate-500">promising:</span> <span class="{{ $detail['promising'] ? 'text-emerald-400' : 'text-slate-400' }}">{{ $detail['promising'] ? 'ja' : 'nee' }}</span></span>
                         <span><span class="text-slate-500">volume-rule:</span> <span class="{{ $detail['vol'] ? 'text-emerald-400' : 'text-slate-500' }}">{{ $detail['vol'] ? '✓' : '—' }}</span></span>
                     </div>
+
+                    @if (count($detail['group']) > 1)
+                        <div class="border-t border-slate-800 pt-4 mb-4">
+                            <div class="text-xs text-slate-500 mb-1.5">Groep — {{ count($detail['group']) }} instapmomenten in dezelfde stijging (samen 1 trade):</div>
+                            <div class="flex flex-wrap gap-2">
+                                @foreach ($detail['group'] as $gm)
+                                    <button wire:click="selectMoment('{{ $gm['key'] }}')"
+                                            class="px-2 py-1 rounded text-xs font-mono border transition
+                                                   {{ $gm['key'] === $detail['key'] ? 'border-sky-400 bg-slate-800 text-white' : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700' }}">
+                                        {{ $gm['time'] }}
+                                        @if ($gm['manual'])<span class="{{ $klc($gm['manual']) }}">✎{{ $gm['manual'] }}</span>
+                                        @elseif ($gm['decision'])<span class="text-slate-400">· {{ $gm['decision'] }}</span>@endif
+                                    </button>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
 
                     <div class="border-t border-slate-800 pt-4 space-y-3">
                         <h4 class="text-sm font-semibold text-slate-300">Label dit moment</h4>
