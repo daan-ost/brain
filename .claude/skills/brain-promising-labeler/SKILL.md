@@ -36,6 +36,39 @@ Build spec: `docs/epics/epic-L-promising-labeler.md`. Two invariants this protec
   `MIN_UPSIDE_PCT=5.0`, `MAX_EARLY_DIP_PCT=-0.1`, `MIN_DURATION_MINUTES=10`, `DROP_BELOW_PCT=-0.3`,
   per-coin `UPSIDE_MINUTES_PER_COIN={2525:25, 244:45}` (DOGEAI fast, NOS slow; default 30).
 
+## Promising business rules (BR) — catalog + how to find a new one
+
+Every BR is one extra clause in `PromisingLabeler::isPromising()` with a tunable `PROM_*` constant; the
+metric it tests is computed in `metricsFrom()` and threaded via `promInputs()`. The whole point of a BR
+is to mark "the upside is real BUT you could not realistically trade it" → exclude from promising.
+
+**Catalog (each born from a Daan example that should NOT be promising):**
+
+| BR | constant | metric (`metricsFrom`) | excludes when | example |
+|----|----------|------------------------|---------------|---------|
+| A — no early rise | `PROM_UP5=0.5` | `hz[5].up` | +5m < 0,5% | flat eerste 5 min |
+| B — never reaches | `PROM_REACH=3.0` | `hz[15].up` | +15m < 3% | komt nooit 3% binnen 15 min |
+| early dip | `PROM_DIP=-0.5` | `low10` | vroege dip < −0,5% | zakt eerst weg na entry |
+| C — 1-tick spike | `PROM_SPIKE_ISO=3.0` | `spike_iso` | piek-isolatie ≥ 3% | NOS 244 2024-02-02 18:33:50 |
+
+`spike_iso` = `min(drop naar linker buur-tick, drop naar rechter buur-tick)` van de 60m-piek, in %. Hoog
+= geïsoleerde spike-en-crash (onverhandelbaar); laag = vloeiende rise.
+
+**The method to find a new BR (data-driven, READ-ONLY — see data-safety gotcha):**
+1. Daan vinkt een voorbeeld af dat eruit moet (ok/niet-ok marks zijn de ground truth).
+2. Bedenk een kandidaat-metric en bereken hem over ALLE `decision='yes'` (ok) marks vs de niet-ok marks.
+3. Vergelijk de verdelingen (percentielen p50/p90). Een metric is **alleen een bruikbare BR als hij
+   scheidt** — ok en niet-ok mogen niet volledig overlappen. Kies een drempel die de slechte staart
+   vangt en nauwelijks goede marks raakt (conservatief: liever een paar spikes laten staan dan goede
+   rises knippen).
+4. Verifieer met een read-only Pest test (`->group('brain-db')`): bad-voorbeeld nu niet-promising,
+   bekend goed voorbeeld (DOGEAI 2525 2025-02-14 16:23:56) nog steeds goed.
+
+**Metrics die NIET scheiden (bewezen op Daans marks — geen BR mogelijk):** maxDD, reversals,
+below-entry, pullback-ratio, close-retention, sustain. ok en niet-ok overlappen volledig → er is GEEN
+generieke "te volatiel/choppy" promising-BR. Die realiseerbaarheid hoort bij de sell-engine (punt 4),
+niet bij de promising-definitie. Spike-en-crash (BR C) is de uitzondering die WÉL vangbaar bleek.
+
 ## The label store — `coin_moment_labels` (NOT coin_fires)
 
 Natural key `(trading_symbol_id, datetime, rule, source)`. `source` = 'manual' | 'legacy'.
@@ -186,6 +219,10 @@ The per-moment SL rule in the script is a placeholder (fire's rule, else 20) —
   do NOT copy that). Early dip `lowest_10` is over the first ~10 TICKS (volumeud is event-driven), not
   10 minutes.
 - `bot_signals` is read-only — the import SELECTs only; labels are written to the brain DB.
+- **Data-safety (label store):** NEVER probe/tune against real labels with `updateOrCreate` + a
+  delete-by-`set_by` cleanup on real datetimes — that once deleted Daan's own yes-marks. When finding a
+  new BR or testing, run READ-ONLY (Livewire `->viewData()` / SELECT) only, or snapshot + restore. Real
+  manual marks (`set_by` = a real e-mail, e.g. daan@interus.nl) are ground truth — treat as precious.
 - After a re-fire, optionally re-fill `coin_fires.manual_klasse` from `coin_moment_labels` for
   backward-compat consumers, matched on `(trading_symbol_id, datetime, rule)`.
 
