@@ -43,6 +43,8 @@ class PromisingLabeler extends Component
     // koersdaling van >= GROUP_DROP_PCT% zit (harde daling = aparte trade).
     public const GROUP_GAP_MIN = 5;
     public const GROUP_DROP_PCT = 1.0;
+    // lookback vóór de dag zodat een stijging die over middernacht doorloopt niet kunstmatig splitst.
+    public const GROUP_LOOKBACK_MIN = 12;
 
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
@@ -197,11 +199,12 @@ class PromisingLabeler extends Component
         if ($this->seriesMemo !== null && $this->seriesMemoKey === $key) {
             return $this->seriesMemo;
         }
-        $start = Carbon::parse($this->date)->startOfDay();
-        $tail = (clone $start)->endOfDay()->addMinutes(max(self::HORIZONS));
+        // lookback vóór de dag (voor cross-midnight groepering) + 60min tail (voor de horizons)
+        $from = Carbon::parse($this->date)->startOfDay()->subMinutes(self::GROUP_LOOKBACK_MIN);
+        $tail = Carbon::parse($this->date)->endOfDay()->addMinutes(max(self::HORIZONS));
         $rows = DB::table('indicators')->select('datetime', 'price', 'volume_found')
             ->where('trading_symbol_id', $this->coin)->where('indicator', 'volumeud')
-            ->whereNotNull('price')->whereBetween('datetime', [$start, $tail])
+            ->whereNotNull('price')->whereBetween('datetime', [$from, $tail])
             ->orderBy('datetime')->get();
         $dt = $px = $vf = [];
         foreach ($rows as $r) { $dt[] = Carbon::parse($r->datetime); $px[] = (float) $r->price; $vf[] = (int) $r->volume_found; }
@@ -298,10 +301,12 @@ class PromisingLabeler extends Component
 
         // pass 1: metrics + promising-flag voor ELKE in-day tick (nodig voor stabiele groepen los van de view)
         $endTs = $end->getTimestamp();
+        $startTs = $start->getTimestamp();
         $moments = [];   // key => ['when','i','m','prom']
         $seen = [];
         foreach ($dt as $i => $when) {
             if ($when->getTimestamp() > $endTs) break;     // tail (forward window) is geen eigen rij
+            if ($when->getTimestamp() < $startTs) continue; // pre-dag lookback-tick: geen eigen rij
             $k = CoinMomentLabel::momentKey($when);
             if (isset($seen[$k])) continue;                // distinct datumtijd
             $seen[$k] = true;
@@ -310,9 +315,24 @@ class PromisingLabeler extends Component
                 'prom' => self::isPromising($m['max'], $m['low10'])];
         }
 
+        // seed: het laatste ok-moment VÓÓR vandaag (binnen de lookback) zodat een stijging die over
+        // middernacht doorloopt niet kunstmatig als nieuwe groep start.
+        $seedTs = $seedI = $seedTime = null;
+        $seedLabel = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'manual')
+            ->where('decision', 'yes')->where('datetime', '<', $start)
+            ->where('datetime', '>=', (clone $start)->subMinutes(self::GROUP_LOOKBACK_MIN))
+            ->orderByDesc('datetime')->first();
+        if ($seedLabel) {
+            $sk = CoinMomentLabel::momentKey($seedLabel->datetime);
+            foreach ($dt as $idx => $d) {
+                if (CoinMomentLabel::momentKey($d) === $sk) { $seedI = $idx; break; }
+            }
+            if ($seedI !== null) { $seedTs = $dt[$seedI]->getTimestamp(); $seedTime = $this->localFmt($dt[$seedI]); }
+        }
+
         // pass 2: groepeer OK-gemarkeerde momenten (decision='yes') = 1 stijging/trade. Nieuw groep als
         // de gap > GROUP_GAP_MIN min, OF er tussen het vorige ok-moment en dit een drop >= GROUP_DROP_PCT zit.
-        $groupOf = []; $groups = []; $gid = 0; $prevTs = null; $prevI = null;
+        $groupOf = []; $groups = []; $gid = 0; $prevTs = $seedTs; $prevI = $seedI;
         foreach ($moments as $k => $mo) {
             $lab = $labels->get($k);
             if (($lab?->decision) !== 'yes') continue;   // alleen ok-momenten groeperen
@@ -325,7 +345,10 @@ class PromisingLabeler extends Component
                     || ($ts - $prevTs) > self::GROUP_GAP_MIN * 60
                     || $this->dropBetween($px, $prevI, $mo['i']) >= self::GROUP_DROP_PCT,
             };
-            if ($split) $groups[++$gid] = ['members' => []];
+            if ($split || $gid === 0) {
+                $cont = ($gid === 0 && ! $split && $seedTs !== null);   // groep 1 zet de stijging van gisteren voort
+                $groups[++$gid] = ['members' => [], 'cont_from' => $cont ? $seedTime : null];
+            }
             $groupOf[$k] = $gid;
             $groups[$gid]['members'][] = [
                 'key' => $k, 'time' => $this->localFmt($mo['when']),
@@ -366,7 +389,7 @@ class PromisingLabeler extends Component
                 'manual' => $label?->manual_klasse,
                 'decision' => $label?->decision,
                 'group' => $g,
-                'group_lead' => $g ? $groups[$g]['members'][0]['time'] : null,
+                'group_lead' => $g ? ($groups[$g]['cont_from'] ? '↩ '.$groups[$g]['cont_from'] : $groups[$g]['members'][0]['time']) : null,
                 'group_size' => $g ? count($groups[$g]['members']) : null,
                 'sell_gap' => ($fire && $fire->is_executed && ($m['max'] ?? 0) > 1
                                && $fire->profit_loss !== null && $fire->profit_loss < 0),
@@ -431,6 +454,7 @@ class PromisingLabeler extends Component
         return [
             'key' => $this->selKey,
             'group' => $group,
+            'group_cont_from' => $gid ? ($gd['groups'][$gid]['cont_from'] ?? null) : null,
             'is_ok' => $isOk,
             'has_prev_ok' => $hasPrevOk,
             'group_break' => $grpBreak,

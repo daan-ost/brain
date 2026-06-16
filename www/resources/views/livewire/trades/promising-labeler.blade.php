@@ -201,6 +201,9 @@
                                         class="px-2 py-1 rounded text-xs border transition {{ $detail['group_break'] === 'break' ? 'bg-amber-600 border-amber-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' }}">✂ ontkoppel hier</button>
                                 <span class="text-xs {{ $detail['group_break'] ? 'text-amber-400' : 'text-slate-600' }}">{{ $detail['group_break'] ? 'handmatig' : 'auto' }}</span>
                             </div>
+                            @if ($detail['group_cont_from'])
+                                <div class="text-xs text-amber-300 mb-1">↩ vervolg van gisteren (stijging vanaf {{ $detail['group_cont_from'] }})</div>
+                            @endif
                             @if (count($detail['group']) > 1)
                                 <div class="flex flex-wrap gap-2">
                                     @foreach ($detail['group'] as $gm)

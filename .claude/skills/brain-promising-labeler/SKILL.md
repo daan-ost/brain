@@ -120,7 +120,10 @@ decides the entries; the auto-classification is only a (future) default fill. `d
 the yes-moments in time order and starts a NEW group when the gap to the previous yes-moment
 > `GROUP_GAP_MIN` (5 min), OR a price drop ≥ `GROUP_DROP_PCT` (1%) occurred between them
 (`dropBetween`, min-scan from the prev yes-price). So a >5min gap or a ≥1% dip = a separate trade. Re-runs
-on every tick (setDecision resets the memo). The table shows a coloured left border + "groep" column
+on every tick (setDecision resets the memo). **Cross-midnight:** the series is loaded with a
+`GROUP_LOOKBACK_MIN` (12 min) lookback before startOfDay, and pass 2 SEEDS prevTs/prevI with the last
+ok-moment before the day, so a rise crossing midnight continues into the new day instead of starting a
+fresh group — such a group shows lead "↩ HH:i" (continues from yesterday). The table shows a coloured left border + "groep" column
 (lead · size) on grouped rows; the modal lists the group's yes-members (clickable). Verified: 20:35 solo,
 20:42 solo, 20:48–20:53 one group, 21:07–21:16 one group.
 
