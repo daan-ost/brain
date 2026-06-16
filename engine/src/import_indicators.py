@@ -34,7 +34,10 @@ with conn.cursor() as c:
     """)
     print(f"coins copied: {c.rowcount}")
 
-    # indicators (the series) — only the 5 base indicators we use
+    # indicators (the series) — the 5 base RAW indicator values from legacy. We still copy legacy's
+    # `volume_found` because the live engine uses it as candidate-gate; brain's OWN flag is computed
+    # separately into `brain_volume_found` (compute_volume_found.py). For TradingView/new coins
+    # without a legacy source, `volume_found` will be 0 and only `brain_volume_found` will be filled.
     c.execute(f"""
         INSERT INTO indicators (trading_symbol_id, symbol, indicator, datetime, value, price, volume_found)
         SELECT i.trading_symbol_id, s.symbol, i.indicator, i.datetime, i.value, i.price, i.volume_found
@@ -42,7 +45,7 @@ with conn.cursor() as c:
         JOIN bot_signals.wp_trading_symbols s ON s.ID = i.trading_symbol_id
         WHERE i.trading_symbol_id IN ({sym_list}) AND i.indicator IN ({in_list}) AND i.value IS NOT NULL
     """)
-    print(f"indicator rows copied: {c.rowcount}")
+    print(f"indicator rows copied: {c.rowcount} (legacy volume_found copied; brain_volume_found via compute_volume_found.py)")
 
     c.execute("SELECT trading_symbol_id, COUNT(*) n, MIN(datetime) f, MAX(datetime) t FROM indicators GROUP BY trading_symbol_id")
     for r in c.fetchall():
