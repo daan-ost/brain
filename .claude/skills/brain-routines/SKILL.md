@@ -9,10 +9,17 @@ the DB is local. So routines must be **Local**: they only run while the Mac is a
 
 ## Sets
 
-A **set** is a named ordered chain of routines with a shared goal. The current set is
-**`rule-precision`** ("eliminate existing bad trades from the rules") — its `SET_KEY`/`SET_NAME` live
-in `routines.py` and are written onto every `routine_runs` row (`set_key`/`set_name`), shown per run
-on `/routines`. As more goals appear, add a new set (its own REGISTRY + name, scheduled separately).
+A **set** is a named ordered chain of routines with a shared goal. Each set's key/name is written onto
+every `routine_runs` row (`set_key`/`set_name`), shown per run on `/routines`. `routines.py` now holds a
+`SETS` dict and a `--set <key>` selector (default `rule-precision`, so the existing scheduled prompt is
+unchanged). Two sets exist:
+- **`rule-precision`** ("eliminate existing bad trades from the rules") — gated by the data-changed
+  fingerprint. The tighten/loosen chain below.
+- **`data-integriteit`** ("consistency & safe cache-fix") — periodic read-only health checks; NOT
+  fingerprint-gated (a health check must run even when nothing changed) and it YIELDS to an active
+  rule-precision run (concurrency guard). See its own section below.
+
+As more goals appear, add another set to `SETS` (its own REGISTRY + name, scheduled separately).
 
 The rule-precision set improves the good/bad ratio both ways: **tighten** (rq1 — fewer slecht, `auto-apply`)
 and **loosen** (rq2 — more good, `auto-loosen`). Both behind a full-history + portfolio engine gate.
@@ -58,6 +65,57 @@ compounding effect). A converged run with no new data leaves it stable → it sk
 **start** fingerprint of the run that executed. `--force` bypasses the gate (the "Nu draaien" button
 uses it so the preview always works). So you can schedule it as often as you like — it only does real
 work when data or rules actually changed.
+
+## The data-integriteit set (`integrity.py` + `routine_integrity`)
+
+A SECOND set that periodically checks whether the brain data is consistent and correct. The check
+logic lives in **`engine/src/integrity.py`** — a **read-only** module (SELECT only; mutates NOTHING).
+Each check returns a `Result(status ∈ ok|warn|fail, summary, details, fixable, fix_coins)`;
+`run_all(conn, quick=)` runs them all, `worst()` folds the overall status. Run standalone for a report:
+`integrity.py [--quick]` (exit 1 on any FAIL). **Scope = the brain coins only** (`coins` table = the
+coins with brain indicators, today DOGEAI 2525 + NOS 244) — legacy labels exist for ~74 coins but
+laag-2 is only ever BUILT for the brain coins, so scoping there avoids false FAILs.
+
+The 11 checks:
+1. **laag2_coverage** (the seed) — every trade (`coin_fires`) + every ok-moment (`coin_moment_labels`
+   `decision='yes'`, snapped to the volumeud tick like `build_indicator_metrics`) has its laag-2 rows.
+   *fixable* (cache rebuild).
+2. **fires_drift** — reproduce the rule-engine fires in-memory (`RuleEngine.fires`, read-only) and
+   compare the `(rule, datetime)` set to `coin_fires`; mismatch = stale fires (e.g. aborted run). HEAVY
+   (~45 s both coins) — skipped with `--quick`.
+3. **executed_nulls** — no NULL `best_upside` / `selling_price` / `selling_datetime` / `profit_loss` on
+   executed trades.
+4. **labels** — label datetimes sit on a real volumeud tick; FAIL only on a demonstrable un-applied
+   −5s align (`dt+5s` is a tick, `dt` isn't → re-run `import_legacy_labels`); orphans in a genuine
+   volumeud gap / sub-60 s jitter are WARN (unavoidable, so the routine isn't permanently red).
+5. **promising_periods** — `period_from <= period_to` and inside the coin's indicator date-range.
+6. **rules_provenance** — the latest `rules_history` snapshot per rule == current `brain.rules`
+   (drift = a rule changed without `rules_history.record()`).
+7. **cache_freshness** — the `indicator_metrics` datetime-set == the current scope (trades + promising
+   ticks + ok ticks), BOTH directions (missing for new trades AND stale rows after a re-fire removed
+   trades). *fixable* (cache rebuild).
+8. **indicators** — volumeud present per coin, no NULL prices, large time-gaps reported (WARN).
+9. **rule_settings** — `min_volume` present per coin × active buy-rule (20-23).
+10. **routine_state** — fingerprint plausible (32-hex) + no `running` `routine_runs` older than 30 min
+    (stuck/abandoned).
+11. **sell_record** — every executed buy has a valid sell: `selling_price` + `selling_datetime`
+    present, sell AFTER the buy and within `FORWARD_MINUTES` (60), `profit_loss` computed.
+
+`routine_integrity(j)` journals one PASS/FAIL line per check (`ok→result`, `warn→finding`,
+`fail→error`, with the full `Result` in `data`). **Auto-fix = cache rebuild ONLY, behind `--fix`**:
+without it, it just logs "veilige auto-fix beschikbaar"; with it, it runs `build_indicator_metrics.py`
+for the affected coins (idempotent per symbol — only the CACHE table, never real data) and re-verifies
+the two cache checks. **Concurrency:** the set is NOT fingerprint-gated, but `main()` aborts it if any
+OTHER `routine_runs` row is `running` and started within 30 min (`_active_recent_run`) — so a `--fix`
+cache rebuild never races the hourly rule-precision chain (we saw a 1412 + snapshot-drift on overlap).
+`--force` bypasses both the skip and the guard.
+
+Run it (Local routine, separate schedule from rule-precision):
+```
+cd engine/src && ../.venv/bin/python routines.py --set data-integriteit --trigger routine        # report-only
+cd engine/src && ../.venv/bin/python routines.py --set data-integriteit --trigger routine --fix   # + safe cache rebuild
+```
+Add `--quick` for a fast preview (skips the heavy drift reproduce).
 
 ## The `/routines` screen
 

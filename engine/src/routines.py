@@ -22,8 +22,11 @@ import daily_optimization as opt
 NO_REBUILD = "--no-rebuild" in sys.argv
 APPLY = "--apply" in sys.argv          # actually apply safe candidates; without it, propose-only
 FORCE = "--force" in sys.argv          # bypass the data-changed gate (manual preview / testing)
+FIX = "--fix" in sys.argv              # data-integriteit: allow the safe cache-rebuild auto-fix
+QUICK = "--quick" in sys.argv          # data-integriteit: skip the heavy fires<->rules drift reproduce
 RUN_DATE = sys.argv[sys.argv.index("--date") + 1] if "--date" in sys.argv else None
 TRIGGER = sys.argv[sys.argv.index("--trigger") + 1] if "--trigger" in sys.argv else "manual"
+SET_ARG = sys.argv[sys.argv.index("--set") + 1] if "--set" in sys.argv else "rule-precision"
 
 
 def input_fingerprint():
@@ -105,6 +108,51 @@ def routine_auto_loosen(j):
     return auto_loosen.loosen_safe(lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data))
 
 
+def routine_integrity(j):
+    """DATA-INTEGRITEIT: run every read-only consistency check (integrity.py) and journal a PASS/FAIL
+    line per check. The ONLY auto-fix is rebuilding the indicator_metrics cache for affected coins, and
+    it runs solely with --fix; without it the routine reports but changes nothing. Never destructive."""
+    import integrity
+    conn = brain()
+    try:
+        results = integrity.run_all(conn=conn, quick=QUICK)
+    finally:
+        conn.close()
+
+    lvl = {"ok": "result", "warn": "finding", "fail": "error"}
+    fix_coins = set()
+    n = {"ok": 0, "warn": 0, "fail": 0}
+    for r in results:
+        n[r.status] += 1
+        j.add(f"[{r.status.upper()}] {r.title} — {r.summary}", level=lvl[r.status], data=r.as_dict())
+        if r.fixable and r.status == "fail":
+            fix_coins.update(r.fix_coins)
+
+    if fix_coins and not FIX:
+        j.add(f"Veilige auto-fix beschikbaar (cache herbouwen voor coin(s) {sorted(fix_coins)}) — "
+              f"draai met --fix om toe te passen. Nu alleen gerapporteerd.", level="finding")
+    elif fix_coins and FIX:
+        import daily_optimization as opt
+        for cid in sorted(fix_coins):
+            opt.run("build_indicator_metrics.py", cid)        # idempotent per symbol; only the CACHE
+        j.add(f"Cache herbouwd voor coin(s) {sorted(fix_coins)} (veilige auto-fix; geen data verwijderd).",
+              level="change")
+        conn = brain()
+        try:
+            ctx = integrity.Context(conn)
+            for chk in (integrity.check_laag2_coverage, integrity.check_cache_freshness):
+                rr = chk(ctx)
+                j.add(f"na fix · [{rr.status.upper()}] {rr.title} — {rr.summary}",
+                      level=lvl[rr.status], data=rr.as_dict())
+                if rr.status == "ok":
+                    n["fail"] = max(0, n["fail"] - 1)         # reflect the repaired check in the tally
+        finally:
+            conn.close()
+
+    overall = integrity.worst(results) if not (fix_coins and FIX) else ("fail" if n["fail"] else ("warn" if n["warn"] else "ok"))
+    return f"{overall.upper()} · {n['fail']} fail / {n['warn']} warn / {n['ok']} ok"
+
+
 # A SET is a named chain of routines with a shared goal. This set = eliminate existing bad trades
 # from the rules (tighten existing rules now; outlier-split into new rules = 2b, coming). Append
 # routines below; they run after each other in one journaled run, under this set's name.
@@ -116,6 +164,21 @@ REGISTRY = [
     ("auto-loosen", routine_auto_loosen),               # rq2: loosen a band to admit more good (gated)
     # ("outlier-split", routine_outlier_split),          # 2b: pull an outlier good trade into a new rule
 ]
+
+# A SECOND set: data-integriteit. Periodic read-only health checks of the brain data. Runs on its own
+# schedule, NOT gated by the data-changed fingerprint (a health check must run even when nothing
+# changed), and it yields to the rule-precision chain (concurrency guard in main) so a --fix cache
+# rebuild never races the hourly rule run (we saw a 1412 + snapshot-drift when they overlapped).
+INTEGRITY_SET_KEY = "data-integriteit"
+INTEGRITY_SET_NAME = "Data-integriteit — consistentie & veilige cache-fix"
+REGISTRY_INTEGRITY = [
+    ("data-integriteit", routine_integrity),
+]
+
+SETS = {
+    SET_KEY: (SET_NAME, REGISTRY, True),                 # gated by the data-changed fingerprint
+    INTEGRITY_SET_KEY: (INTEGRITY_SET_NAME, REGISTRY_INTEGRITY, False),
+}
 
 
 # --------------------------------------------------------------------------- runner
@@ -137,24 +200,52 @@ def _save_state(conn, key, fp, now, ran, outcome):
     conn.commit()
 
 
+def _active_recent_run(conn, exclude_id=None, minutes=30):
+    """An OTHER routine_runs row still 'running' and started within `minutes` (i.e. genuinely active,
+    not a long-stale abandoned run). Used by the integrity set to YIELD to the rule-precision chain so
+    a --fix cache rebuild never races the hourly rule run."""
+    with conn.cursor() as c:
+        c.execute("SELECT id, set_key, started_at FROM routine_runs WHERE status='running' "
+                  "AND started_at >= (NOW() - INTERVAL %s MINUTE) AND (%s IS NULL OR id <> %s) "
+                  "ORDER BY started_at LIMIT 1", (minutes, exclude_id, exclude_id))
+        return c.fetchone()
+
+
 def main():
     now = datetime.datetime.now()
     run_date = RUN_DATE or now.date().isoformat()
     conn = brain()
 
-    # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
-    fp = input_fingerprint()
-    prev = _state(conn, SET_KEY)
-    if prev and prev["fingerprint"] == fp and not FORCE:
-        _save_state(conn, SET_KEY, fp, now, None, "geen wijziging — overgeslagen")
+    if SET_ARG not in SETS:
         conn.close()
-        print(f"[{run_date}] geen data- of rule-wijziging sinds laatste run — overgeslagen (gebruik --force om toch te draaien).")
-        return
+        sys.exit(f"onbekende set '{SET_ARG}' — kies uit: {', '.join(SETS)}")
+    set_key = SET_ARG
+    set_name, registry, gated = SETS[set_key]
+
+    fp = input_fingerprint()
+    if gated:
+        # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
+        prev = _state(conn, set_key)
+        if prev and prev["fingerprint"] == fp and not FORCE:
+            _save_state(conn, set_key, fp, now, None, "geen wijziging — overgeslagen")
+            conn.close()
+            print(f"[{run_date}] geen data- of rule-wijziging sinds laatste run — overgeslagen (gebruik --force om toch te draaien).")
+            return
+    else:
+        # CONCURRENCY GUARD (integrity): never run alongside another active routine — we saw a 1412 +
+        # snapshot-drift when the integrity checks/cache-fix overlapped the hourly rule chain.
+        active = _active_recent_run(conn)
+        if active and not FORCE:
+            _save_state(conn, set_key, fp, now, None, f"overgeslagen — run #{active['id']} ({active['set_key']}) actief")
+            conn.close()
+            print(f"[{run_date}] andere routine actief (run #{active['id']}, set {active['set_key']}) — "
+                  f"data-integriteit overgeslagen (gebruik --force om toch te draaien).")
+            return
 
     with conn.cursor() as c:
         c.execute("INSERT INTO routine_runs (set_key, set_name, run_date, started_at, status, `trigger`, "
                   "created_at, updated_at) VALUES (%s,%s,%s,%s,'running',%s,%s,%s)",
-                  (SET_KEY, SET_NAME, run_date, now, TRIGGER, now, now))
+                  (set_key, set_name, run_date, now, TRIGGER, now, now))
         run_id = c.lastrowid
     conn.commit()
 
@@ -162,7 +253,7 @@ def main():
     summaries = []
     status = "success"
     try:
-        for key, fn in REGISTRY:
+        for key, fn in registry:
             j = Journal(key)
             try:
                 summary = fn(j)
@@ -186,11 +277,11 @@ def main():
         with conn.cursor() as c:
             c.execute("UPDATE routine_runs SET finished_at=%s, status=%s, n_routines=%s, summary=%s, "
                       "updated_at=%s WHERE id=%s",
-                      (end, status, len(REGISTRY), " | ".join(summaries), end, run_id))
+                      (end, status, len(registry), " | ".join(summaries), end, run_id))
         conn.commit()
         # store the START fingerprint of this executed run: if a routine changed the rules, the next
         # run's fingerprint differs (→ re-runs, compounding); if nothing changed, it matches (→ skips).
-        _save_state(conn, SET_KEY, fp, end, end, " | ".join(summaries)[:160])
+        _save_state(conn, set_key, fp, end, end, " | ".join(summaries)[:160])
         conn.close()
 
     print(f"routine-run #{run_id} [{status}] {run_date}")
