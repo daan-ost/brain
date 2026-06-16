@@ -163,6 +163,17 @@ or snapshot+restore.
   at each volumeud tick — "all indicators in it" = available as-of, not "every indicator's tick is a row".
   (This is why a legacy buy = volumeud signal tick + ≤5s; see [[bot-signals-schema]] +5s offset.)
 
+## Sell-engine per moment (punt 4 — PREPARED, not run)
+
+`coin_moment_sells` (coin, datetime) holds the sell-engine outcome per buy-moment (P&L, exit, hi/lo,
+minutes) so the labeler shows realised P&L next to buy-quality for ANY promising moment — not just the
+rule-fires. `engine/src/sell_promising.py` fills it (sell-engine over every promising moment), but is
+**PREPARED, not run**: the sell-engine is parked/being improved (Epic S). It defaults to a DRY-RUN
+(counts + samples); `--run` computes + writes. Until then the labeler's "onze sell%" falls back to the
+executed-fire profit_loss, and the modal shows "⏳ nog niet berekend" for promising moments without a
+sell. `CoinMomentSell::byMoment()` attaches it; precedence in the row = sell-store > executed fire > null.
+The per-moment SL rule in the script is a placeholder (fire's rule, else 20) — refine with Epic S.
+
 ## Gotchas
 
 - Validate `manual_klasse` against the enum on write — the old string column silently accepted typos.

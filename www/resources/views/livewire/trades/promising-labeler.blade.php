@@ -182,6 +182,10 @@
                         @endforeach
                     </div>
 
+                    @if ($detail['sell_pending'])
+                        <div class="text-xs text-slate-500 mb-4">⏳ onze sell-winst nog niet berekend voor dit moment — de sell-engine draait pas over alle promising momenten na verbetering (Epic S).</div>
+                    @endif
+
                     <div class="flex items-center gap-4 text-sm mb-4 border-t border-slate-800 pt-4">
                         <span><span class="text-slate-500">auto:</span> <span class="{{ $klc($detail['auto_klasse']) }}">{{ $detail['auto_klasse'] === 'onbekend' ? '—' : $detail['auto_klasse'] }}</span></span>
                         <span><span class="text-slate-500">legacy:</span> <span class="{{ $klc($detail['legacy_klasse']) }}">{{ $detail['legacy_klasse'] ?? '—' }}</span></span>

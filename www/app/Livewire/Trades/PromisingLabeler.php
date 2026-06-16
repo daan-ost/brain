@@ -6,6 +6,7 @@ use App\Livewire\Trades\Concerns\InteractsWithCoinChart;
 use App\Models\CoinAnnotation;
 use App\Models\CoinFire;
 use App\Models\CoinMomentLabel;
+use App\Models\CoinMomentSell;
 use App\Models\CoinPeriod;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -298,6 +299,7 @@ class PromisingLabeler extends Component
             ->map(fn ($g) => $g->first());            // executed wins (sorted desc)
         $labels = CoinMomentLabel::manualByMoment($this->coin, $start, $end);
         $legacy = CoinMomentLabel::legacyByMoment($this->coin, $start, $end);   // snapped to our ticks
+        $sells = CoinMomentSell::byMoment($this->coin, $start, $end);           // per-moment sell-engine P&L (punt 4)
 
         // pass 1: metrics + promising-flag voor ELKE in-day tick (nodig voor stabiele groepen los van de view)
         $endTs = $end->getTimestamp();
@@ -383,7 +385,8 @@ class PromisingLabeler extends Component
                 ])->all(),
                 'max_up' => $m['max'],
                 'low10' => $m['low10'],
-                'profit_loss' => ($fire && $fire->is_executed) ? $fire->profit_loss : null,
+                // sell-engine P&L: per-moment store (punt 4) > executed-fire fallback > nog niet berekend
+                'profit_loss' => $sells->get($k)?->profit_loss ?? (($fire && $fire->is_executed) ? $fire->profit_loss : null),
                 'auto' => self::autoKlasse($m),
                 'legacy' => $legacy->get($k)?->manual_klasse,   // snapped legacy label on this moment
                 'manual' => $label?->manual_klasse,
@@ -423,6 +426,8 @@ class PromisingLabeler extends Component
         $end = (clone $start)->endOfDay();
         $fire = CoinFire::query()->where('trading_symbol_id', $this->coin)->where('datetime', $when)
             ->orderByDesc('is_executed')->first();
+        $sell = CoinMomentSell::where('trading_symbol_id', $this->coin)->where('datetime', $when)->first();
+        $pl = $sell?->profit_loss ?? (($fire && $fire->is_executed) ? $fire->profit_loss : null);
 
         $markers = ['buy' => $when->getTimestampMs()];
         if ($fire?->selling_datetime) $markers['sell'] = $fire->selling_datetime->getTimestampMs();
@@ -469,11 +474,16 @@ class PromisingLabeler extends Component
             'horizons' => collect(self::HORIZONS)->map(fn ($h) => [
                 'h' => $h, 'val' => $m['hz'][$h]['val'], 'peak_at' => $this->localFmt($m['hz'][$h]['peak_at']),
             ])->all(),
+            // sell-engine nog niet gedraaid voor dit (promising) moment? -> toon een nette melding
+            'sell_pending' => $pl === null && self::isPromising($m['max'], $m['low10']),
             'stats' => array_filter([
                 'beste upside % (60m)' => $m['max'],
                 'vroege dip %' => $m['low10'],
                 'aankoopprijs' => $buy,
-                'onze sell-winst %' => ($fire && $fire->is_executed) ? $fire->profit_loss : null,
+                'onze sell-winst %' => $pl,
+                'sell exit' => $sell ? $this->localFmt($sell->selling_datetime) : null,
+                'sell hoogste %' => $sell?->hi_pl,
+                'sell laagste %' => $sell?->lo_pl,
                 'legacy P&L' => $fire?->legacy_profit_loss,
             ], fn ($v) => $v !== null && $v !== ''),
         ];
