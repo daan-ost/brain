@@ -18,6 +18,14 @@ unchanged). Two sets exist:
 - **`data-integriteit`** ("consistency & safe cache-fix") — periodic read-only health checks; NOT
   fingerprint-gated (a health check must run even when nothing changed) and it YIELDS to an active
   rule-precision run (concurrency guard). See its own section below.
+- **`recall-triage`** ("catch promising groups — proposals") — fires when new promising LABELS come in
+  (`input_fingerprint(with_labels=True)` adds the ok-labels to the fingerprint for this set only). Runs
+  `recall_worklist.py` (re-fill the dossier) + `recall_loop.py --write` (propose bounded tweaks for the
+  feature-missed groups). **PROPOSE-ONLY: it never touches `brain.rules`** — recall tweaks are in-sample
+  / overfit-risky (need holdout), so the human (or a later validated routine) decides on applying. It
+  journals per coin: recall% · proposed_catch · needs_new_rule · no_candidate (the engine/ingestion
+  blocker, ~80% of NOS misses — not rule-fixable) + where needs_new_rule homes (rule-21 child-variant
+  candidates). Schedule: a Local routine `routines.py --set recall-triage --trigger routine` (no `--apply`).
 
 As more goals appear, add another set to `SETS` (its own REGISTRY + name, scheduled separately).
 
