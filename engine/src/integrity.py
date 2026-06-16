@@ -403,6 +403,38 @@ def check_sell_record(ctx):
                   else "Er zijn executed buys zonder geldige verkoop.", per_coin)
 
 
+def check_recall_worklist(ctx):
+    """12. De recall-worklist (promising_recall_state) moet een exacte spiegel van de huidige ok-labels
+    zijn. Een rij waarvan group_lead geen ok-moment (coin_moment_labels decision='yes') meer is = een
+    WEES → de worklist is stale (recall_worklist.py niet gedraaid sinds labels wijzigden). Dit is precies
+    het soort meet-/data-drift dat eerder bijna op een spookgetal deed sturen (NOS-recall, 03-04 anomalie).
+    Read-only; fix = recall_worklist.py opnieuw draaien."""
+    per_coin = {}
+    status = "ok"
+    for cid in ctx.coins:
+        row = ctx.q(
+            "SELECT COUNT(*) n, SUM(caught) caught, MAX(last_checked_at) last, "
+            "SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM coin_moment_labels l "
+            "      WHERE l.trading_symbol_id=s.trading_symbol_id AND l.decision='yes' "
+            "      AND l.datetime=s.group_lead) THEN 1 ELSE 0 END) orphans "
+            "FROM promising_recall_state s WHERE s.trading_symbol_id=%s", (cid,))[0]
+        n = int(row["n"] or 0)
+        if n == 0:
+            per_coin[ctx.symbol[cid]] = {"rows": 0}
+            continue
+        orphans, caught = int(row["orphans"] or 0), int(row["caught"] or 0)
+        per_coin[ctx.symbol[cid]] = {"groups": n, "caught": caught,
+                                     "recall_pct": round(100 * caught / n), "orphans": orphans,
+                                     "last_checked": str(row["last"])}
+        if orphans:
+            status = "warn"
+    if status == "ok" and not any(v.get("groups") for v in per_coin.values()):
+        status = "warn"           # nog niet gevuld
+    msg = ("De recall-worklist spiegelt de ok-labels exact." if status == "ok"
+           else "Wees-rijen of lege worklist — draai recall_worklist.py (de worklist is stale).")
+    return Result("recall_worklist", "Recall-worklist spiegelt de ok-labels (geen wezen)", status, msg, per_coin)
+
+
 # --------------------------------------------------------------------------- run-all
 CHECKS = [
     ("laag2_coverage", check_laag2_coverage),
@@ -416,6 +448,7 @@ CHECKS = [
     ("rule_settings", check_rule_settings),
     ("routine_state", check_routine_state),
     ("sell_record", check_sell_record),
+    ("recall_worklist", check_recall_worklist),
 ]
 
 
