@@ -1,43 +1,46 @@
 #!/usr/bin/env python3
 """
-Import legacy hand-labels into brain.coin_moment_labels (Epic L). Reads ONLY the legacy
-wp_trading_simulation.result (1=goed / 2=middel / 3=slecht) and writes source='legacy' rows keyed
-by (trading_symbol_id, datetime, rule). Idempotent (ON DUPLICATE KEY UPDATE on the natural key
-cml_natural). Daan's own labels (source='manual') are never touched. bot_signals stays read-only.
+Import legacy hand-labels into brain.coin_moment_labels (Epic L). Two legacy sources:
+  1. wp_trading_simulation.result (1=goed/2=middel/3=slecht)  -> source='legacy' (kwaliteit-referentie,
+     the "legacy" column). Per-coin rebuild (DELETE + insert), keyed (coin, datetime, rule).
+  2. wp_trading_simulation_trades_result.ok_trade (1=ja/2=nee/3=geen-volume) -> the owner's explicit
+     ok/niet-ok, imported as source='manual' moment-level decisions (rule=0), ONLY-IF-ABSENT so in-app
+     marks set via the screen are never overwritten.
+Both align the +5s legacy buy-time onto our tick grid (align_legacy_dt). bot_signals stays read-only.
+No args = ALL coins with either source (full migration). Re-run per coin after it's built in brain so
+its labels snap to the fresh ticks.
 
-These are the reference labels: the labeler shows legacy next to Daan's own so divergence is
-visible, and promising.py can validate/tune the auto-classification against them.
-
-Usage: import_legacy_labels.py [symbol_id ...]   (default: 2525 244)
+Usage: import_legacy_labels.py [symbol_id ...]
 """
 import sys
 
 from align import align_legacy_dt
 from db import brain, legacy
 
-KLASSE = {1: "goed", 2: "middel", 3: "slecht"}
-DECISION = {1: "yes", 3: "no"}        # middel(2) -> no yes/no decision
+KLASSE = {1: "goed", 2: "middel", 3: "slecht"}    # wp_trading_simulation.result (kwaliteit)
+DECISION = {1: "yes", 3: "no"}                    # middel(2) -> no yes/no decision
+# wp_trading_simulation_trades_result.ok_trade = de eigenaar's expliciete ok/niet-ok:
+OK_DECISION = {1: "yes", 2: "no", 3: "no_volume"} # 1=ja, 2=nee, 3=geen volume
 
 leg = legacy()
 dst = brain()
 dst.autocommit(False)
 
-# args = expliciete coins; geen args = ALLE coins met legacy-labels (scope-rules) — de volledige
-# migratie. Voor coins zonder brain-ticks valt snapping terug op (legacy_dt - 5s); her-draai de
-# import nadat die coin in brain is gebouwd (idempotent: per-coin DELETE + re-insert).
+# args = expliciete coins; geen args = ALLE coins met legacy-labels (result OF ok_trade) — de
+# volledige migratie. Voor coins zonder brain-ticks valt snapping terug op (legacy_dt - 5s); her-draai
+# de import nadat die coin in brain is gebouwd (idempotent: per-coin rebuild).
 if sys.argv[1:]:
     syms = [int(a) for a in sys.argv[1:]]
 else:
     with leg.cursor() as c:
-        c.execute("SELECT DISTINCT trading_symbol_id FROM wp_trading_simulation "
-                  "WHERE result IN (1,2,3) ORDER BY trading_symbol_id")
-        syms = [r["trading_symbol_id"] for r in c.fetchall()]
+        c.execute("SELECT DISTINCT trading_symbol_id AS s FROM wp_trading_simulation WHERE result IN (1,2,3) "
+                  "UNION SELECT DISTINCT trading_symbol_ID FROM wp_trading_simulation_trades_result WHERE ok_trade IN (1,2,3)")
+        syms = sorted(int(r["s"]) for r in c.fetchall())
 print(f"coins: {len(syms)}")
 
 total = 0
 snapped_n = 0
-total = 0
-snapped_n = 0
+ok_total = 0
 for sym in syms:
     with leg.cursor() as c:
         c.execute("SELECT datetime, rule, result FROM wp_trading_simulation "
@@ -74,10 +77,33 @@ for sym in syms:
                 (sym, symbol, dt, row["rule"], DECISION.get(res), KLASSE.get(res), res))
             n += 1
     dst.commit()
-    print(f"  {symbol} ({sym}): {n} legacy labels imported")
+
+    # ok_trade -> de eigenaar's ok/niet-ok als MANUAL decision (moment-niveau, rule=0). Only-if-absent:
+    # in-app marks (source=manual, via het scherm gezet) blijven; legacy vult de rest. Dedup per
+    # gesnapte datumtijd (latere ID wint).
+    with leg.cursor() as c:
+        c.execute("SELECT datetime, ok_trade FROM wp_trading_simulation_trades_result "
+                  "WHERE trading_symbol_ID=%s AND ok_trade IN (1,2,3) ORDER BY ID", (sym,))
+        ok_rows = c.fetchall()
+    ok_by_dt = {}
+    for r in ok_rows:
+        ok_by_dt[align_legacy_dt(r["datetime"], ticks)] = OK_DECISION[int(r["ok_trade"])]
+    ok_n = 0
+    with dst.cursor() as c:
+        for dt, dec in ok_by_dt.items():
+            c.execute(
+                "INSERT INTO coin_moment_labels "
+                "(trading_symbol_id, symbol, datetime, rule, decision, source, set_by, set_at, created_at, updated_at) "
+                "VALUES (%s,%s,%s,0,%s,'manual','legacy-ok',NOW(),NOW(),NOW()) "
+                "ON DUPLICATE KEY UPDATE id=id",   # only-if-absent: in-app manual-label niet overschrijven
+                (sym, symbol, dt, dec))
+            ok_n += int(c.rowcount == 1)
+    dst.commit()
+    print(f"  {symbol} ({sym}): {n} legacy-labels, {ok_n} ok/niet-ok")
     total += n
+    ok_total += ok_n
 
 leg.close()
 dst.close()
-print(f"=== import_legacy_labels — {total} rows into coin_moment_labels (source=legacy), "
-      f"{snapped_n} snapped to the nearest tick ===")
+print(f"=== import_legacy_labels — {total} legacy (source=legacy) + {ok_total} ok/niet-ok (source=manual), "
+      f"{snapped_n} snapped ===")

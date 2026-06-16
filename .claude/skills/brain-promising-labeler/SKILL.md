@@ -54,7 +54,19 @@ constraint and was wiped on re-fire — it is superseded by this table.)
 Override precedence in `CoinFire::klasseKey()`: **manual label > legacy label > computed best_upside**.
 Eager-load the label relation in any list view to avoid N+1.
 
-## Legacy import
+## Two legacy label sources
+
+There are TWO separate owner-labelings in the legacy DB — both imported by `import_legacy_labels.py`:
+- **`wp_trading_simulation.result`** (1=goed/2=middel/3=slecht) = quality → `source='legacy'` (the "legacy"
+  column reference). Per-coin rebuild.
+- **`wp_trading_simulation_trades_result.ok_trade`** (1=ja / 2=nee / 3=geen-volume) = the owner's explicit
+  **ok/niet-ok** decision → imported as `source='manual'` moment-level decisions (rule=0, set_by='legacy-ok'),
+  **only-if-absent** so in-app marks set via the screen are never overwritten. These populate the "mijn"
+  column + drive the grouping (it's the owner's confirmed entries). ok_trade=3 doesn't correlate with any
+  trade (no volume → no trade), hence 'no_volume'. ~2161 imported over 42 coins (2525: 84 yes/259 no/94 nv).
+  Both align the +5s buy-time via `align_legacy_dt`; dedup per snapped datetime (latest ID wins).
+
+## Legacy import (result detail)
 
 Source: `bot_signals.wp_trading_simulation.result` (1=goed, 2=middel, 3=slecht, NULL=unlabeled).
 Read-only via the `bot_signals` connection. **Full migration**: `import_legacy_labels.py` with NO args
