@@ -229,7 +229,7 @@
 @push('scripts')
 <script>
 function flashMsg() { return { shown: false, flash() { this.shown = true; setTimeout(() => { this.shown = false; }, 1500); } }; }
-function __annReg() { if (window.__annReg !== true && window['chartjs-plugin-annotation']) { Chart.register(window['chartjs-plugin-annotation']); window.__annReg = true; } }
+function __ann() { if (window.__annReg !== true && window['chartjs-plugin-annotation']) { Chart.register(window['chartjs-plugin-annotation']); window.__annReg = true; } }
 function __xaxis() { return { type: 'linear', ticks: { color: '#64748b', maxTicksLimit: 10,
     callback: (v) => new Date(v).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) },
     grid: { color: 'rgba(51,65,85,0.3)' } }; }
@@ -262,7 +262,7 @@ function labelerChart(data) {
     return {
         chart: null,
         init() {
-            __annReg();
+            __ann();
             const ex = Chart.getChart(this.$refs.cv); if (ex) ex.destroy();
             const annotations = {};
             const klc = { goed: 'rgba(16,185,129,0.9)', middel: 'rgba(251,146,60,0.9)', slecht: 'rgba(244,63,94,0.9)' };
@@ -283,7 +283,7 @@ function zoomChart(d) {
     return {
         chart: null,
         init() {
-            __annReg();
+            __ann();
             const ex = Chart.getChart(this.$refs.zv); if (ex) ex.destroy();
             const m = d.markers || {}, ann = {};
             if (m.pfrom && m.pto) ann.band = { type: 'box', xMin: m.pfrom, xMax: m.pto,
