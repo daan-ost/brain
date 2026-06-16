@@ -270,6 +270,10 @@
 @push('scripts')
 <script>
 function flashMsg() { return { shown: false, flash() { this.shown = true; setTimeout(() => { this.shown = false; }, 1500); } }; }
+// timestamp (ms) -> moment-key 'Y-m-d H:i:s' in UTC (= zoals momentKey/de DB opslaat)
+function __tsKey(ms) { const d = new Date(ms), p = (n) => String(n).padStart(2, '0');
+    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) + ' '
+        + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()); }
 function __ann() { if (window.__annReg !== true && window['chartjs-plugin-annotation']) { Chart.register(window['chartjs-plugin-annotation']); window.__annReg = true; } }
 function __xaxis() { return { type: 'linear', ticks: { color: '#64748b', maxTicksLimit: 10,
     callback: (v) => new Date(v).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) },
@@ -340,6 +344,14 @@ function zoomChart(d) {
             });
             const opts = __baseOptions(true);
             opts.plugins.annotation = { annotations: ann };
+            // klik op de grafiek -> spring naar de dichtstbijzijnde datumtijd (modal blijft open)
+            opts.onClick = (e) => {
+                if (! this.chart) return;
+                const xv = this.chart.scales.x.getValueForPixel(e.x);
+                let best = null, bd = Infinity;
+                (d.price || []).forEach((pt) => { const dd = Math.abs(pt.x - xv); if (dd < bd) { bd = dd; best = pt; } });
+                if (best) this.$wire.selectMoment(__tsKey(best.x));
+            };
             this.chart = new Chart(this.$refs.zv, { type: 'line', plugins: [__crosshair],
                 data: { datasets: [{ data: d.price, borderColor: 'rgba(148,163,184,0.95)', borderWidth: 1.3, pointRadius: 0, tension: 0.1, parsing: false }] },
                 options: opts });
