@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Fill indicator_metrics (the calculation cache) for a coin: per (datetime, indicator, lookback)
-all ~29 window calculations. Scope = every datetime inside a promising period + every trade.
-Reads ONLY brain (indicators + coin_periods + coin_fires + coin_rule_settings); writes the brain
+all ~29 window calculations. Scope = every datetime inside a promising period + every trade + every
+OK-marked moment (coin_moment_labels decision='yes' — the owner's confirmed good entries).
+Reads ONLY brain (indicators + coin_periods + coin_fires + coin_moment_labels + coin_rule_settings); writes the brain
 table AND a Parquet mirror (engine/data/metrics/). Idempotent per symbol.
 
 Usage: build_indicator_metrics.py [symbol_id ...]   (default: 2525 244)
@@ -50,11 +51,18 @@ for SYM in SYMS:
 
     vdt = series.get("volumeud", {}).get("dt", [])
 
-    # in-scope datetimes: every volumeud dt inside a promising period + every trade
+    # in-scope datetimes: every volumeud dt inside a promising period + every trade + every OK-marked
+    # moment (coin_moment_labels decision='yes' — the owner's confirmed good entries, see
+    # brain-promising-labeler). We always compute laag 2 for the ok-moments too, even if they fall
+    # outside a promising period; snap to the nearest volumeud tick at/<= the label datetime.
     dts = set(r["datetime"] for r in q("SELECT datetime FROM coin_fires WHERE trading_symbol_id=%s", (SYM,)))
     for p in q("SELECT period_from, period_to FROM coin_periods WHERE trading_symbol_id=%s", (SYM,)):
         lo = bisect.bisect_left(vdt, p["period_from"]); hi = bisect.bisect_right(vdt, p["period_to"])
         dts.update(vdt[lo:hi])
+    for r in q("SELECT datetime FROM coin_moment_labels WHERE trading_symbol_id=%s AND decision='yes'", (SYM,)):
+        i = bisect.bisect_right(vdt, r["datetime"])
+        if i > 0:
+            dts.add(vdt[i - 1])                 # the volumeud tick at/just before the labeled moment
     dts = sorted(dts)
 
     def asof(ind, T, n):

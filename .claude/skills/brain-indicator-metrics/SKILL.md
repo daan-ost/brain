@@ -30,9 +30,14 @@ for rule-eval, not a per-(indicator,lookback) cache column.
 
 ## Scope (which datetimes)
 
-Every datetime **inside a promising period** (coin_periods span) + **every trade** (coin_fires).
-Not all datetimes — that would be ~640k/coin × 2900 = too much. The trade + promising moments are
-exactly what the precision analysis needs ("op aankoopdatum alle waardes").
+Every datetime **inside a promising period** (coin_periods span) + **every trade** (coin_fires) +
+**every OK-marked moment** (`coin_moment_labels` `decision='yes'` — the owner's confirmed good entries
+from the labeler, see [[brain-promising-labeler]]). We ALWAYS compute laag 2 for the ok-moments too,
+even if they fall outside a promising period (snapped to the volumeud tick at/≤ the label). Only ~2-3%
+of all ticks (DOGEAI 274k raw → ~5.8k computed; NOS 190k → ~6.1k) — not all 640k (that would be too
+much). These are exactly the moments the precision analysis + the keeper/labeler/ML work need
+("op aankoopdatum alle waardes"). The raw indicator VALUES exist for all ticks (`indicators`); only the
+computed window-calcs are scoped.
 
 ## Fill / maintenance — THE RULE
 
