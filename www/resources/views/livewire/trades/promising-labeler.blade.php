@@ -189,20 +189,28 @@
                         <span><span class="text-slate-500">volume-rule:</span> <span class="{{ $detail['vol'] ? 'text-emerald-400' : 'text-slate-500' }}">{{ $detail['vol'] ? '✓' : '—' }}</span></span>
                     </div>
 
-                    @if (count($detail['group']) > 1)
+                    @if ($detail['is_ok'])
                         <div class="border-t border-slate-800 pt-4 mb-4">
-                            <div class="text-xs text-slate-500 mb-1.5">Groep — {{ count($detail['group']) }} instapmomenten in dezelfde stijging (samen 1 trade):</div>
-                            <div class="flex flex-wrap gap-2">
-                                @foreach ($detail['group'] as $gm)
-                                    <button wire:click="selectMoment('{{ $gm['key'] }}')"
-                                            class="px-2 py-1 rounded text-xs font-mono border transition
-                                                   {{ $gm['key'] === $detail['key'] ? 'border-sky-400 bg-slate-800 text-white' : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700' }}">
-                                        {{ $gm['time'] }}
-                                        @if ($gm['manual'])<span class="{{ $klc($gm['manual']) }}">✎{{ $gm['manual'] }}</span>
-                                        @elseif ($gm['decision'])<span class="text-slate-400">· {{ $gm['decision'] }}</span>@endif
-                                    </button>
-                                @endforeach
+                            <div class="flex items-center gap-2 flex-wrap mb-2">
+                                <span class="text-xs text-slate-500">Groep (zelfde stijging = 1 trade):</span>
+                                @if ($detail['has_prev_ok'])
+                                    <button wire:click="setGroupBreak('{{ $detail['key'] }}', 'join')"
+                                            class="px-2 py-1 rounded text-xs border transition {{ $detail['group_break'] === 'join' ? 'bg-sky-600 border-sky-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' }}">⛓ koppel aan vorige</button>
+                                @endif
+                                <button wire:click="setGroupBreak('{{ $detail['key'] }}', 'break')"
+                                        class="px-2 py-1 rounded text-xs border transition {{ $detail['group_break'] === 'break' ? 'bg-amber-600 border-amber-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' }}">✂ ontkoppel hier</button>
+                                <span class="text-xs {{ $detail['group_break'] ? 'text-amber-400' : 'text-slate-600' }}">{{ $detail['group_break'] ? 'handmatig' : 'auto' }}</span>
                             </div>
+                            @if (count($detail['group']) > 1)
+                                <div class="flex flex-wrap gap-2">
+                                    @foreach ($detail['group'] as $gm)
+                                        <button wire:click="selectMoment('{{ $gm['key'] }}')"
+                                                class="px-2 py-1 rounded text-xs font-mono border transition {{ $gm['key'] === $detail['key'] ? 'border-sky-400 bg-slate-800 text-white' : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700' }}">
+                                            {{ $gm['time'] }}@if ($gm['manual'])<span class="{{ $klc($gm['manual']) }}"> ✎{{ $gm['manual'] }}</span>@endif
+                                        </button>
+                                    @endforeach
+                                </div>
+                            @endif
                         </div>
                     @endif
 

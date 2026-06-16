@@ -130,6 +130,17 @@ class PromisingLabeler extends Component
         $this->momentMemo = $this->momentMemoKey = null;   // row reflecteert de nieuwe staat
     }
 
+    /** Handmatige groep-grens op een ok-moment: 'break' (ontkoppel/split) | 'join' (koppel aan vorige). */
+    public function setGroupBreak(string $key, string $mode): void
+    {
+        $l = CoinMomentLabel::where('trading_symbol_id', $this->coin)
+            ->where('datetime', Carbon::parse($key))->where('source', 'manual')->first();
+        if (! $l) return;   // alleen op een bestaand ok-label (markeer eerst ok)
+        $l->group_break = ($l->group_break === $mode) ? null : $mode;   // klik op de actieve = auto
+        $l->save();
+        $this->momentMemo = $this->momentMemoKey = null;
+    }
+
     // ---- modal ----
 
     public function selectMoment(string $key): void { $this->open($key); }
@@ -302,11 +313,17 @@ class PromisingLabeler extends Component
         // de gap > GROUP_GAP_MIN min, OF er tussen het vorige ok-moment en dit een drop >= GROUP_DROP_PCT zit.
         $groupOf = []; $groups = []; $gid = 0; $prevTs = null; $prevI = null;
         foreach ($moments as $k => $mo) {
-            if (($labels->get($k)?->decision) !== 'yes') continue;   // alleen ok-momenten groeperen
+            $lab = $labels->get($k);
+            if (($lab?->decision) !== 'yes') continue;   // alleen ok-momenten groeperen
             $ts = $mo['when']->getTimestamp();
-            $split = $prevTs === null
-                || ($ts - $prevTs) > self::GROUP_GAP_MIN * 60
-                || $this->dropBetween($px, $prevI, $mo['i']) >= self::GROUP_DROP_PCT;
+            // handmatige override wint van de auto-regels (gap/drop)
+            $split = match ($lab->group_break) {
+                'join'  => $prevTs === null,             // koppel aan vorige (tenzij er geen vorige is)
+                'break' => true,                         // forceer nieuwe groep
+                default => $prevTs === null
+                    || ($ts - $prevTs) > self::GROUP_GAP_MIN * 60
+                    || $this->dropBetween($px, $prevI, $mo['i']) >= self::GROUP_DROP_PCT,
+            };
             if ($split) $groups[++$gid] = ['members' => []];
             $groupOf[$k] = $gid;
             $groups[$gid]['members'][] = [
@@ -404,10 +421,18 @@ class PromisingLabeler extends Component
         $gd = $this->dayMoments();
         $gid = $gd['groupOf'][$this->selKey] ?? null;
         $group = $gid ? $gd['groups'][$gid]['members'] : [];
+        $okKeys = array_keys($gd['groupOf']);                 // ok-momenten in tijdvolgorde
+        $isOk = $gid !== null;
+        $hasPrevOk = $isOk && ! empty($okKeys) && $okKeys[0] !== $this->selKey;
+        $grpBreak = $isOk ? CoinMomentLabel::where('trading_symbol_id', $this->coin)
+            ->where('datetime', $when)->where('source', 'manual')->value('group_break') : null;
 
         return [
             'key' => $this->selKey,
             'group' => $group,
+            'is_ok' => $isOk,
+            'has_prev_ok' => $hasPrevOk,
+            'group_break' => $grpBreak,
             'title' => 'Moment · ' . $this->localFmt($when, 'd M H:i:s') . ($fire ? " · trade rule {$fire->rule}" : ' · geen trade'),
             'is_trade' => (bool) $fire,
             'vol' => ($vf[$i] ?? 0) === 1,

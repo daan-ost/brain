@@ -117,8 +117,13 @@ the yes-moments in time order and starts a NEW group when the gap to the previou
 (`dropBetween`, min-scan from the prev yes-price). So a >5min gap or a ≥1% dip = a separate trade. Re-runs
 on every tick (setDecision resets the memo). The table shows a coloured left border + "groep" column
 (lead · size) on grouped rows; the modal lists the group's yes-members (clickable). Verified: 20:35 solo,
-20:42 solo, 20:48–20:53 one group, 21:07–21:16 one group. Manual re-couple/uncouple is NOT built yet
-(needs a group-override store that survives the re-fire).
+20:42 solo, 20:48–20:53 one group, 21:07–21:16 one group.
+
+**Manual override (boundary model):** `coin_moment_labels.group_break` per ok-moment overrides the
+auto boundary — `'break'` forces a new group here (uncouple/split), `'join'` forces staying with the
+previous group (couple, even if the gap/drop rules would split), `null` = auto. `setGroupBreak()` toggles
+it; the modal shows ⛓ koppel-aan-vorige / ✂ ontkoppel-hier per ok-moment. Lives on coin_moment_labels →
+survives the re-fire. Pass 2 applies it via a `match` before the gap/drop fallback.
 
 **Data-safety note:** never mutate real labels in a throwaway script via `updateOrCreate` + delete-by-set_by
 on real datetimes — it clobbers the owner's labels if those datetimes were already labelled. Test read-only,
