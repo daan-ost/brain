@@ -23,12 +23,15 @@ Build spec: `docs/epics/epic-L-promising-labeler.md`. Two invariants this protec
 - Upside klasse thresholds live in `engine/src/opt_lib.py` and are mirrored in `CoinFire::klasseKey()`:
   goed ≥ 3% / middel 0.5–3% / slecht < 0.5% (on `best_upside`) — used for the chart dot colours.
 - **The labeler's own unified promising-definitie** (filter == auto column, `PromisingLabeler::isPromising`):
-  `up5 ≥ PROM_UP5 (0.5%) AND up15 ≥ PROM_REACH (3%) AND vroege_dip ≥ PROM_DIP (−0.5%)`. I.e. it rises a bit
-  within +5min, reaches ≥3% WITHIN +15min (not only later), and no early dip worse than −0.5%. autoKlasse:
-  goed = promising, else middel (max60 ≥ 0.5) / slecht. Calibrated on Daan's ok/niet-ok marks: dip10 and
-  up5/up15 separate ok from niet-ok; **maxDD/reversals/below-entry/pullback-ratio do NOT** (ok and niet-ok
-  fully overlap on volatility — so there is no clean "too volatile" BR; the real "you'd lose" discriminator
-  is the sell-engine result, punt 4). These constants ARE the tunable knobs + the future default-fill.
+  `up5 ≥ PROM_UP5 (0.5%) AND up15 ≥ PROM_REACH (3%) AND vroege_dip ≥ PROM_DIP (−0.5%) AND spike_iso <
+  PROM_SPIKE_ISO (3%)`. I.e. rises a bit within +5min, reaches ≥3% WITHIN +15min, no early dip worse than
+  −0.5%, and the 60m peak is NOT an isolated 1-tick spike (`spike_iso` = how far BOTH neighbour ticks sit
+  below the peak; a sharp spike-and-crash you can't trade in time). autoKlasse: goed = promising, else
+  middel (max60 ≥ 0.5) / slecht. **Calibration on Daan's ok/niet-ok marks** (important): dip10, up5, up15
+  and peak-isolation (extreme tail only — ok p90≈2%, spikes 6-7%) discriminate; **maxDD / reversals /
+  below-entry / pullback-ratio / close-retention / sustain do NOT** (ok and niet-ok fully overlap), so a
+  generic "too volatile/whippy" BR is NOT possible — that realisability is the sell-engine's job (punt 4).
+  These constants are the tunable knobs + the future default-fill.
 - Promising verdict (`in_good_period`) gates in `engine/src/config.py` (verified): `FORWARD_MINUTES=60`,
   `MIN_UPSIDE_PCT=5.0`, `MAX_EARLY_DIP_PCT=-0.1`, `MIN_DURATION_MINUTES=10`, `DROP_BELOW_PCT=-0.3`,
   per-coin `UPSIDE_MINUTES_PER_COIN={2525:25, 244:45}` (DOGEAI fast, NOS slow; default 30).

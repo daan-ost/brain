@@ -41,6 +41,10 @@ class PromisingLabeler extends Component
     public const PROM_UP5 = 0.5;
     public const PROM_REACH = 3.0;
     public const PROM_DIP = -0.5;
+    // spike-filter: als de piek een geisoleerde 1-tick spike is (beide buur-ticks >= dit % eronder),
+    // is de winst in de praktijk niet te verhandelen (koop/verkoop nooit op tijd). Conservatief gezet:
+    // ok-marks komen zelden boven ~2%, de spikes (zoals NOS 7%) er ruim boven.
+    public const PROM_SPIKE_ISO = 3.0;
 
     // Groepering van ok-gemarkeerde momenten (decision='yes') = 1 stijging/trade. Een volgende
     // ok-moment hoort NIET bij de vorige als de gap > GROUP_GAP_MIN, OF als er tussen beide een
@@ -243,9 +247,19 @@ class PromisingLabeler extends Component
         for ($k = $i; $k < min($i + 10, $n); $k++) {
             if ($px[$k] < $low) $low = $px[$k];
         }
+        // piek-isolatie over het 60-min venster [$i, $j): hoe scherp ligt de piek geisoleerd (spike).
+        // Beide buur-ticks ver onder de piek = 1-tick spike die je in de praktijk niet kunt verhandelen.
+        $pk = $i;
+        for ($k = $i; $k < $j; $k++) {
+            if ($px[$k] > $px[$pk]) $pk = $k;
+        }
+        $peak = $px[$pk];
+        $leftDrop = ($pk > $i && $peak > 0) ? ($peak - $px[$pk - 1]) / $peak * 100 : 0.0;
+        $rightDrop = ($pk + 1 < $j && $peak > 0) ? ($peak - $px[$pk + 1]) / $peak * 100 : 0.0;
         return [
             'max' => $buy > 0 ? round(($maxAll - $buy) / $buy * 100, 3) : null,
             'low10' => $buy > 0 ? round(($low - $buy) / $buy * 100, 3) : null,
+            'spike_iso' => round(min($leftDrop, $rightDrop), 3),
             'hz' => $hz,
         ];
     }
@@ -268,16 +282,18 @@ class PromisingLabeler extends Component
      * horizons zijn cumulatief dus dit is max60 >= REACH) EN geen diskwalificerende vroege dip
      * (vroege_dip >= DIP_MIN). Een moment dat nooit 3% haalt is niet promising, ook al rijst het wat.
      */
-    public static function isPromising(?float $up5, ?float $up15, ?float $dip): bool
+    public static function isPromising(?float $up5, ?float $up15, ?float $dip, ?float $spikeIso = 0.0): bool
     {
         if ($up5 === null || $up15 === null) return false;
-        return $up5 >= self::PROM_UP5 && $up15 >= self::PROM_REACH && (($dip ?? -99) >= self::PROM_DIP);
+        return $up5 >= self::PROM_UP5 && $up15 >= self::PROM_REACH
+            && (($dip ?? -99) >= self::PROM_DIP)
+            && (($spikeIso ?? 0.0) < self::PROM_SPIKE_ISO);   // geen geisoleerde spike
     }
 
-    /** up5/up15/dip uit een metrics-array halen voor isPromising. */
+    /** up5/up15/dip/spike-iso uit een metrics-array halen voor isPromising. */
     private static function promInputs(array $m): array
     {
-        return [$m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10']];
+        return [$m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'], $m['spike_iso'] ?? 0.0];
     }
 
     /** Auto-klasse: goed == promising (zelfde definitie als de filter); anders middel/slecht op upside. */
