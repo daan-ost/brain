@@ -14,6 +14,7 @@ Usage: routines.py [--no-rebuild] [--date YYYY-MM-DD] [--trigger routine|manual|
 import datetime
 import hashlib
 import json
+import subprocess
 import sys
 
 from db import brain
@@ -29,19 +30,26 @@ TRIGGER = sys.argv[sys.argv.index("--trigger") + 1] if "--trigger" in sys.argv e
 SET_ARG = sys.argv[sys.argv.index("--set") + 1] if "--set" in sys.argv else "rule-precision"
 
 
-def input_fingerprint():
+def input_fingerprint(with_labels=False):
     """Signature of everything that determines the analysis outcome: the raw `indicators` per coin
     (count + latest datetime) AND the active `rules` (count + latest change). New data OR a rule
     change (auto-applied last run, or a manual edit) bumps it; a converged run with no new data
-    leaves it stable → the gate skips. coin_periods/coin_fires are derived, so not needed here."""
+    leaves it stable → the gate skips. For the RECALL set, the ok-LABELS also bump it (with_labels)
+    so new promising labels re-trigger the triage. coin_periods/coin_fires are derived, so not needed."""
     conn = brain()
     with conn.cursor() as c:
         c.execute("SELECT trading_symbol_id s, COUNT(*) n, MAX(datetime) mx FROM indicators GROUP BY trading_symbol_id ORDER BY s")
         ind = c.fetchall()
         c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM rules WHERE active=1")
         rules = c.fetchone()
+        lab = None
+        if with_labels:
+            c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM coin_moment_labels WHERE decision='yes'")
+            lab = c.fetchone()
     conn.close()
     sig = "|".join(f"{r['s']}:{r['n']}:{r['mx']}" for r in ind) + f"#rules:{rules['n']}:{rules['mx']}"
+    if lab:
+        sig += f"#labels:{lab['n']}:{lab['mx']}"
     return hashlib.md5(sig.encode()).hexdigest()
 
 
@@ -153,6 +161,43 @@ def routine_integrity(j):
     return f"{overall.upper()} · {n['fail']} fail / {n['warn']} warn / {n['ok']} ok"
 
 
+def routine_recall_triage(j):
+    """RECALL-TRIAGE: when new promising labels come in, re-fill the worklist and PROPOSE bounded tweaks
+    for the feature-missed groups. PROPOSE-ONLY — it never touches brain.rules; recall_loop only writes
+    the worklist (status/tried). The human (or a later holdout-validated routine) decides on applying;
+    recall tweaks are in-sample and overfit-risky, so they are never auto-applied."""
+    import os
+    here = opt.HERE
+    py = sys.executable
+    for script, args in (("recall_worklist.py", []), ("recall_loop.py", ["--write"])):
+        r = subprocess.run([py, os.path.join(here, script), *args], cwd=here, capture_output=True, text=True)
+        if r.returncode != 0:
+            j.add(f"{script} faalde: {(r.stderr or r.stdout)[-400:]}", level="error")
+            return f"FOUT in {script}"
+    conn = brain()
+    with conn.cursor() as c:
+        c.execute("SELECT trading_symbol_id sym, COUNT(*) n, SUM(caught) caught, "
+                  "SUM(status='proposed_catch') proposed, SUM(status='needs_new_rule') needs, "
+                  "SUM(blocker='no_candidate') nocand FROM promising_recall_state GROUP BY sym ORDER BY sym")
+        rows = c.fetchall()
+        c.execute("SELECT home_rule, COUNT(*) n FROM promising_recall_state WHERE status='needs_new_rule' "
+                  "GROUP BY home_rule ORDER BY n DESC")
+        needs = c.fetchall()
+    conn.close()
+    parts = []
+    for r in rows:
+        rec = round(100 * r["caught"] / r["n"]) if r["n"] else 0
+        parts.append(f"r{r['sym']} {rec}%")
+        j.add(f"coin {r['sym']}: {int(r['n'])} promising-groepen · recall {rec}% · voorstel-vangbaar "
+              f"{int(r['proposed'] or 0)} · needs_new_rule {int(r['needs'] or 0)} · no_candidate "
+              f"{int(r['nocand'] or 0)} (engine-niveau, niet rule-fixbaar)", level="result",
+              data={"groups": int(r["n"]), "caught": int(r["caught"] or 0)})
+    if needs:
+        j.add("needs_new_rule homet op: " + ", ".join(f"rule {r['home_rule']}: {int(r['n'])}" for r in needs)
+              + " — kandidaten voor child-varianten (pas na holdout-validatie + meer data).", level="finding")
+    return "recall-triage · " + ", ".join(parts)
+
+
 # A SET is a named chain of routines with a shared goal. This set = eliminate existing bad trades
 # from the rules (tighten existing rules now; outlier-split into new rules = 2b, coming). Append
 # routines below; they run after each other in one journaled run, under this set's name.
@@ -175,9 +220,19 @@ REGISTRY_INTEGRITY = [
     ("data-integriteit", routine_integrity),
 ]
 
+# A THIRD set: recall-triage. Fires when new promising LABELS come in (the fingerprint includes the
+# ok-labels for this set) → re-fill the worklist + PROPOSE bounded tweaks. Propose-only (never touches
+# brain.rules); the human/holdout decides on applying. Different objective + trigger than rule-precision.
+RECALL_SET_KEY = "recall-triage"
+RECALL_SET_NAME = "Recall-triage — promising-groepen vangen (voorstellen)"
+REGISTRY_RECALL = [
+    ("recall-triage", routine_recall_triage),
+]
+
 SETS = {
     SET_KEY: (SET_NAME, REGISTRY, True),                 # gated by the data-changed fingerprint
     INTEGRITY_SET_KEY: (INTEGRITY_SET_NAME, REGISTRY_INTEGRITY, False),
+    RECALL_SET_KEY: (RECALL_SET_NAME, REGISTRY_RECALL, True),   # gated; fingerprint includes ok-labels
 }
 
 
@@ -222,7 +277,7 @@ def main():
     set_key = SET_ARG
     set_name, registry, gated = SETS[set_key]
 
-    fp = input_fingerprint()
+    fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY))   # recall fires on new ok-labels too
     if gated:
         # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
         prev = _state(conn, set_key)
