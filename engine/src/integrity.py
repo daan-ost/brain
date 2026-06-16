@@ -435,6 +435,54 @@ def check_recall_worklist(ctx):
     return Result("recall_worklist", "Recall-worklist spiegelt de ok-labels (geen wezen)", status, msg, per_coin)
 
 
+def check_volume_found_vs_live(ctx):
+    """13. Reproduceert brain's live volume_check (check_volumeud_3) de geïmporteerde legacy
+    `volume_found` vlag? Sample 5000 ticks uit het midden van de reeks per coin en vergelijk
+    tick-voor-tick. Stochastische diagnose-fout in een eerder onderzoek liet "wel volume, niet
+    opgeslagen" zien — dit was geen data-fout maar een meet-fout (live_check op een ander moment dan
+    waar vf werd vergeleken). Deze check ankert de werkelijkheid: als legacy en live > 2% van de
+    gesamplete ticks verschillen, is er wél iets aan de hand."""
+    from rule_engine import RuleEngine
+    from volume import check_volumeud_3, volume_settings
+    per_coin = {}
+    status = "ok"
+    SAMPLE = 5000
+    for cid in ctx.coins:
+        total = ctx.q("SELECT COUNT(*) n FROM indicators WHERE trading_symbol_id=%s "
+                      "AND indicator='volumeud'", (cid,))[0]["n"]
+        if not total:
+            per_coin[ctx.symbol[cid]] = {"sampled": 0}
+            continue
+        ticks = ctx.q("SELECT datetime, volume_found FROM indicators WHERE trading_symbol_id=%s "
+                      "AND indicator='volumeud' AND value IS NOT NULL ORDER BY datetime "
+                      "LIMIT %s OFFSET %s", (cid, SAMPLE, max(0, total // 2)))
+        eng = RuleEngine(cid)
+        mv = eng.minvol.get(20, 1e12)
+        vset = volume_settings(20)
+        agree = l0_live1 = l1_live0 = 0
+        for t in ticks:
+            vrows = eng._vol_rows(t["datetime"], 60)
+            live = check_volumeud_3(vrows, mv, vset)
+            if (t["volume_found"] == 1) == bool(live):
+                agree += 1
+            elif t["volume_found"] == 0 and live:
+                l0_live1 += 1                # volume "gemist" in opslag — als groot, echt probleem
+            else:
+                l1_live0 += 1                # legacy iets ruimer (klein, bekend OK)
+        eng.close()
+        n = len(ticks)
+        d = {"sampled": n, "agree_pct": round(100 * agree / n, 2) if n else None,
+             "legacy0_live1": l0_live1, "legacy1_live0": l1_live0}
+        per_coin[ctx.symbol[cid]] = d
+        if n and l0_live1 / n > 0.02:
+            status = "fail"                  # >2% "live ziet volume, niet opgeslagen" = data-probleem
+        elif n and (l0_live1 + l1_live0) / n > 0.05 and status != "fail":
+            status = "warn"
+    msg = ("Legacy volume_found en brain's live volume_check komen overeen." if status == "ok"
+           else "Volume_found-vlag wijkt af van de live volume_check — import/legacy onderzoeken.")
+    return Result("volume_found_vs_live", "Volume_found vlag = brain's live volume_check", status, msg, per_coin)
+
+
 # --------------------------------------------------------------------------- run-all
 CHECKS = [
     ("laag2_coverage", check_laag2_coverage),
@@ -449,6 +497,7 @@ CHECKS = [
     ("routine_state", check_routine_state),
     ("sell_record", check_sell_record),
     ("recall_worklist", check_recall_worklist),
+    ("volume_found_vs_live", check_volume_found_vs_live),
 ]
 
 
