@@ -99,4 +99,24 @@ return [
         'afs_email' => env('TRUSTPILOT_AFS_EMAIL'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Externe binaries (absolute paden)
+    |--------------------------------------------------------------------------
+    |
+    | Onder MAMP/php-fpm bevat de PATH vaak niet /opt/homebrew/bin, waardoor een
+    | exec()/shell_exec() op bare naam stilzwijgend faalt in webserver-context.
+    | App\Support\BinaryResolver lost deze binaries absoluut op; een env-override
+    | hier heeft voorrang op de standaard zoekpaden (alleen nodig bij niet-standaard
+    | locaties). Leeg laten = zoekpaden afzoeken.
+    |
+    */
+    'binaries' => [
+        'dig'     => env('DIG_BINARY'),
+        'timeout' => env('TIMEOUT_BINARY'),
+        'nproc'   => env('NPROC_BINARY'),
+        'grep'    => env('GREP_BINARY'),
+        'uptime'  => env('UPTIME_BINARY'),
+    ],
+
 ];

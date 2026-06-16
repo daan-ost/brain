@@ -2,6 +2,7 @@
 
 namespace App\Rules;
 
+use App\Support\BinaryResolver;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 
@@ -128,13 +129,28 @@ class ValidEmailDomain implements ValidationRule
 
     private function checkMxWithDig(string $domain): ?bool
     {
+        // Los dig absoluut op: onder php-fpm met minimale PATH faalt een bare-name
+        // exec() stilzwijgend. Geen dig gevonden → val terug op de PHP native check.
+        $dig = BinaryResolver::resolve('dig', 'services.binaries.dig');
+        if ($dig === null) {
+            return null;
+        }
+
         $domain = escapeshellarg($domain);
         $timeout = $this->timeoutSeconds;
 
+        // +time= zorgt dat dig zichzelf hard begrenst, ook zonder externe `timeout`-binary.
+        // Paden worden geëscaped omdat een env-override spaties/metakarakters kan bevatten.
+        $digCmd = escapeshellarg($dig)." +short +time={$timeout} +tries=1 MX {$domain} 2>/dev/null";
+
         if (PHP_OS_FAMILY === 'Darwin') {
-            $cmd = "dig +short +time={$timeout} +tries=1 MX {$domain} 2>/dev/null";
+            $cmd = $digCmd;
         } else {
-            $cmd = "timeout {$timeout}s dig +short +tries=1 MX {$domain} 2>/dev/null";
+            // Wrap met `timeout` als die er is (belt-and-suspenders); +time= is de fallback.
+            $timeoutBin = BinaryResolver::resolve('timeout', 'services.binaries.timeout');
+            $cmd = $timeoutBin !== null
+                ? escapeshellarg($timeoutBin)." {$timeout}s ".$digCmd
+                : $digCmd;
         }
 
         exec($cmd, $output, $returnCode);

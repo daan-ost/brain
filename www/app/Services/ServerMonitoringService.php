@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\BinaryResolver;
 use Illuminate\Support\Facades\Log;
 
 class ServerMonitoringService
@@ -46,15 +47,21 @@ class ServerMonitoringService
                 }
             } else {
                 // Linux/Unix
-                $output = shell_exec('nproc');
-                if ($output) {
-                    return (int) trim($output);
+                $nproc = BinaryResolver::resolve('nproc', 'services.binaries.nproc');
+                if ($nproc !== null) {
+                    $output = shell_exec(escapeshellarg($nproc).' 2>/dev/null');
+                    if ($output) {
+                        return (int) trim($output);
+                    }
                 }
 
                 // Fallback: read from /proc/cpuinfo
-                $output = shell_exec('grep -c ^processor /proc/cpuinfo');
-                if ($output) {
-                    return (int) trim($output);
+                $grep = BinaryResolver::resolve('grep', 'services.binaries.grep');
+                if ($grep !== null) {
+                    $output = shell_exec(escapeshellarg($grep).' -c ^processor /proc/cpuinfo 2>/dev/null');
+                    if ($output) {
+                        return (int) trim($output);
+                    }
                 }
             }
 
@@ -188,9 +195,12 @@ class ServerMonitoringService
                 }
             } else {
                 // Linux/Unix: use uptime command
-                $output = shell_exec('uptime -p');
-                if ($output) {
-                    return trim($output);
+                $uptime = BinaryResolver::resolve('uptime', 'services.binaries.uptime');
+                if ($uptime !== null) {
+                    $output = shell_exec(escapeshellarg($uptime).' -p 2>/dev/null');
+                    if ($output) {
+                        return trim($output);
+                    }
                 }
             }
 
