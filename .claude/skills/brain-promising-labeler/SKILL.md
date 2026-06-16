@@ -110,12 +110,19 @@ positive upside but negative profit_loss = sell-engine left money behind. Sideba
 
 ## Grouping (one rise = one trade)
 
-Consecutive promising moments (auto='goed') ≤ `GROUP_GAP_MIN` (15 min) apart are auto-grouped into one
-group = one rise = one trade (`dayMoments` pass 2). E.g. 16:22:08/22:56/23:56/24:56/26:12/28:19 → one
-group. The table shows a coloured left border per group + a "groep" column (lead time · size); the modal
-lists the group's members (clickable) with their labels, so labeling one moment shows the others in the
-rise. Manual uncouple/regroup is NOT built yet (needs a group-override store that survives the re-fire) —
-the grouping is currently derived on the fly from the labeler's own isPromising + the gap.
+Grouping is over **ok-marked moments only** (`decision='yes'`), NOT the auto-promising set — the owner
+decides the entries; the auto-classification is only a (future) default fill. `dayMoments` pass 2 walks
+the yes-moments in time order and starts a NEW group when the gap to the previous yes-moment
+> `GROUP_GAP_MIN` (5 min), OR a price drop ≥ `GROUP_DROP_PCT` (1%) occurred between them
+(`dropBetween`, min-scan from the prev yes-price). So a >5min gap or a ≥1% dip = a separate trade. Re-runs
+on every tick (setDecision resets the memo). The table shows a coloured left border + "groep" column
+(lead · size) on grouped rows; the modal lists the group's yes-members (clickable). Verified: 20:35 solo,
+20:42 solo, 20:48–20:53 one group, 21:07–21:16 one group. Manual re-couple/uncouple is NOT built yet
+(needs a group-override store that survives the re-fire).
+
+**Data-safety note:** never mutate real labels in a throwaway script via `updateOrCreate` + delete-by-set_by
+on real datetimes — it clobbers the owner's labels if those datetimes were already labelled. Test read-only,
+or snapshot+restore.
 
 ## Display + moment source
 

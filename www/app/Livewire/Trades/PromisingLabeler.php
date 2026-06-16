@@ -38,8 +38,11 @@ class PromisingLabeler extends Component
     public const PROM_REACH = 3.0;
     public const PROM_DIP = -0.5;
 
-    // Auto-groepering: opeenvolgende promising momenten <= dit aantal min apart = 1 stijging/trade.
-    public const GROUP_GAP_MIN = 15;
+    // Groepering van ok-gemarkeerde momenten (decision='yes') = 1 stijging/trade. Een volgende
+    // ok-moment hoort NIET bij de vorige als de gap > GROUP_GAP_MIN, OF als er tussen beide een
+    // koersdaling van >= GROUP_DROP_PCT% zit (harde daling = aparte trade).
+    public const GROUP_GAP_MIN = 5;
+    public const GROUP_DROP_PCT = 1.0;
 
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
@@ -229,6 +232,18 @@ class PromisingLabeler extends Component
         ];
     }
 
+    /** Grootste koersdaling (%) van de prijs op index $i1 tot het laagste punt in ($i1, $i2]. */
+    private function dropBetween(array $px, int $i1, int $i2): float
+    {
+        $base = $px[$i1];
+        if ($base <= 0) return 0.0;
+        $low = $base;
+        for ($k = $i1 + 1; $k <= $i2; $k++) {
+            if ($px[$k] < $low) $low = $px[$k];
+        }
+        return ($base - $low) / $base * 100;
+    }
+
     /**
      * THE unified promising-definitie — gebruikt door de filter én de auto-klasse (ze zijn hetzelfde).
      * Promising = de stijging komt snel genoeg ((up5 >= UP5_MIN) OF (up15 > REACH)) EN er is geen
@@ -283,20 +298,22 @@ class PromisingLabeler extends Component
                 'prom' => self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'])];
         }
 
-        // pass 2: groepeer opeenvolgende promising momenten (gap <= GROUP_GAP_MIN) = 1 stijging/trade
-        $groupOf = []; $groups = []; $gid = 0; $prevTs = null;
+        // pass 2: groepeer OK-gemarkeerde momenten (decision='yes') = 1 stijging/trade. Nieuw groep als
+        // de gap > GROUP_GAP_MIN min, OF er tussen het vorige ok-moment en dit een drop >= GROUP_DROP_PCT zit.
+        $groupOf = []; $groups = []; $gid = 0; $prevTs = null; $prevI = null;
         foreach ($moments as $k => $mo) {
-            if (! $mo['prom']) continue;
+            if (($labels->get($k)?->decision) !== 'yes') continue;   // alleen ok-momenten groeperen
             $ts = $mo['when']->getTimestamp();
-            if ($prevTs === null || ($ts - $prevTs) > self::GROUP_GAP_MIN * 60) {
-                $groups[++$gid] = ['members' => []];
-            }
+            $split = $prevTs === null
+                || ($ts - $prevTs) > self::GROUP_GAP_MIN * 60
+                || $this->dropBetween($px, $prevI, $mo['i']) >= self::GROUP_DROP_PCT;
+            if ($split) $groups[++$gid] = ['members' => []];
             $groupOf[$k] = $gid;
             $groups[$gid]['members'][] = [
                 'key' => $k, 'time' => $this->localFmt($mo['when']),
-                'decision' => $labels->get($k)?->decision, 'manual' => $labels->get($k)?->manual_klasse,
+                'decision' => 'yes', 'manual' => $labels->get($k)?->manual_klasse,
             ];
-            $prevTs = $ts;
+            $prevTs = $ts; $prevI = $mo['i'];
         }
 
         // pass 3: bouw de display-rijen per view-filter
