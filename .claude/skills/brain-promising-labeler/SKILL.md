@@ -21,7 +21,12 @@ Build spec: `docs/epics/epic-L-promising-labeler.md`. Two invariants this protec
 ## Auto-classification (single source of truth)
 
 - Upside klasse thresholds live in `engine/src/opt_lib.py` and are mirrored in `CoinFire::klasseKey()`:
-  goed ≥ 3% / middel 0.5–3% / slecht < 0.5% (on `best_upside`).
+  goed ≥ 3% / middel 0.5–3% / slecht < 0.5% (on `best_upside`) — used for the chart dot colours.
+- **The labeler's own unified promising-definitie** (filter == auto column, `PromisingLabeler::isPromising`):
+  `max60 ≥ PROM_REACH (3%) AND vroege_dip ≥ PROM_DIP (−0.5%)`. I.e. the move must reach ≥3% at +15min or a
+  later period (horizons are cumulative ⇒ max60) AND have no early dip worse than −0.5%. autoKlasse: goed =
+  promising, else middel (max60 ≥ 0.5) / slecht. A moment that rises a little but never hits 3% (e.g. max
+  2.1%) is NOT promising. These constants ARE the tunable knobs + the future default-fill.
 - Promising verdict (`in_good_period`) gates in `engine/src/config.py` (verified): `FORWARD_MINUTES=60`,
   `MIN_UPSIDE_PCT=5.0`, `MAX_EARLY_DIP_PCT=-0.1`, `MIN_DURATION_MINUTES=10`, `DROP_BELOW_PCT=-0.3`,
   per-coin `UPSIDE_MINUTES_PER_COIN={2525:25, 244:45}` (DOGEAI fast, NOS slow; default 30).

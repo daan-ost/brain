@@ -32,9 +32,9 @@ class PromisingLabeler extends Component
     public const HORIZONS = [5, 10, 15, 30, 45, 60];
     public const ROW_CAP = 1500;            // dekt een volledige dag volumeud-ticks (max ~1163/dag)
 
-    // Unified promising-definitie (filter == auto). Promising = (up5 >= UP5_MIN OF up15 > REACH)
-    // EN vroege_dip >= DIP_MIN. Dit is ook de default auto-klasse en straks de default-invulling.
-    public const PROM_UP5 = 0.5;
+    // Unified promising-definitie (filter == auto). Promising = de winst bereikt >= REACH% op +15min
+    // of een latere periode (de horizons zijn cumulatief, dus = max60 >= REACH) EN de vroege dip
+    // >= DIP_MIN. Dit is ook de default auto-klasse en straks de default-invulling.
     public const PROM_REACH = 3.0;
     public const PROM_DIP = -0.5;
 
@@ -257,19 +257,20 @@ class PromisingLabeler extends Component
 
     /**
      * THE unified promising-definitie — gebruikt door de filter én de auto-klasse (ze zijn hetzelfde).
-     * Promising = de stijging komt snel genoeg ((up5 >= UP5_MIN) OF (up15 > REACH)) EN er is geen
-     * diskwalificerende vroege dip (vroege_dip >= DIP_MIN).
+     * Promising = de winst bereikt >= REACH% binnen het venster (op +15 of een latere periode; de
+     * horizons zijn cumulatief dus dit is max60 >= REACH) EN geen diskwalificerende vroege dip
+     * (vroege_dip >= DIP_MIN). Een moment dat nooit 3% haalt is niet promising, ook al rijst het wat.
      */
-    public static function isPromising(?float $up5, ?float $up15, ?float $dip): bool
+    public static function isPromising(?float $maxUpside, ?float $dip): bool
     {
-        if ($up5 === null || $up15 === null) return false;
-        return (($up5 >= self::PROM_UP5) || ($up15 > self::PROM_REACH)) && (($dip ?? -99) >= self::PROM_DIP);
+        if ($maxUpside === null) return false;
+        return $maxUpside >= self::PROM_REACH && (($dip ?? -99) >= self::PROM_DIP);
     }
 
     /** Auto-klasse: goed == promising (zelfde definitie als de filter); anders middel/slecht op upside. */
     private static function autoKlasse(array $m): string
     {
-        if (self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'])) {
+        if (self::isPromising($m['max'], $m['low10'])) {
             return 'goed';
         }
         if (($m['max'] ?? 0) >= 0.5) return 'middel';
@@ -306,7 +307,7 @@ class PromisingLabeler extends Component
             $seen[$k] = true;
             $m = $this->metricsFrom($dt, $px, $i);
             $moments[$k] = ['when' => $when, 'i' => $i, 'm' => $m,
-                'prom' => self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10'])];
+                'prom' => self::isPromising($m['max'], $m['low10'])];
         }
 
         // pass 2: groepeer OK-gemarkeerde momenten (decision='yes') = 1 stijging/trade. Nieuw groep als
@@ -437,7 +438,7 @@ class PromisingLabeler extends Component
             'is_trade' => (bool) $fire,
             'vol' => ($vf[$i] ?? 0) === 1,
             'auto_klasse' => self::autoKlasse($m),
-            'promising' => self::isPromising($m['hz'][5]['up'] ?? null, $m['hz'][15]['up'] ?? null, $m['low10']),
+            'promising' => self::isPromising($m['max'], $m['low10']),
             'legacy_klasse' => $legacyLabel,
             'price' => $this->priceBetween($from, $to),
             'markers' => $markers,

@@ -42,7 +42,7 @@
             <option value="executed">alleen uitgevoerd</option>
         </select>
 
-        <span class="text-xs text-slate-500" title="promising = (+5m ≥ 0,5% OF +15m > 3%) EN vroege dip ≥ −0,5%">promising-regel ⓘ</span>
+        <span class="text-xs text-slate-500" title="promising = max upside ≥ 3% (op +15m of later) EN vroege dip ≥ −0,5%">promising-regel ⓘ</span>
 
         <span class="text-xs text-slate-400">{{ $dayCount }} dagen</span>
 
