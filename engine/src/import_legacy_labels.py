@@ -17,19 +17,31 @@ from db import brain, legacy
 
 KLASSE = {1: "goed", 2: "middel", 3: "slecht"}
 DECISION = {1: "yes", 3: "no"}        # middel(2) -> no yes/no decision
-SCOPE_RULES = (20, 21, 22, 23)
-
-syms = [int(a) for a in sys.argv[1:]] or [2525, 244]
 
 leg = legacy()
 dst = brain()
 dst.autocommit(False)
+
+# args = expliciete coins; geen args = ALLE coins met legacy-labels (scope-rules) — de volledige
+# migratie. Voor coins zonder brain-ticks valt snapping terug op (legacy_dt - 5s); her-draai de
+# import nadat die coin in brain is gebouwd (idempotent: per-coin DELETE + re-insert).
+if sys.argv[1:]:
+    syms = [int(a) for a in sys.argv[1:]]
+else:
+    with leg.cursor() as c:
+        c.execute("SELECT DISTINCT trading_symbol_id FROM wp_trading_simulation "
+                  "WHERE result IN (1,2,3) ORDER BY trading_symbol_id")
+        syms = [r["trading_symbol_id"] for r in c.fetchall()]
+print(f"coins: {len(syms)}")
+
+total = 0
+snapped_n = 0
 total = 0
 snapped_n = 0
 for sym in syms:
     with leg.cursor() as c:
         c.execute("SELECT datetime, rule, result FROM wp_trading_simulation "
-                  "WHERE trading_symbol_id=%s AND result IN (1,2,3) AND rule IN (20,21,22,23)", (sym,))
+                  "WHERE trading_symbol_id=%s AND result IN (1,2,3)", (sym,))
         rows = c.fetchall()
     with dst.cursor() as c:
         c.execute("SELECT symbol FROM coins WHERE id=%s", (sym,))

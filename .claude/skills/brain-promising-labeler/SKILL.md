@@ -52,10 +52,14 @@ Eager-load the label relation in any list view to avoid N+1.
 ## Legacy import
 
 Source: `bot_signals.wp_trading_simulation.result` (1=goed, 2=middel, 3=slecht, NULL=unlabeled).
-Read-only via the `bot_signals` connection. Verified counts (Jun 2026): **4.161 labeled total**
-(948/710/2503). For tracked coins on scope-rules 20–23: **DOGEAI (2525) 74/36/301**, **NOS (244)
-11/8/169** — heavily slecht-skewed, which is exactly why success criterion 1 (#goed ≥ 2×#slecht)
-fails and why per-moment precision matters.
+Read-only via the `bot_signals` connection. **Full migration**: `import_legacy_labels.py` with NO args
+imports ALL labeled trades, ALL coins, ALL rules (4.161 rows over 74 coins) into `coin_moment_labels`
+(source='legacy'); pass coin ids to limit. The `rule` column keeps the legacy rule; the labeler folds to
+moment-level (strongest verdict wins, see `legacyByMoment`). Coins without brain indicators land at
+`legacy_dt − 5s` (no ticks to snap to) — **re-run the import for a coin after it's built** in brain so
+its labels snap to the fresh ticks (idempotent: per-coin DELETE + re-insert). This re-run is the
+**onboarding hook** for every new coin. (Tracked slice context: DOGEAI 2525, NOS 244 are heavily
+slecht-skewed on rules 20–23, which is why success criterion 1 (#goed ≥ 2×#slecht) fails.)
 
 **+5s offset (critical):** legacy buy datetimes = the signal tick **+ 5s** (the live engine's wait —
 see [[bot-signals-schema]]), so an exact join misses ~100%. The import and `persist_to_brain.py`'s
