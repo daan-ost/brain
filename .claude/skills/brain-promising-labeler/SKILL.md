@@ -23,10 +23,12 @@ Build spec: `docs/epics/epic-L-promising-labeler.md`. Two invariants this protec
 - Upside klasse thresholds live in `engine/src/opt_lib.py` and are mirrored in `CoinFire::klasseKey()`:
   goed ≥ 3% / middel 0.5–3% / slecht < 0.5% (on `best_upside`) — used for the chart dot colours.
 - **The labeler's own unified promising-definitie** (filter == auto column, `PromisingLabeler::isPromising`):
-  `max60 ≥ PROM_REACH (3%) AND vroege_dip ≥ PROM_DIP (−0.5%)`. I.e. the move must reach ≥3% at +15min or a
-  later period (horizons are cumulative ⇒ max60) AND have no early dip worse than −0.5%. autoKlasse: goed =
-  promising, else middel (max60 ≥ 0.5) / slecht. A moment that rises a little but never hits 3% (e.g. max
-  2.1%) is NOT promising. These constants ARE the tunable knobs + the future default-fill.
+  `up5 ≥ PROM_UP5 (0.5%) AND up15 ≥ PROM_REACH (3%) AND vroege_dip ≥ PROM_DIP (−0.5%)`. I.e. it rises a bit
+  within +5min, reaches ≥3% WITHIN +15min (not only later), and no early dip worse than −0.5%. autoKlasse:
+  goed = promising, else middel (max60 ≥ 0.5) / slecht. Calibrated on Daan's ok/niet-ok marks: dip10 and
+  up5/up15 separate ok from niet-ok; **maxDD/reversals/below-entry/pullback-ratio do NOT** (ok and niet-ok
+  fully overlap on volatility — so there is no clean "too volatile" BR; the real "you'd lose" discriminator
+  is the sell-engine result, punt 4). These constants ARE the tunable knobs + the future default-fill.
 - Promising verdict (`in_good_period`) gates in `engine/src/config.py` (verified): `FORWARD_MINUTES=60`,
   `MIN_UPSIDE_PCT=5.0`, `MAX_EARLY_DIP_PCT=-0.1`, `MIN_DURATION_MINUTES=10`, `DROP_BELOW_PCT=-0.3`,
   per-coin `UPSIDE_MINUTES_PER_COIN={2525:25, 244:45}` (DOGEAI fast, NOS slow; default 30).
