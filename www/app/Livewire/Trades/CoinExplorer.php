@@ -129,27 +129,35 @@ class CoinExplorer extends Component
         $this->dispatch('annotation-saved');
     }
 
-    /** Step to the next/previous fire (or period) of the same day, inside the modal. */
+    /** Step to the next/previous fire (across day-boundaries) or period (within day). */
     public function navDetail(int $dir): void
     {
-        if (! $this->selType) {
+        if (! $this->selType) return;
+
+        // Period-navigatie blijft binnen de huidige dag — periodes zijn per definitie dag-gebonden.
+        if ($this->selType === 'period') {
+            $ids = $this->dayTargetIds($this->selType);
+            $i = array_search($this->selId, $ids, true);
+            if ($i === false) return;
+            $this->open($this->selType, $ids[max(0, min(count($ids) - 1, $i + $dir))]);
             return;
         }
-        $ids = $this->dayTargetIds($this->selType);
-        $i = array_search($this->selId, $ids, true);
-        if ($i === false) {
-            // Huidige selectie zit niet in de gefilterde lijst (= we staan op een schaduw die nu
-            // overgeslagen wordt). Spring naar de eerstvolgende fire in die richting.
-            if ($this->selType === 'fire' && ($cur = CoinFire::find($this->selId))) {
-                $q = CoinFire::where('trading_symbol_id', $this->coin)
-                    ->where('datetime', $dir > 0 ? '>' : '<', $cur->datetime);
-                if ($this->skipShadows) $q->where('is_executed', true);
-                $next = $q->orderBy('datetime', $dir > 0 ? 'asc' : 'desc')->first();
-                if ($next) $this->open($this->selType, $next->id);
-            }
-            return;
+
+        // Fire-navigatie: zoek de eerstvolgende fire over dag-grenzen heen. Als die op een andere
+        // dag valt, update $this->date zodat het scherm onder de modal mee verschuift.
+        $cur = CoinFire::find($this->selId);
+        if (! $cur) return;
+        $q = CoinFire::where('trading_symbol_id', $this->coin)
+            ->where('datetime', $dir > 0 ? '>' : '<', $cur->datetime);
+        if ($this->skipShadows) $q->where('is_executed', true);
+        $next = $q->orderBy('datetime', $dir > 0 ? 'asc' : 'desc')->first();
+        if (! $next) return;
+
+        $newDate = $next->datetime->format('Y-m-d');
+        if ($newDate !== $this->date) {
+            $this->date = $newDate;
         }
-        $this->open($this->selType, $ids[max(0, min(count($ids) - 1, $i + $dir))]);
+        $this->open('fire', $next->id);
     }
 
     private function dayTargetIds(string $type): array
