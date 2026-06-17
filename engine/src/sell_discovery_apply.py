@@ -25,6 +25,51 @@ PY = sys.executable
 COINS = [2525, 244]
 APPLY = "--apply" in sys.argv
 
+# Toegestane rule-101 kolomnamen. De knob komt uit het JSON-rapport en wordt rauw als kolomnaam in de
+# UPDATE gezet — whitelist hem zodat een onverwacht/extern rapport geen willekeurige SQL kan injecteren.
+ALLOWED_KNOBS = {"b_min", "value_condition"}
+
+
+def current_rule_knob(conn, knob, sr_name, lb):
+    """Huidige live-waarde van de rule-101 knob (voor de optimistic-lock). Whitelist de kolomnaam,
+    geeft None als de subrule niet (meer) bestaat. Vergelijkbaar met _update_rule maar read-only."""
+    if knob not in ALLOWED_KNOBS:
+        raise SystemExit("FATALE FOUT: onbekende knob %r in rapport — geweigerd." % knob)
+    with conn.cursor() as c:
+        if sr_name == "previous_value" and lb is not None:
+            c.execute("SELECT %s v FROM rules WHERE rule_number=101 AND subrulename=%%s "
+                      "AND def1_value=%%s AND active=1" % knob, (sr_name, lb))
+        elif sr_name == "sell_negative_volume":
+            c.execute("SELECT %s v FROM rules WHERE rule_number=101 AND subrulename=%%s AND active=1" % knob,
+                      (sr_name,))
+        else:
+            return None
+        r = c.fetchone()
+    return r["v"] if r else None
+
+
+def _update_rule(conn, knob, value, sr_name, lb):
+    """Muteer precies één actieve rule-101 subrule-knob en commit. Vangt drie risico's:
+    - kolomnaam (knob) komt uit het rapport → whitelist tegen injectie;
+    - geen passend UPDATE-pad → abort i.p.v. stille no-op die later als 'toegepast' geboekt wordt;
+    - 0 rijen geraakt (subrule live gewijzigd/gedeactiveerd) → abort i.p.v. doen alsof het lukte."""
+    if knob not in ALLOWED_KNOBS:
+        raise SystemExit("FATALE FOUT: onbekende knob %r in rapport — geweigerd." % knob)
+    with conn.cursor() as c:
+        if sr_name == "previous_value" and lb is not None:
+            c.execute("UPDATE rules SET %s=%%s, updated_at=NOW() WHERE rule_number=101 "
+                      "AND subrulename=%%s AND def1_value=%%s AND active=1" % knob,
+                      (str(value), sr_name, lb))
+        elif sr_name == "sell_negative_volume":
+            c.execute("UPDATE rules SET %s=%%s, updated_at=NOW() WHERE rule_number=101 "
+                      "AND subrulename=%%s AND active=1" % knob,
+                      (str(value), sr_name))
+        else:
+            raise SystemExit("FATALE FOUT: geen UPDATE-pad voor %s/lb=%s — geweigerd." % (sr_name, lb))
+        if c.rowcount == 0:
+            raise SystemExit("FATALE FOUT: UPDATE raakte 0 rijen — subrule %s niet (meer) actief." % sr_name)
+    conn.commit()
+
 
 def latest_report():
     files = sorted(glob.glob(os.path.join(HERE, "out/opt/sell_discovery_*.json")))
@@ -100,20 +145,32 @@ def apply_safe(emit, apply=False, report=None, conn=None):
             conn.close()
         return "1 voorstel (propose-only)"
 
+    # Optimistic lock: alleen toepassen als de live-waarde nog gelijk is aan de 'from' uit het rapport.
+    # Anders is de subrule sinds de meting gewijzigd (andere routine/handmatige edit) → rapport verouderd.
+    if old_val is not None:
+        cur_val = current_rule_knob(conn, knob, sr_name, lb)
+        if cur_val is None or abs(float(cur_val) - float(old_val)) > 1e-9:
+            emit("%s → OVERGESLAGEN: live-waarde %s ≠ rapport-from %s (rapport verouderd)." % (head, cur_val, old_val),
+                 "info", 101, {"proposal": best})
+            if own:
+                conn.close()
+            return "overgeslagen (verouderd rapport)"
+
     base_sig, base_ver = combined_totals(conn)
 
-    with conn.cursor() as c:
-        if sr_name == "previous_value" and lb is not None:
-            c.execute("UPDATE rules SET %s=%%s, updated_at=NOW() WHERE rule_number=101 "
-                      "AND subrulename=%%s AND def1_value=%%s AND active=1" % knob,
-                      (str(new_val), sr_name, lb))
-        elif sr_name == "sell_negative_volume":
-            c.execute("UPDATE rules SET %s=%%s, updated_at=NOW() WHERE rule_number=101 "
-                      "AND subrulename=%%s AND active=1" % knob,
-                      (str(new_val), sr_name))
-    conn.commit()
+    _update_rule(conn, knob, new_val, sr_name, lb)
 
-    refire_all(reason)
+    try:
+        refire_all(reason)
+    except SystemExit:
+        # Refire faalde halverwege: de rule-wijziging is al gecommit maar coin_fires is teruggerold naar
+        # de OUDE stand → inconsistent. Zet de subrule terug vóór we afbreken (best-effort revert-refire).
+        _update_rule(conn, knob, old_val, sr_name, lb)
+        try:
+            refire_all("%s-revert" % reason)
+        except SystemExit:
+            pass
+        raise
 
     for sym in COINS:
         if manual_count(conn, sym) != man0[sym]:
@@ -130,16 +187,7 @@ def apply_safe(emit, apply=False, report=None, conn=None):
              {"proposal": best, "sigma": [base_sig, new_sig], "verliezers": [base_ver, new_ver]})
         result = "1 toegepast"
     else:
-        with conn.cursor() as c:
-            if sr_name == "previous_value" and lb is not None:
-                c.execute("UPDATE rules SET %s=%%s, updated_at=NOW() WHERE rule_number=101 "
-                          "AND subrulename=%%s AND def1_value=%%s AND active=1" % knob,
-                          (str(old_val), sr_name, lb))
-            elif sr_name == "sell_negative_volume":
-                c.execute("UPDATE rules SET %s=%%s, updated_at=NOW() WHERE rule_number=101 "
-                          "AND subrulename=%%s AND active=1" % knob,
-                          (str(old_val), sr_name))
-        conn.commit()
+        _update_rule(conn, knob, old_val, sr_name, lb)
         refire_all("%s-revert" % reason)
         why = "Σprofit daalt" if new_sig < base_sig - 1e-6 else "verliezers stijgen"
         emit("%s → AFGEWEZEN (%s). Teruggedraaid." % (head, why), "info", 101, {"proposal": best})

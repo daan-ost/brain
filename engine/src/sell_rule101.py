@@ -55,24 +55,31 @@ def rule_engine_101(DT, PX, VV, i, buy_dt, buy, market, subrules, max_price_sinc
                 orderstatus = "sell"
 
         # --- B: sell_x_below (sell if >= b_max of the last def1 rows are negative + falling) ---
+        # Legacy (functions_br.php §sell_x_below): telt EXACT `limit` rijen (i=0..limit-1). De fetch
+        # haalt `limit+1` rijen op, maar die extra rij dient enkel als prijs-referentie ($result[$i+1])
+        # voor de oudste getelde rij — NIET als een extra telkandidaat. Daarom range(0, limit), niet +1.
+        # Valt een rij vóór de koopdatum (of ontbreekt history), dan breekt legacy de hele subrule af:
+        # geen sell. Daarom `aborted` i.p.v. doorgaan naar de cnt-check.
         elif name == "sell_x_below":
             limit = int(float(sr["def1_value"]))
             need = int(float(sr["b_max"]))
             vc = float(sr["value_condition"])   # 0.999
             cnt = 0
-            for k in range(0, limit + 1):
+            aborted = False
+            for k in range(0, limit):
                 idx = i - k
                 if idx < 0 or DT[idx] < buy_dt:
+                    aborted = True              # rij vóór koopdatum / te weinig history → legacy: geen sell
                     break
                 val = round(VV[idx], 2)
                 if k == 0:
                     if val < 0:
                         cnt += 1
                 else:
-                    nxt = idx - 1                # next-older row; out-of-range → condition false
+                    nxt = idx - 1                # eerstvolgende oudere rij (legacy $result[$i+1]); buiten bereik → false
                     if val < 0 and nxt >= 0 and PX[idx] < PX[nxt]:
                         cnt += 1
-            if cnt >= need:
+            if not aborted and cnt >= need:
                 orderstatus = "sell"
                 raise_stop(vc)
 

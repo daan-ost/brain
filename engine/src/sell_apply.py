@@ -30,11 +30,20 @@ import subprocess
 import sys
 
 from db import brain
+from sell_engine import merge_sl
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
 COINS = [2525, 244]
 APPLY = "--apply" in sys.argv
+
+# JSON-sleutel (in het rapport) → parsed knob-naam (zoals merge_sl/parse_sl ze teruggeeft).
+REV_KNOB = {"hp_setting6": "hp6", "hp_setting7": "hp7", "min_sl1": "min_sl1", "minimal_profit": "minimal_profit"}
+
+# Toegestane instelknop-namen (= JSON_KEY-waarden uit sell_tuning). De knob komt uit het JSON-rapport
+# en wordt als sl_settings-sleutel weggeschreven — whitelist hem zodat een onverwacht/extern rapport
+# nooit een andere sleutel kan injecteren.
+ALLOWED_KNOBS = {"hp_setting6", "hp_setting7", "min_sl1", "minimal_profit"}
 
 
 def latest_report():
@@ -60,6 +69,19 @@ def coin_totals(conn, sym):
                   "GROUP BY rule", (sym,))
         per = {r["rule"]: (float(r["sig"] or 0), int(r["verlies"]), int(r["n"])) for r in c.fetchall()}
     return sum(s for s, _, _ in per.values()), sum(v for _, v, _ in per.values()), per
+
+
+def effective_knob(conn, sym, rule, json_knob):
+    """De huidige EFFECTIEVE knob-waarde (globale strategy + per-coin override gemerged), zoals
+    sell_tuning hem als 'from' opschreef. Voor de optimistic-lock: rapport toepassen op een gewijzigde
+    live-waarde = stil fout. Geeft None als de knob/rule ontbreekt."""
+    with conn.cursor() as c:
+        c.execute("SELECT rule_number, sl_settings FROM strategies")
+        raw = {r["rule_number"]: r["sl_settings"] for r in c.fetchall()}
+        c.execute("SELECT rule_number, sl_settings FROM coin_strategies WHERE trading_symbol_id=%s", (sym,))
+        ovr = {r["rule_number"]: r["sl_settings"] for r in c.fetchall()}
+    merged = merge_sl(raw, ovr)
+    return merged.get(int(rule), {}).get(REV_KNOB.get(json_knob))
 
 
 def read_override(conn, sym, rule):
@@ -137,10 +159,32 @@ def apply_safe(emit, apply=False, report=None, conn=None):
             emit(f"{head} — VOORSTEL, niet toegepast.", "finding", rule, {"proposal": p})
             continue
 
+        if p["knob"] not in ALLOWED_KNOBS:
+            raise SystemExit(f"FATALE FOUT: onbekende instelknop {p['knob']!r} in rapport — geweigerd.")
+
+        # Optimistic lock: pas alleen toe als de live-waarde nog gelijk is aan wat het rapport als 'from'
+        # zag. Anders is het rapport verouderd (andere routine/handmatige edit ertussen) → overslaan.
+        eff = effective_knob(conn, sym, rule, p["knob"])
+        if eff is None or abs(eff - float(p["from"])) > 1e-9:
+            emit(f"{head} → OVERGESLAGEN: live-waarde {eff} ≠ rapport-from {p['from']} (rapport verouderd).",
+                 "info", rule, {"proposal": p})
+            rejected.append((sym, rule, p))
+            continue
+
         base_sig, base_verlies, _ = coin_totals(conn, sym)
         prev = read_override(conn, sym, rule)
         write_override(conn, sym, rule, p["knob"], p["to"])
-        refire(sym, reason)
+        try:
+            refire(sym, reason)
+        except SystemExit:
+            # Refire faalde halverwege: de override is al gecommit maar coin_fires is teruggerold naar
+            # de OUDE stand → inconsistent. Zet de override terug vóór we afbreken (best-effort revert-refire).
+            restore_override(conn, sym, rule, prev)
+            try:
+                refire(sym, f"{reason}-revert")
+            except SystemExit:
+                pass
+            raise
         if manual_count(conn, sym) != man0[sym]:
             raise SystemExit("FATALE FOUT: aantal handmatige overrides veranderde door de refire — afgebroken.")
         new_sig, new_verlies, _ = coin_totals(conn, sym)
