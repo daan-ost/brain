@@ -37,6 +37,8 @@ class CoinExplorer extends Component
     public string $annCategory = '';
     public string $annComment = '';
     public string $manualKlasse = '';   // '' = berekend, 'goed'|'middel'|'slecht' = handmatig override
+    public string $bestSell = '';       // override beste sell-datum ('Y-m-d\TH:i:s' voor datetime-local)
+    public string $hardSell = '';       // harde verkoopdatum (sell-engine respecteert dit)
 
     public function mount(): void
     {
@@ -89,16 +91,21 @@ class CoinExplorer extends Component
         $this->annCategory = $ann?->category ?? '';
         $this->annComment = $ann?->comment ?? '';
         $this->manualKlasse = '';
+        $this->bestSell = '';
+        $this->hardSell = '';
         if ($type === 'fire' && ($f = CoinFire::find($id))) {
-            // moment-level label (rule-independent)
-            $this->manualKlasse = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
-                ->where('datetime', $f->datetime)->where('source', 'manual')->value('manual_klasse') ?? '';
+            // moment-level label (rule-independent): klasse + beste/harde sell overrides
+            $l = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
+                ->where('datetime', $f->datetime)->where('source', 'manual')->first();
+            $this->manualKlasse = $l?->manual_klasse ?? '';
+            $this->bestSell = $l?->best_sell_datetime ? Carbon::parse($l->best_sell_datetime)->format('Y-m-d\TH:i:s') : '';
+            $this->hardSell = $l?->hard_sell_datetime ? Carbon::parse($l->hard_sell_datetime)->format('Y-m-d\TH:i:s') : '';
         }
     }
 
     public function closeDetail(): void
     {
-        $this->reset(['selType', 'selId', 'annCategory', 'annComment', 'manualKlasse']);
+        $this->reset(['selType', 'selId', 'annCategory', 'annComment', 'manualKlasse', 'bestSell', 'hardSell']);
     }
 
     public function saveManualKlasse(): void
@@ -106,9 +113,15 @@ class CoinExplorer extends Component
         if ($this->selType !== 'fire' || ! $this->selId) return;
         $f = CoinFire::find($this->selId);
         if (! $f) return;
-        // moment-level label in coin_moment_labels (single source of truth; survives the re-fire)
-        CoinMomentLabel::setManual($f->trading_symbol_id, $f->symbol, $f->datetime,
-            ['manual_klasse' => $this->manualKlasse ?: null], auth()->user()?->email);
+        // alle handmatige velden samen wegschrijven (klasse + beste/harde sell). manual_set_at=now() markeert
+        // dat het handmatig is — daarmee blijft het bij heranalyse leidend (auto overschrijft niet).
+        $parseDt = fn (string $s) => $s ? Carbon::parse(str_replace('T', ' ', $s)) : null;
+        CoinMomentLabel::setManual($f->trading_symbol_id, $f->symbol, $f->datetime, [
+            'manual_klasse' => $this->manualKlasse ?: null,
+            'best_sell_datetime' => $parseDt($this->bestSell),
+            'hard_sell_datetime' => $parseDt($this->hardSell),
+            'manual_set_at' => now(),
+        ], auth()->user()?->email);
         $this->dispatch('annotation-saved');
     }
 
@@ -171,12 +184,28 @@ class CoinExplorer extends Component
             // OUR fire detail (brain only): buy/sell from our sell-engine; legacy result = reference.
             $markers = ['buy' => $f->datetime->getTimestampMs()];
             if ($f->selling_datetime) $markers['sell'] = $f->selling_datetime->getTimestampMs();
-            // best reachable price WITHIN our hold (buy → our sell) — what the sell-engine left on the table
-            $bestSellPct = ($f->best_sell_price && $f->buy_price)
-                ? round(($f->best_sell_price - $f->buy_price) / $f->buy_price * 100, 2) : null;
-            if ($f->best_sell_datetime && $bestSellPct !== null) {
-                $markers['bestsell'] = $f->best_sell_datetime->getTimestampMs();
+            // beste-sell met voorrang: handmatig (manual_set_at) > legacy > berekend (coin_fires).
+            // De berekende waarde is al begrensd tot de volgende koop (zie sell_engine.best_sell_in_window).
+            $manualLabel = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
+                ->where('datetime', $f->datetime)->where('source', 'manual')->first();
+            $legacyRow = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
+                ->where('datetime', $f->datetime)->where('source', 'legacy')->first();
+            $bestSellDt = $manualLabel?->best_sell_datetime ?? $legacyRow?->best_sell_datetime ?? $f->best_sell_datetime;
+            $bestSellSrc = $manualLabel?->best_sell_datetime ? 'handmatig'
+                : ($legacyRow?->best_sell_datetime ? 'legacy' : ($f->best_sell_datetime ? 'berekend' : null));
+            // % obv prijs op die exacte tick (anders fallback op coin_fires.best_sell_price voor de berekende)
+            $bestSellPct = null;
+            if ($bestSellDt && $f->buy_price) {
+                $px = \DB::table('indicators')->where('trading_symbol_id', $f->trading_symbol_id)
+                    ->where('indicator', 'volumeud')->where('datetime', $bestSellDt)->value('price');
+                if ($px === null && $bestSellSrc === 'berekend' && $f->best_sell_price) $px = $f->best_sell_price;
+                if ($px !== null) $bestSellPct = round(($px - $f->buy_price) / $f->buy_price * 100, 2);
             }
+            if ($bestSellDt) $markers['bestsell'] = Carbon::parse($bestSellDt)->getTimestampMs();
+            if ($manualLabel?->hard_sell_datetime) $markers['hardsell'] = $manualLabel->hard_sell_datetime->getTimestampMs();
+            // changelog (klasse-veranderingen door heranalyse — auto schrijft hier, handmatig niet)
+            $changes = \DB::table('coin_fires_changelog')->where('trading_symbol_id', $f->trading_symbol_id)
+                ->where('datetime', $f->datetime)->orderByDesc('id')->limit(5)->get()->all();
             // overlay the promising period this fire belongs to (if any): band + best entry + peak
             if ($f->period_id && ($per = CoinPeriod::find($f->period_id))) {
                 $markers['pfrom'] = $per->period_from->getTimestampMs();
@@ -189,24 +218,28 @@ class CoinExplorer extends Component
                 'type' => 'fire', 'id' => $f->id,
                 'title' => "Trade · rule {$f->rule} · " . $this->localFmt($f->datetime, 'd M H:i:s'),
                 'manual_klasse' => $this->manualKlasse,
+                'manual_klasse_set' => (bool) $manualLabel?->manual_klasse,
                 'is_executed' => $f->is_executed,
                 'auto_klasse' => $f->autoKlasseKey(),
                 'bestsell_pct' => $bestSellPct,
                 'price' => $this->priceBetween($from, $to),
                 'markers' => $markers,
+                'best_sell' => $bestSellDt ? [
+                    'datetime' => $this->localFmt($bestSellDt),
+                    'pct' => $bestSellPct,
+                    'source' => $bestSellSrc,
+                ] : null,
+                'hard_sell' => $manualLabel?->hard_sell_datetime ? $this->localFmt($manualLabel->hard_sell_datetime) : null,
+                'changes' => array_map(fn ($r) => [
+                    'when' => Carbon::parse($r->created_at)->format('Y-m-d H:i'),
+                    'field' => $r->field, 'from' => $r->old_value, 'to' => $r->new_value, 'reason' => $r->reason,
+                ], $changes),
                 'stats' => array_filter([
                     'rule' => $f->rule,
                     'uitkomst' => ! $f->is_executed ? '↳ schaduw van ' . $this->localFmt($f->shadow_parent) : $f->klasse()[0],
-                    'beste upside % (60min)' => $f->best_upside,
-                    'beste upside om' => isset($per) ? $this->localFmt($per->peak_datetime) : null,
                     'aankoopprijs' => $f->buy_price,
                     'verkoopprijs (onze sell)' => $f->selling_price,
                     'winst % (onze sell)' => $f->is_executed ? $f->profit_loss : null,
-                    'beste sell binnen hold' => ($f->is_executed && $f->best_sell_price && $bestSellPct !== null)
-                        ? rtrim(rtrim(number_format($f->best_sell_price, 6, '.', ''), '0'), '.')
-                          . ' (' . ($bestSellPct >= 0 ? '+' : '') . $bestSellPct . '%)'
-                        : null,
-                    'beste sell om' => $f->is_executed ? $this->localFmt($f->best_sell_datetime) : null,
                     'legacy result' => [1 => 'goed', 2 => 'middel', 3 => 'slecht'][$f->legacy_result] ?? null,
                     'legacy P&L' => $f->legacy_profit_loss,
                 ], fn ($v) => $v !== null && $v !== ''),

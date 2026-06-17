@@ -122,6 +122,23 @@
                         <div class="relative h-64 mb-4"><canvas x-ref="zv"></canvas></div>
                     </div>
 
+                    @if (! empty($detail['best_sell']))
+                        <div class="mb-3 flex items-center gap-2 text-sm border-b border-slate-800/60 pb-2">
+                            <span class="text-slate-400">beste sell</span>
+                            <span class="font-mono text-purple-300">{{ $detail['best_sell']['datetime'] }}</span>
+                            @if ($detail['best_sell']['pct'] !== null)
+                                <span class="font-mono {{ $detail['best_sell']['pct'] >= 0 ? 'text-emerald-400' : 'text-rose-400' }}">
+                                    {{ $detail['best_sell']['pct'] >= 0 ? '+' : '' }}{{ $detail['best_sell']['pct'] }}%
+                                </span>
+                            @endif
+                            <span class="ml-auto text-xs px-2 py-0.5 rounded-full
+                                {{ $detail['best_sell']['source'] === 'handmatig' ? 'bg-amber-600/30 text-amber-300' :
+                                   ($detail['best_sell']['source'] === 'legacy' ? 'bg-sky-700/30 text-sky-300' : 'bg-slate-700/40 text-slate-400') }}">
+                                bron: {{ $detail['best_sell']['source'] }}
+                            </span>
+                        </div>
+                    @endif
+
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-sm mb-4">
                         @foreach ($detail['stats'] as $k => $v)
                             <div class="flex justify-between border-b border-slate-800/60 py-0.5">
@@ -131,9 +148,25 @@
                         @endforeach
                     </div>
 
-                    {{-- uitkomst override (alleen voor uitgevoerde trades; schaduwen traden niet) --}}
+                    @if (! empty($detail['changes']))
+                        <div class="mb-4 text-xs">
+                            <div class="text-slate-400 mb-1">Heranalyse-log:</div>
+                            <ul class="space-y-0.5">
+                                @foreach ($detail['changes'] as $ch)
+                                    <li class="font-mono text-slate-300">
+                                        <span class="text-slate-500">{{ $ch['when'] }}</span> ·
+                                        {{ $ch['field'] }}: <span class="text-rose-400">{{ $ch['from'] }}</span> →
+                                        <span class="text-emerald-400">{{ $ch['to'] }}</span>
+                                        <span class="text-slate-500">({{ $ch['reason'] }})</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
+                    {{-- handmatige overrides (alleen voor uitgevoerde trades; schaduwen traden niet) --}}
                     @if ($selType === 'fire' && ($detail['is_executed'] ?? false))
-                    <div class="border-t border-slate-800 pt-4 mb-4">
+                    <div class="border-t border-slate-800 pt-4 mb-4 space-y-3">
                         <div class="flex items-center gap-3 flex-wrap">
                             <span class="text-sm text-slate-400 shrink-0">Uitkomst overschrijven:</span>
                             <select wire:model.live="manualKlasse"
@@ -143,13 +176,37 @@
                                 <option value="middel">middel (0.5–3%)</option>
                                 <option value="slecht">slecht (&lt;0.5%)</option>
                             </select>
-                            <button wire:click="saveManualKlasse"
-                                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">Opslaan</button>
                             @if ($detail['manual_klasse'])
                                 <span class="text-xs text-amber-400 font-medium">✎ handmatig: {{ $detail['manual_klasse'] }}</span>
                             @endif
                         </div>
-                        <p class="text-xs text-slate-500 mt-1.5">Opgeslagen in <code>coin_moment_labels</code> (overleeft een re-fire). Wordt zichtbaar in de Promising labeler.</p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-500 mb-0.5">beste sell-datum overschrijven</span>
+                                <input type="datetime-local" step="1" wire:model="bestSell"
+                                       class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200" />
+                                <span class="text-[10px] text-slate-500 mt-0.5">leeg = berekend / legacy gebruiken</span>
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-500 mb-0.5">harde verkoopdatum (sell-engine)</span>
+                                <input type="datetime-local" step="1" wire:model="hardSell"
+                                       class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200" />
+                                <span class="text-[10px] text-slate-500 mt-0.5">verkoop uiterlijk op deze datum (of eerder bij een drop)</span>
+                            </div>
+                        </div>
+
+                        @if ($detail['manual_klasse_set'])
+                            <div class="text-xs text-amber-300">⚠ handmatige kwaliteit is leidend — heranalyse overschrijft dit niet.</div>
+                        @endif
+
+                        <div class="flex items-center gap-3">
+                            <button wire:click="saveManualKlasse"
+                                    class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">Opslaan</button>
+                            <span x-data="annFlash()" x-show="shown" x-on:annotation-saved.window="flash()"
+                                  class="text-xs text-emerald-400">opgeslagen ✓</span>
+                            <p class="text-xs text-slate-500">Opgeslagen in <code>coin_moment_labels</code> (overleeft een re-fire).</p>
+                        </div>
                     </div>
                     @endif
 
@@ -261,6 +318,7 @@ function zoomChart(d) {
             if (m.sell) ann.sell = line(m.sell, 'rgba(244,63,94,0.95)', 'onze verkoop');
             if (m.bestsell) ann.bestsell = line(m.bestsell, 'rgba(168,85,247,0.95)',
                 'beste sell' + (d.bestsell_pct != null ? ' (' + (d.bestsell_pct >= 0 ? '+' : '') + d.bestsell_pct + '%)' : ''), 'end');
+            if (m.hardsell) ann.hardsell = line(m.hardsell, 'rgba(220,38,38,0.95)', 'harde verkoop', 'end');
             const opts = __baseOptions(true);
             opts.plugins.annotation = { annotations: ann };
             this.chart = new Chart(this.$refs.zv, { type: 'line', plugins: [__crosshair],
