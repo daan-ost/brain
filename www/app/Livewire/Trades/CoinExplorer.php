@@ -184,15 +184,16 @@ class CoinExplorer extends Component
             // OUR fire detail (brain only): buy/sell from our sell-engine; legacy result = reference.
             $markers = ['buy' => $f->datetime->getTimestampMs()];
             if ($f->selling_datetime) $markers['sell'] = $f->selling_datetime->getTimestampMs();
-            // beste-sell met voorrang: handmatig (manual_set_at) > legacy > berekend (coin_fires).
-            // De berekende waarde is al begrensd tot de volgende koop (zie sell_engine.best_sell_in_window).
+            // beste-sell voorrang: handmatig > berekend (binnen [koop, onze verkoop]).
+            // Legacy ligt vaak na onze verkoop (de oude bot sloot anders) en is NIET door jou
+            // gekozen — tonen we als losse info-regel, niet als de getoonde beste-sell-waarde.
             $manualLabel = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
                 ->where('datetime', $f->datetime)->where('source', 'manual')->first();
             $legacyRow = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
                 ->where('datetime', $f->datetime)->where('source', 'legacy')->first();
-            $bestSellDt = $manualLabel?->best_sell_datetime ?? $legacyRow?->best_sell_datetime ?? $f->best_sell_datetime;
+            $bestSellDt = $manualLabel?->best_sell_datetime ?? $f->best_sell_datetime;
             $bestSellSrc = $manualLabel?->best_sell_datetime ? 'handmatig'
-                : ($legacyRow?->best_sell_datetime ? 'legacy' : ($f->best_sell_datetime ? 'berekend' : null));
+                : ($f->best_sell_datetime ? 'berekend' : null);
             // % obv prijs op die exacte tick (anders fallback op coin_fires.best_sell_price voor de berekende)
             $bestSellPct = null;
             if ($bestSellDt && $f->buy_price) {
@@ -229,6 +230,8 @@ class CoinExplorer extends Component
                     'pct' => $bestSellPct,
                     'source' => $bestSellSrc,
                 ] : null,
+                'legacy_best_sell' => $legacyRow?->best_sell_datetime
+                    ? $this->localFmt($legacyRow->best_sell_datetime) : null,
                 'hard_sell' => $manualLabel?->hard_sell_datetime ? $this->localFmt($manualLabel->hard_sell_datetime) : null,
                 'changes' => array_map(fn ($r) => [
                     'when' => Carbon::parse($r->created_at)->format('Y-m-d H:i'),

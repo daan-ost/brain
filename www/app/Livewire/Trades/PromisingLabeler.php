@@ -481,14 +481,15 @@ class PromisingLabeler extends Component
 
         $legacyLabel = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'legacy')
             ->where('datetime', $when)->value('manual_klasse');
-        // beste-sell-datum met voorrang: handmatig (manual_set_at IS NOT NULL) > legacy (source=legacy) > berekend (coin_fires)
+        // beste-sell voorrang: handmatig > berekend (binnen [koop, onze verkoop]). Legacy ligt vaak
+        // na onze verkoop (oude bot sloot anders) en is NIET door jou gekozen — tonen als info-regel.
         $manualLabel = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'manual')
             ->where('datetime', $when)->first();
         $legacyRow = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'legacy')
             ->where('datetime', $when)->first();
-        $bestSellDt = $manualLabel?->best_sell_datetime ?? $legacyRow?->best_sell_datetime ?? $fire?->best_sell_datetime;
-        $bestSellSrc = $manualLabel?->best_sell_datetime
-            ? 'handmatig' : ($legacyRow?->best_sell_datetime ? 'legacy' : ($fire?->best_sell_datetime ? 'berekend' : null));
+        $bestSellDt = $manualLabel?->best_sell_datetime ?? $fire?->best_sell_datetime;
+        $bestSellSrc = $manualLabel?->best_sell_datetime ? 'handmatig'
+            : ($fire?->best_sell_datetime ? 'berekend' : null);
         $bestSellPct = $bestSellDt && $buy
             ? ($this->priceAt($bestSellDt) ? round(($this->priceAt($bestSellDt) - $buy) / $buy * 100, 2) : null) : null;
         // changelog (klasse-veranderingen door heranalyse)
@@ -533,6 +534,8 @@ class PromisingLabeler extends Component
                 'pct' => $bestSellPct,
                 'source' => $bestSellSrc,
             ] : null,
+            'legacy_best_sell' => $legacyRow?->best_sell_datetime
+                ? $this->localFmt($legacyRow->best_sell_datetime) : null,
             'hard_sell' => $manualLabel?->hard_sell_datetime ? $this->localFmt($manualLabel->hard_sell_datetime) : null,
             'changes' => array_map(fn ($r) => [
                 'when' => Carbon::parse($r->created_at)->format('Y-m-d H:i'),

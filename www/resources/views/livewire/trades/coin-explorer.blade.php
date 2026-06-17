@@ -123,19 +123,26 @@
                     </div>
 
                     @if (! empty($detail['best_sell']))
-                        <div class="mb-3 flex items-center gap-2 text-sm border-b border-slate-800/60 pb-2">
-                            <span class="text-slate-400">beste sell</span>
-                            <span class="font-mono text-purple-300">{{ $detail['best_sell']['datetime'] }}</span>
-                            @if ($detail['best_sell']['pct'] !== null)
-                                <span class="font-mono {{ $detail['best_sell']['pct'] >= 0 ? 'text-emerald-400' : 'text-rose-400' }}">
-                                    {{ $detail['best_sell']['pct'] >= 0 ? '+' : '' }}{{ $detail['best_sell']['pct'] }}%
+                        <div class="mb-3 border-b border-slate-800/60 pb-2">
+                            <div class="flex items-center gap-2 text-sm">
+                                <span class="text-slate-400">beste sell</span>
+                                <span class="font-mono text-purple-300">{{ $detail['best_sell']['datetime'] }}</span>
+                                @if ($detail['best_sell']['pct'] !== null)
+                                    <span class="font-mono {{ $detail['best_sell']['pct'] >= 0 ? 'text-emerald-400' : 'text-rose-400' }}">
+                                        {{ $detail['best_sell']['pct'] >= 0 ? '+' : '' }}{{ $detail['best_sell']['pct'] }}%
+                                    </span>
+                                @endif
+                                <span class="ml-auto text-xs px-2 py-0.5 rounded-full
+                                    {{ $detail['best_sell']['source'] === 'handmatig' ? 'bg-amber-600/30 text-amber-300' : 'bg-slate-700/40 text-slate-400' }}">
+                                    bron: {{ $detail['best_sell']['source'] }}
                                 </span>
+                            </div>
+                            @if (! empty($detail['legacy_best_sell']))
+                                <div class="text-xs text-slate-500 mt-0.5">
+                                    legacy stelde voor: <span class="font-mono">{{ $detail['legacy_best_sell'] }}</span>
+                                    (oude sell-engine, ter informatie)
+                                </div>
                             @endif
-                            <span class="ml-auto text-xs px-2 py-0.5 rounded-full
-                                {{ $detail['best_sell']['source'] === 'handmatig' ? 'bg-amber-600/30 text-amber-300' :
-                                   ($detail['best_sell']['source'] === 'legacy' ? 'bg-sky-700/30 text-sky-300' : 'bg-slate-700/40 text-slate-400') }}">
-                                bron: {{ $detail['best_sell']['source'] }}
-                            </span>
                         </div>
                     @endif
 
