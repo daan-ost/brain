@@ -49,16 +49,16 @@
             </div>
         </div>
 
-        {{-- class pills: aantal · gem. beste upside (kans) · opgetelde onze-sell P&L (het gat = onze sell-engine) --}}
+        {{-- class pills: aantal + gem. winst + totale winst per klasse (op gerealiseerde profit_loss) --}}
         @php $pct = fn ($v) => ($v >= 0 ? '+' : '').number_format((float) $v, 1, ',', '.').'%'; @endphp
         <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <span class="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700">
                 Uitgevoerd {{ number_format($totals['n'], 0, ',', '.') }} ·
-                beste {{ $pct($totals['best']) }} · onze sell <span class="font-semibold {{ $totals['pl'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($totals['pl']) }}</span>
+                ⌀winst {{ $pct($totals['avg']) }} · Σwinst <span class="font-semibold {{ $totals['pl'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($totals['pl']) }}</span>
             </span>
-            <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-800">Goed {{ $pills['goed']['n'] }} · beste ⌀{{ $pct($pills['goed']['best']) }} · sell {{ $pct($pills['goed']['pl']) }}</span>
-            <span class="px-2.5 py-1 rounded-full bg-orange-100 text-orange-800">Middel {{ $pills['middel']['n'] }}</span>
-            <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-800">Slecht {{ $pills['slecht']['n'] }}</span>
+            <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-800">Goed {{ $pills['goed']['n'] }} · ⌀{{ $pct($pills['goed']['avg']) }} · Σ {{ $pct($pills['goed']['pl']) }}</span>
+            <span class="px-2.5 py-1 rounded-full bg-orange-100 text-orange-800">Middel {{ $pills['middel']['n'] }} · Σ {{ $pct($pills['middel']['pl']) }}</span>
+            <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-800">Slecht {{ $pills['slecht']['n'] }} · Σ {{ $pct($pills['slecht']['pl']) }}</span>
         </div>
     </div>
 

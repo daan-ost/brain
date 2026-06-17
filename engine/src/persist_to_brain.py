@@ -151,12 +151,6 @@ def klasse_of(pl):
     return "slecht" if pl < 0 else ("middel" if pl < 3 else "goed")
 
 # greedy single-position dedup + our sell-engine P&L
-# next_buy_dt[i] = the datetime of the next buy on this coin (any rule), or None if last.
-# A rally after a dip+rebuy belongs to the next trade, so best_sell is capped before it.
-next_buy_dt = [None] * len(all_fires)
-for idx in range(len(all_fires) - 1):
-    next_buy_dt[idx] = all_fires[idx + 1][0]
-
 open_until = open_at = None
 n_exec = n_shadow = n_good = 0
 with dst.cursor() as c:
@@ -192,9 +186,13 @@ with dst.cursor() as c:
                                "VALUES (%s,%s,%s,'klasse',%s,%s,'sell-engine-rerun',NOW(),NOW())",
                                (SYM, SYMBOL, dt, old_k, new_k))
 
-        # best_sell = highest price reachable for THIS trade, capped before the next buy (so a
-        # post-rebuy rally is not credited to us). May lie AFTER our own selling_date.
-        best_for_trade = sell_eng.best_sell_in_window(dt, buy, until_dt=next_buy_dt[idx]) if buy else None
+        # best_sell = de hoogste prijs BINNEN onze hold [koop, onze verkoop]. Komt rechtstreeks uit
+        # de sell-engine (hi_price/hi_dt). Als de prijs alleen daalde, blijft hi_dt = koop-moment en
+        # hi_price = koop-prijs (verkoop op aankoopmoment was het beste haalbaar). Altijd ingevuld
+        # voor executed trades; voor shadows leeg (geen eigen sell).
+        best_for_trade = None
+        if sell:
+            best_for_trade = {"price": sell["hi_price"], "datetime": sell["hi_dt"]}
         best_up = best_upside_at(dt, buy)              # trade quality (best available exit)
         hz, low10 = horizons_at(dt, buy)               # per-horizon upside + early dip
         c.execute(

@@ -42,8 +42,9 @@ class CoinFire extends Model
     public ?CoinMomentLabel $manualLabel = null;
 
     /**
-     * Trade quality (buy-moment, sell-INdependent). A manual label overrides the calculated value.
-     * Daan: goed >= 3%, middel 0.5-3%, slecht < 0.5% (on best_upside). Returns [label, css-class].
+     * Trade quality. Voor executed trades = GEREALISEERD resultaat (profit_loss). Voor schaduw-trades
+     * = potentieel resultaat (best_upside, want geen sell). Een handmatige override is altijd leidend.
+     * Returns [label, css-class].
      */
     public function klasse(): array
     {
@@ -55,15 +56,23 @@ class CoinFire extends Model
         };
     }
 
-    /** Effective buy-quality class: manual label (coin_moment_labels) > computed best_upside. */
+    /** Effective klasse: manual label (coin_moment_labels) > auto (profit_loss voor executed, anders best_upside). */
     public function klasseKey(): string
     {
         return $this->manualLabel?->manual_klasse ?: $this->autoKlasseKey();
     }
 
-    /** The pure auto-classification from best_upside, ignoring any manual override. */
+    /** Pure auto-klasse. Executed trades: op gerealiseerde winst (profit_loss). Schaduw: op
+     * best_upside (potentieel, want geen sell). Drempels: goed >=3%, middel 0..3%, slecht <0%. */
     public function autoKlasseKey(): string
     {
+        if ($this->is_executed) {
+            $p = $this->profit_loss;
+            if ($p === null) return 'onbekend';
+            if ($p >= 3) return 'goed';
+            if ($p >= 0) return 'middel';
+            return 'slecht';
+        }
         $u = $this->best_upside;
         if ($u === null) return 'onbekend';
         if ($u >= 3) return 'goed';
