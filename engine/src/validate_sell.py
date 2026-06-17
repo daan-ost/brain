@@ -20,6 +20,7 @@ import json
 import pymysql
 
 from sell_rule101 import rule_engine_101
+from sell_lock import parse_sl, lock_profit
 
 SYM = 2525
 SELL_MULT = 0.9996      # wp_trading_symbols.stoploss_multiplier (DOGEAI)
@@ -36,25 +37,7 @@ def q(sql, args=()):
         return c.fetchall()
 
 
-def parse_sl(raw):
-    s = json.loads(raw) if raw else {}
-    g = lambda *ks, d=None: next((float(s[k]) for k in ks if k in s and s[k] not in (None, "")), d)
-    ap = s.get("array_profit")
-    return {
-        "min_sl1": g("min_sl1", "min_sl", d=0.988),
-        "min1": g("minutes_in_trade1", "minutes_in_trade", d=6),
-        "min_sl2": g("min_sl2", d=g("min_sl1", "min_sl", d=0.99)),
-        "min2": g("minutes_in_trade2", d=15),
-        "minimal_profit": g("minimal_profit", d=0.8),
-        # highest-profit ratchet (lock_profit). Defaults = legacy functions_br.php:4779-4787.
-        "hp1": g("hp_setting1", d=-0.003), "hp2": g("hp_setting2", d=-0.002),
-        "hp3": g("hp_setting3", d=-0.0015), "hp4": g("hp_setting4", d=0.001),
-        "hp5": g("hp_setting5", d=0.001), "hp6": g("hp_setting6", d=4.0),
-        "hp7": 15.0,    # legacy HARD-overrides the JSON to 15 (functions_br.php:4805)
-        # CHECK-2 age/profit ladder (now configurable; default = legacy hardcoded array)
-        "array_profit": [[float(m), float(t)] for m, t in ap] if ap else [[5, -0.4], [7, -0.1], [8, 0.0], [20, 0.5]],
-    }
-
+# parse_sl + lock_profit come from sell_lock.py (shared with sell_engine.py — same arithmetic).
 
 # SL_settings per rule (allrules ID == rule_number)
 sl_by_rule = {int(r["ID"]): parse_sl(r["SL_settings"]) for r in q("SELECT ID, SL_settings FROM wp_trading_allrules")}
@@ -69,27 +52,6 @@ VV = [float(r["value"]) if r["value"] is not None else 0.0 for r in rows]
 # rule 101 sell-subrules (ordered by sort)
 SUBRULES_101 = q("SELECT ID, sort, subrulename, def1_value, def2_value, b_min, b_max, operator, "
                  "value_condition, condition_rule FROM wp_trading_rules WHERE rule_number=101 AND active=1 ORDER BY sort, ID")
-
-
-def lock_profit(profit, minutes, hi, buy, market, sl):
-    """The trailing floor (legacy lock_profit, functions_br.php:4744). hi = highest_profit_loss
-    in PERCENT, incl. the current tick. First match wins; the ratchet ratchets the stop up as
-    the trade's peak profit grows (this is the piece the 87% version left inert)."""
-    if market < buy * sl["min_sl1"]:                                   # gate: below hard floor
-        return market * 0.9999
-    if minutes < sl["min1"] and profit < sl["minimal_profit"]:         # young + not-yet-in-profit
-        return buy * sl["min_sl1"]
-    if minutes < sl["min2"] and profit < sl["minimal_profit"]:         # mid + not-yet-in-profit
-        return buy * sl["min_sl2"]
-    if hi >= 0.15:                                                     # HIGHEST-PROFIT RATCHET
-        if hi < 0.21:  return buy + sl["hp1"] * buy
-        if hi < 0.30:  return buy + sl["hp2"] * buy
-        if hi < 0.40:  return buy + sl["hp3"] * buy
-        if hi < 0.50:  return buy + sl["hp4"] * buy
-        if hi < 0.70:  return buy + sl["hp5"] * buy
-        if hi < 5:     return buy + ((hi / sl["hp6"]) / 100) * buy     # save ~25% of peak
-        return buy + ((hi - sl["hp7"]) / 100) * buy                    # save ~50% of peak
-    return buy * sl["min_sl1"]                                         # fallback (hi<0.15, past gates)
 
 
 def determine_stop(buy, market, minutes, profit, hi, stop_prev, sl, i, buy_dt, max_price):

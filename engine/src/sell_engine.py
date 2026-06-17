@@ -10,26 +10,11 @@ Reads brain.indicators (price), brain.strategies (SL settings), brain.coins (mul
 brain.rules (rule 101). bot_signals is not touched.
 """
 import bisect
-import json
-from datetime import timedelta
 
 from db import brain
 from config import FORWARD_MINUTES
 from sell_rule101 import rule_engine_101
-
-AGE_LADDER = [(5, -0.4), (7, -0.1), (8, 0.0), (20, 0.5)]
-
-
-def parse_sl(raw):
-    s = json.loads(raw) if raw else {}
-    g = lambda *ks, d=None: next((float(s[k]) for k in ks if k in s and s[k] not in (None, "")), d)
-    return {
-        "min_sl1": g("min_sl1", "min_sl", d=0.988),
-        "min1": g("minutes_in_trade1", "minutes_in_trade", d=6),
-        "min_sl2": g("min_sl2", d=g("min_sl1", "min_sl", d=0.99)),
-        "min2": g("minutes_in_trade2", d=15),
-        "minimal_profit": g("minimal_profit", d=0.8),
-    }
+from sell_lock import parse_sl, lock_profit
 
 
 class SellEngine:
@@ -58,47 +43,49 @@ class SellEngine:
         if self._own:
             self.conn.close()
 
-    def _lock_floor(self, profit, minutes, buy, market, sl):
-        if market < buy * sl["min_sl1"]:
-            return market * 0.9999
-        if minutes < sl["min1"] and profit < sl["minimal_profit"]:
-            return buy * sl["min_sl1"]
-        if minutes < sl["min2"] and profit < sl["minimal_profit"]:
-            return buy * sl["min_sl2"]
-        return buy * sl["min_sl1"]
-
-    def _determine_stop(self, buy, market, minutes, profit, stop_prev, sl, i, buy_dt, max_price):
+    def _determine_stop(self, buy, market, minutes, profit, hi, stop_prev, sl, i, buy_dt, max_price):
+        """Per-tick stop decision → dict(stop, selling_price, orderstatus, floor, lock, mult).
+        floor = absolute minimum (min_sl1*buy); lock = lock_profit ratchet output (None if a CHECK
+        fired first); mult = rule-101 multiplier (None if empty / not reached)."""
         R, MULT = self.ROUNDING, self.SELL_MULT
         floor_price = round(buy * sl["min_sl1"], R)
-        if market < floor_price:                                            # CHECK 1
-            return market, round(market * MULT, R), "sell"
-        if minutes >= 5:                                                    # CHECK 2
-            for m, tp in AGE_LADDER:
-                if minutes > m and profit < tp:
-                    return market, round(market * MULT, R), "sell"
-        if stop_prev is not None and stop_prev > market:                   # CHECK 3
-            return market, round(market * MULT, R), "sell"
 
-        lock = self._lock_floor(profit, minutes, buy, market, sl)
+        def check_sell():           # a CHECK-driven sell: lock/rule-101 were not reached
+            return dict(stop=market, selling_price=round(market * MULT, R), orderstatus="sell",
+                        floor=floor_price, lock=None, mult=None)
+
+        if market < floor_price:                                            # CHECK 1 — absolute floor
+            return check_sell()
+        if minutes >= 5:                                                    # CHECK 2 — age/profit ladder
+            for m, tp in sl["array_profit"]:
+                if minutes > m and profit < tp:
+                    return check_sell()
+        if stop_prev is not None and stop_prev > market:                   # CHECK 3 — trailing breach
+            return check_sell()
+
+        lock = lock_profit(profit, minutes, hi, buy, market, sl)           # lock ratchet
         os101, mult = rule_engine_101(self.DT, self.PX, self.VV, i, buy_dt, buy, market, self.SUBRULES_101, max_price)
         new_stop = (mult * market) if mult != "" else lock
-        if mult != "" and lock > mult * market and os101 != "overrule":
+        if mult != "" and lock > mult * market and os101 != "overrule":    # lock wins unless overrule
             new_stop = lock
         new_stop = round(new_stop, R)
         orderstatus = "sell" if os101 == "sell" else "hold"
-        if new_stop > market:
+        if new_stop > market:                                              # implied stop above price → exit
             orderstatus, new_stop = "sell", market
-        if new_stop < floor_price:
-            return floor_price, round(floor_price * MULT, R), orderstatus
-        return new_stop, round(new_stop * MULT, R), orderstatus
+        if new_stop < floor_price:                                         # floor clamp
+            new_stop = floor_price
+        return dict(stop=new_stop, selling_price=round(new_stop * MULT, R), orderstatus=orderstatus,
+                    floor=floor_price, lock=lock, mult=(None if mult == "" else mult))
 
-    def sell(self, buy_dt, buy, rule):
-        """Return dict(selling_price, selling_date, profit_loss, hi, lo, hi_price, hi_dt) or None.
+    def sell(self, buy_dt, buy, rule, trace=False):
+        """Return dict(selling_price, selling_date, profit_loss, hi, lo, hi_price, hi_dt[, ticks]) or None.
         hi_price/hi_dt = the best price (and its time) reachable WITHIN our hold [buy, our sell] —
-        the favorable excursion the sell-engine left on the table."""
+        the favorable excursion the sell-engine left on the table. trace=True adds 'ticks': the full
+        per-minute trail (one dict per tick) for storage in coin_sell_ticks / analysis."""
         sl = self.sl_by_rule.get(int(rule), parse_sl(None))
-        i = bisect.bisect_right(self.DT, buy_dt)
+        i0 = i = bisect.bisect_right(self.DT, buy_dt)
         stop_prev, hi, lo, max_price, hi_dt = None, 0.0, 0.0, buy, buy_dt
+        ticks = [] if trace else None
         while i < len(self.DT) and (self.DT[i] - buy_dt).total_seconds() <= FORWARD_MINUTES * 60:
             T, market = self.DT[i], self.PX[i]
             minutes = (T - buy_dt).total_seconds() / 60.0
@@ -107,21 +94,33 @@ class SellEngine:
             if market > max_price:
                 max_price, hi_dt = market, T
             breach = stop_prev is not None and market < stop_prev
-            stop, selling_price, orderstatus = self._determine_stop(
-                buy, market, minutes, profit, stop_prev, sl, i, buy_dt, max_price)
-            if orderstatus == "sell" or breach:
-                if breach:
-                    stop = market if stop > market else stop_prev
-                    selling_price = stop
+            d = self._determine_stop(buy, market, minutes, profit, hi, stop_prev, sl, i, buy_dt, max_price)
+            stop, selling_price, orderstatus = d["stop"], d["selling_price"], d["orderstatus"]
+            sold = orderstatus == "sell" or breach
+            if breach:                                          # prior-stop breach: sell at the trailed stop
+                stop = market if stop > market else stop_prev
+                selling_price = stop
+            if trace:
+                ticks.append(dict(tick_dt=T, minutes=round(minutes, 2), marketprice=market, profit=profit,
+                                  highest_profit=hi, minimum_price=d["floor"], lock_price=d["lock"],
+                                  rule101_mult=d["mult"], stoploss_price=stop, selling_price=selling_price,
+                                  orderstatus=("sell" if sold else "hold")))
+            if sold:
                 pl = round((selling_price - buy) / buy * 100, 3)
-                return dict(selling_price=selling_price, selling_date=T, profit_loss=pl, hi=hi, lo=lo,
-                            hi_price=max_price, hi_dt=hi_dt)
+                out = dict(selling_price=selling_price, selling_date=T, profit_loss=pl, hi=hi, lo=lo,
+                           hi_price=max_price, hi_dt=hi_dt)
+                if trace:
+                    out["ticks"] = ticks
+                return out
             stop_prev = stop
             i += 1
         # force-exit at the horizon (max 1-hour hold) at the last seen price
-        if i > bisect.bisect_right(self.DT, buy_dt):
+        if i > i0:
             T, market = self.DT[i - 1], self.PX[i - 1]
             pl = round((market * self.SELL_MULT - buy) / buy * 100, 3)
-            return dict(selling_price=round(market * self.SELL_MULT, self.ROUNDING), selling_date=T,
-                        profit_loss=pl, hi=hi, lo=lo, hi_price=max_price, hi_dt=hi_dt)
+            out = dict(selling_price=round(market * self.SELL_MULT, self.ROUNDING), selling_date=T,
+                       profit_loss=pl, hi=hi, lo=lo, hi_price=max_price, hi_dt=hi_dt)
+            if trace:
+                out["ticks"] = ticks
+            return out
         return None
