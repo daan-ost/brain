@@ -190,16 +190,16 @@
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div class="flex flex-col">
-                                <span class="text-xs text-slate-500 mb-0.5">beste sell-datum overschrijven</span>
-                                <input type="datetime-local" step="1" wire:model="bestSell"
+                                <span class="text-xs text-slate-500 mb-0.5">beste sell-tijd overschrijven (op koopdatum)</span>
+                                <input type="time" step="1" wire:model="bestSell"
                                        class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200" />
-                                <span class="text-[10px] text-slate-500 mt-0.5">leeg = berekend / legacy gebruiken</span>
+                                <span class="text-[10px] text-slate-500 mt-0.5">leeg = berekende waarde gebruiken</span>
                             </div>
                             <div class="flex flex-col">
-                                <span class="text-xs text-slate-500 mb-0.5">harde verkoopdatum (sell-engine)</span>
-                                <input type="datetime-local" step="1" wire:model="hardSell"
+                                <span class="text-xs text-slate-500 mb-0.5">harde verkooptijd (op koopdatum)</span>
+                                <input type="time" step="1" wire:model="hardSell"
                                        class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200" />
-                                <span class="text-[10px] text-slate-500 mt-0.5">verkoop uiterlijk op deze datum (of eerder bij een drop)</span>
+                                <span class="text-[10px] text-slate-500 mt-0.5">verkoop uiterlijk op deze tijd (of eerder bij een drop)</span>
                             </div>
                         </div>
 

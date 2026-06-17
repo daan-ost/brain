@@ -62,8 +62,8 @@ class PromisingLabeler extends Component
     public ?string $selKey = null;              // 'Y-m-d H:i:s' van het geselecteerde moment
     public string $decision = '';
     public string $klasse = '';
-    public string $bestSell = '';            // override beste-sell-datum ('Y-m-d H:i:s', leeg = berekend)
-    public string $hardSell = '';            // harde verkoopdatum (sell-engine respecteert dit)
+    public string $bestSell = '';            // override beste-sell — alleen TIJD (H:i:s); datum = moment-datum
+    public string $hardSell = '';            // harde verkoop — alleen TIJD (H:i:s); datum = moment-datum
     public string $category = '';
     public string $comment = '';
 
@@ -166,11 +166,9 @@ class PromisingLabeler extends Component
         $this->klasse = $l?->manual_klasse ?? '';
         $this->category = $l?->category ?? '';
         $this->comment = $l?->comment ?? '';
-        // beste-sell + harde-sell als 'Y-m-d H:i:s' voor de datetime-local input
-        $bs = $l?->best_sell_datetime;
-        $hs = $l?->hard_sell_datetime;
-        $this->bestSell = $bs ? Carbon::parse($bs)->format('Y-m-d\TH:i:s') : '';
-        $this->hardSell = $hs ? Carbon::parse($hs)->format('Y-m-d\TH:i:s') : '';
+        // Alleen het tijdgedeelte tonen — datum is altijd de moment-datum (hold max 60 min).
+        $this->bestSell = $l?->best_sell_datetime ? Carbon::parse($l->best_sell_datetime)->format('H:i:s') : '';
+        $this->hardSell = $l?->hard_sell_datetime ? Carbon::parse($l->hard_sell_datetime)->format('H:i:s') : '';
     }
 
     public function closeDetail(): void
@@ -189,14 +187,17 @@ class PromisingLabeler extends Component
     public function saveLabel(): void
     {
         if (! $this->selKey) return;
-        $parseDt = fn (string $s) => $s ? Carbon::parse(str_replace('T', ' ', $s)) : null;
+        // Combineer tijd (H:i:s) met de MOMENT-datum tot een volledige datetime — sneller invoeren
+        // omdat de datum altijd dezelfde is. manual_set_at=now() markeert het als handmatig.
+        $momentDate = Carbon::parse($this->selKey)->startOfDay();
+        $combine = fn (string $t) => $t ? $momentDate->copy()->setTimeFromTimeString($t) : null;
         CoinMomentLabel::setManual($this->coin, null, Carbon::parse($this->selKey), [
             'decision' => $this->decision ?: null,
             'manual_klasse' => $this->klasse ?: null,
             'category' => $this->category ?: null,
             'comment' => $this->comment ?: null,
-            'best_sell_datetime' => $parseDt($this->bestSell),
-            'hard_sell_datetime' => $parseDt($this->hardSell),
+            'best_sell_datetime' => $combine($this->bestSell),
+            'hard_sell_datetime' => $combine($this->hardSell),
             'manual_set_at' => now(),
         ], auth()->user()?->email);
         $this->momentMemo = $this->momentMemoKey = null;

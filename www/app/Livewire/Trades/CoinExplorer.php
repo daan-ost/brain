@@ -37,8 +37,8 @@ class CoinExplorer extends Component
     public string $annCategory = '';
     public string $annComment = '';
     public string $manualKlasse = '';   // '' = berekend, 'goed'|'middel'|'slecht' = handmatig override
-    public string $bestSell = '';       // override beste sell-datum ('Y-m-d\TH:i:s' voor datetime-local)
-    public string $hardSell = '';       // harde verkoopdatum (sell-engine respecteert dit)
+    public string $bestSell = '';       // override beste sell — alleen TIJD (H:i:s); datum = koopdatum
+    public string $hardSell = '';       // harde verkoopdatum — alleen TIJD (H:i:s); datum = koopdatum
 
     public function mount(): void
     {
@@ -98,8 +98,9 @@ class CoinExplorer extends Component
             $l = CoinMomentLabel::where('trading_symbol_id', $f->trading_symbol_id)
                 ->where('datetime', $f->datetime)->where('source', 'manual')->first();
             $this->manualKlasse = $l?->manual_klasse ?? '';
-            $this->bestSell = $l?->best_sell_datetime ? Carbon::parse($l->best_sell_datetime)->format('Y-m-d\TH:i:s') : '';
-            $this->hardSell = $l?->hard_sell_datetime ? Carbon::parse($l->hard_sell_datetime)->format('Y-m-d\TH:i:s') : '';
+            // Alleen het tijdgedeelte tonen — datum is altijd de koop-datum (hold max 60 min).
+            $this->bestSell = $l?->best_sell_datetime ? Carbon::parse($l->best_sell_datetime)->format('H:i:s') : '';
+            $this->hardSell = $l?->hard_sell_datetime ? Carbon::parse($l->hard_sell_datetime)->format('H:i:s') : '';
         }
     }
 
@@ -113,13 +114,15 @@ class CoinExplorer extends Component
         if ($this->selType !== 'fire' || ! $this->selId) return;
         $f = CoinFire::find($this->selId);
         if (! $f) return;
-        // alle handmatige velden samen wegschrijven (klasse + beste/harde sell). manual_set_at=now() markeert
-        // dat het handmatig is — daarmee blijft het bij heranalyse leidend (auto overschrijft niet).
-        $parseDt = fn (string $s) => $s ? Carbon::parse(str_replace('T', ' ', $s)) : null;
+        // Combineer tijd-input (H:i:s) met de KOOP-datum tot een volledige datetime — sneller
+        // invoeren omdat de datum altijd dezelfde dag is (hold max 60 min). manual_set_at=now()
+        // markeert het als handmatig, zodat heranalyse het niet overschrijft.
+        $buyDate = $f->datetime->copy()->startOfDay();
+        $combine = fn (string $t) => $t ? $buyDate->copy()->setTimeFromTimeString($t) : null;
         CoinMomentLabel::setManual($f->trading_symbol_id, $f->symbol, $f->datetime, [
             'manual_klasse' => $this->manualKlasse ?: null,
-            'best_sell_datetime' => $parseDt($this->bestSell),
-            'hard_sell_datetime' => $parseDt($this->hardSell),
+            'best_sell_datetime' => $combine($this->bestSell),
+            'hard_sell_datetime' => $combine($this->hardSell),
             'manual_set_at' => now(),
         ], auth()->user()?->email);
         $this->dispatch('annotation-saved');
