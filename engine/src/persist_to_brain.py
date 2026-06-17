@@ -24,6 +24,7 @@ from promising import PromisingEngine
 from cluster_promising import scan_periods, best_entry
 from rule_engine import RuleEngine, RULES
 from sell_engine import SellEngine
+from buy_confirm import confirm_buy, params_by_rule
 
 # Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
 HORIZONS = [5, 10, 15, 30, 45, 60]
@@ -154,26 +155,40 @@ def klasse_of(pl):
     if pl is None: return None
     return "slecht" if pl < 0 else ("middel" if pl < 3 else "goed")
 
-# greedy single-position dedup + our sell-engine P&L
+# greedy single-position dedup + koop-bevestiging + our sell-engine P&L
+fp_params = params_by_rule(dst)                  # futureprice/x_rows per rule (koop-bevestiging)
 open_until = open_at = None
-n_exec = n_shadow = n_good = 0
+n_exec = n_shadow = n_good = n_cancelled = 0
 with dst.cursor() as c:
     for idx, (dt, rule) in enumerate(all_fires):
-        buy = price_at(dt)
-        pr = eng.promising(dt)
-        good = 1 if (pr and pr["verdict"] == "buy") else 0
-        n_good += good
+        signal_price = price_at(dt)
         legrow = legmap.get((rule, dt))
         legres = legrow["result"] if legrow else None
         legpl = legrow["profit_loss"] if legrow else None
 
         if open_until is not None and dt <= open_until:
+            # SHADOW — signaal tijdens een open positie (telt niet als trade). Instap = signaalmoment.
             executed, shadow_parent, sell = 0, open_at, None
+            buy_dt, buy = dt, signal_price
             n_shadow += 1
         else:
+            # KOOP-BEVESTIGING (futureprice): het signaal vuurde, maar live wacht de bot ≤window min.
+            # Pas als de prijs binnen dat venster weer BOVEN de signaalprijs komt (de "kruising") is de
+            # trade bevestigd. Komt hij er niet boven (of zakt eerst onder b_min / te snel via x_rows) →
+            # afgeblazen: nooit echt gekocht, geen positie, niet opslaan. De kruising is alléén de TRIGGER;
+            # de instap is de SIGNAALprijs/-tijd (zo doet legacy het ook). Rules zonder futureprice (bv. 21)
+            # kopen direct op het signaal.
+            fp = fp_params.get(rule)
+            confirmed = signal_price is not None
+            if fp and signal_price:
+                confirmed = confirm_buy(DT, PX, dt, signal_price, fp["bmin"], fp["window"], fp["xrows"]) is not None
+            if not confirmed:
+                n_cancelled += 1
+                continue
+            buy_dt, buy = dt, signal_price            # instap op de signaalprijs/-tijd (kruising = enkel trigger)
             ov = overrides.get(dt) or {}
             hard_dt = ov.get("hard_sell_datetime")
-            sell = sell_eng.sell(dt, buy, rule, hard_sell_dt=hard_dt) if buy else None
+            sell = sell_eng.sell(dt, signal_price, rule, hard_sell_dt=hard_dt)
             open_until = sell["selling_date"] if sell else dt
             open_at = dt
             executed, shadow_parent = 1, None
@@ -190,15 +205,15 @@ with dst.cursor() as c:
                                "VALUES (%s,%s,%s,'klasse',%s,%s,%s,NOW(),NOW())",
                                (SYM, SYMBOL, dt, old_k, new_k, CHANGELOG_REASON))
 
-        # best_sell = de hoogste prijs BINNEN onze hold [koop, onze verkoop]. Komt rechtstreeks uit
-        # de sell-engine (hi_price/hi_dt). Als de prijs alleen daalde, blijft hi_dt = koop-moment en
-        # hi_price = koop-prijs (verkoop op aankoopmoment was het beste haalbaar). Altijd ingevuld
-        # voor executed trades; voor shadows leeg (geen eigen sell).
-        best_for_trade = None
-        if sell:
-            best_for_trade = {"price": sell["hi_price"], "datetime": sell["hi_dt"]}
-        best_up = best_upside_at(dt, buy)              # trade quality (best available exit)
-        hz, low10 = horizons_at(dt, buy)               # per-horizon upside + early dip
+        pr = eng.promising(dt)
+        good = 1 if (pr and pr["verdict"] == "buy") else 0
+        n_good += good
+        # best_sell = de hoogste prijs BINNEN onze hold [koop, onze verkoop]. Komt uit de sell-engine
+        # (hi_price/hi_dt). best_upside/horizons meten vanaf de ECHTE instap (kruisprijs bij executed,
+        # signaalprijs bij shadow). Voor shadows leeg (geen eigen sell).
+        best_for_trade = {"price": sell["hi_price"], "datetime": sell["hi_dt"]} if sell else None
+        best_up = best_upside_at(buy_dt, buy)          # trade quality vanaf de instap
+        hz, low10 = horizons_at(buy_dt, buy)           # per-horizon upside + early dip vanaf de instap
         c.execute(
             "INSERT INTO coin_fires (trading_symbol_id, symbol, datetime, rule, in_good_period, is_executed, "
             "shadow_parent, period_id, buy_price, selling_price, best_sell_price, best_sell_datetime, "
@@ -218,5 +233,6 @@ with dst.cursor() as c:
 dst.commit()
 print(f"=== persist_to_brain (rebuild A) — {SYMBOL} ({SYM}) ===")
 print(f"periods: {len(periods)}  |  fires: {len(all_fires)}  "
-      f"({n_exec} executed / {n_shadow} shadow)  |  in promising: {n_good}")
+      f"({n_exec} executed / {n_shadow} shadow / {n_cancelled} afgeblazen door koop-bevestiging)  "
+      f"|  in promising: {n_good}")
 eng.close(); rule_eng.close(); sell_eng.close(); dst.close()
