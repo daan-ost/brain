@@ -63,15 +63,20 @@ def agg(variant, sym=None, rule=None):
     return sum(vals), len(vals), sum(1 for v in vals if v < 0)
 
 
+def wv(n, nl):
+    """winst/verlies-ratio: (winnaars) / (verliezers)."""
+    return (n - nl) / nl if nl else float("inf")
+
+
 def block(title, sym):
     print(f"\n=== {title} ===")
-    print(f"{'rule':>5} {'variant':>11} {'trades':>7} {'verlies':>8} {'Σprofit%':>10} {'gem%':>7}")
+    print(f"{'rule':>5} {'variant':>11} {'trades':>7} {'verlies':>8} {'Σprofit%':>10} {'gem%':>7} {'W/V':>6}")
     for rule in RULES + [None]:
         for variant in VARIANTS:
             s, n, nl = agg(variant, sym, rule)
             if n == 0:
                 continue
-            print(f"{str(rule or 'ALLE'):>5} {variant:>11} {n:>7} {nl:>8} {s:>+10.1f} {(s / n):>+7.2f}")
+            print(f"{str(rule or 'ALLE'):>5} {variant:>11} {n:>7} {nl:>8} {s:>+10.1f} {(s / n):>+7.2f} {wv(n, nl):>6.2f}")
         if agg("full", sym, rule)[1]:
             print()
 
@@ -80,10 +85,22 @@ for sym in COINS:
     block(f"{symbols[sym]} ({sym})", sym)
 
 print("=== TOTAAL (alle coins) ===")
-print(f"{'variant':>11} {'trades':>7} {'verlies':>8} {'Σprofit%':>10} {'gem%':>7}")
+print(f"{'variant':>11} {'trades':>7} {'verlies':>8} {'Σprofit%':>10} {'gem%':>7} {'W/V':>6}")
 for variant in VARIANTS:
     s, n, nl = agg(variant)
-    print(f"{variant:>11} {n:>7} {nl:>8} {s:>+10.1f} {(s / n if n else 0):>+7.2f}")
+    print(f"{variant:>11} {n:>7} {nl:>8} {s:>+10.1f} {(s / n if n else 0):>+7.2f} {wv(n, nl):>6.2f}")
+
+print("\n=== Gerealiseerde winst/verlies-ratio per rule: vorige -> nieuwe sell-engine ===")
+print(f"{'rule':>5} {'no_ratchet':>11} {'full':>8}   ΣprofitΔ")
+for rule in RULES:
+    _, n0, nl0 = agg("no_ratchet", None, rule)
+    s0, *_ = agg("no_ratchet", None, rule)
+    sf, nf, nlf = agg("full", None, rule)
+    if not nf:
+        continue
+    d = sf - s0
+    arrow = "UP" if wv(nf, nlf) > wv(n0, nl0) + 0.02 else ("DOWN" if wv(nf, nlf) < wv(n0, nl0) - 0.02 else "==")
+    print(f"{rule:>5} {wv(n0, nl0):>11.2f} {wv(nf, nlf):>8.2f}  {d:>+8.1f}%  {arrow}")
 
 print("\n=== EFFECT van de ratchet (full vs no_ratchet): wat verandert er ===")
 for sym in COINS:
