@@ -19,7 +19,7 @@ from db import brain
 
 COINS = [int(a) for a in sys.argv[1:]] or [2525, 244]
 RULES = [20, 21, 22, 23]
-VARIANTS = ["bare", "no_ratchet", "full"]
+VARIANTS = ["bare", "no_ratchet", "full", "smooth"]
 
 
 def floor_only(profit, minutes, hi, buy, market, sl):
@@ -37,8 +37,29 @@ def no_rule101(*a, **k):
     return "hold", ""
 
 
+def lock_smooth(profit, minutes, hi, buy, market, sl):
+    """winst-lock met de dode zone (+5..+15% piek) gedicht: neem het MAX van de milde tier
+    (piek/hp6) en de bewaar-50%-tier (piek-hp7). Geen klif meer, en grote winnaars houden hun
+    bescherming. Alleen de twee hoogste tiers verschillen van de getrouwe lock_profit."""
+    if market < buy * sl["min_sl1"]:
+        return market * 0.9999
+    if minutes < sl["min1"] and profit < sl["minimal_profit"]:
+        return buy * sl["min_sl1"]
+    if minutes < sl["min2"] and profit < sl["minimal_profit"]:
+        return buy * sl["min_sl2"]
+    if hi >= 0.15:
+        if hi < 0.21:  return buy + sl["hp1"] * buy
+        if hi < 0.30:  return buy + sl["hp2"] * buy
+        if hi < 0.40:  return buy + sl["hp3"] * buy
+        if hi < 0.50:  return buy + sl["hp4"] * buy
+        if hi < 0.70:  return buy + sl["hp5"] * buy
+        return buy + max((hi / sl["hp6"]) / 100, (hi - sl["hp7"]) / 100) * buy
+    return buy * sl["min_sl1"]
+
+
 _lock, _r101 = sell_engine.lock_profit, sell_engine.rule_engine_101
-MODES = {"bare": (floor_only, no_rule101), "no_ratchet": (floor_only, _r101), "full": (_lock, _r101)}
+MODES = {"bare": (floor_only, no_rule101), "no_ratchet": (floor_only, _r101),
+         "full": (_lock, _r101), "smooth": (lock_smooth, _r101)}
 
 results, symbols = {}, {}
 for sym in COINS:
@@ -90,25 +111,28 @@ for variant in VARIANTS:
     s, n, nl = agg(variant)
     print(f"{variant:>11} {n:>7} {nl:>8} {s:>+10.1f} {(s / n if n else 0):>+7.2f} {wv(n, nl):>6.2f}")
 
-print("\n=== Gerealiseerde winst/verlies-ratio per rule: vorige -> nieuwe sell-engine ===")
-print(f"{'rule':>5} {'no_ratchet':>11} {'full':>8}   ΣprofitΔ")
-for rule in RULES:
-    _, n0, nl0 = agg("no_ratchet", None, rule)
-    s0, *_ = agg("no_ratchet", None, rule)
-    sf, nf, nlf = agg("full", None, rule)
-    if not nf:
-        continue
-    d = sf - s0
-    arrow = "UP" if wv(nf, nlf) > wv(n0, nl0) + 0.02 else ("DOWN" if wv(nf, nlf) < wv(n0, nl0) - 0.02 else "==")
-    print(f"{rule:>5} {wv(n0, nl0):>11.2f} {wv(nf, nlf):>8.2f}  {d:>+8.1f}%  {arrow}")
+print("\n=== Winst/verlies-ratio + Σprofit per rule (alle coins) over de varianten ===")
+print(f"{'rule':>5} | {'no_ratchet':>16} | {'full (getrouw)':>16} | {'smooth (dode zone dicht)':>24}")
+for rule in RULES + [None]:
+    cells = []
+    for variant in ["no_ratchet", "full", "smooth"]:
+        s, n, nl = agg(variant, None, rule)
+        cells.append(f"W/V {wv(n, nl):.2f}  Σ{s:+.0f}%")
+    print(f"{str(rule or 'TOT'):>5} | {cells[0]:>16} | {cells[1]:>16} | {cells[2]:>24}")
 
-print("\n=== EFFECT van de ratchet (full vs no_ratchet): wat verandert er ===")
-for sym in COINS:
-    for rule in RULES + [None]:
-        keys = [(ss, rr, dt) for (vv, ss, rr, dt) in results if vv == "full" and ss == sym and (rule is None or rr == rule)]
-        if not keys:
-            continue
-        saved = sum(1 for k in keys if results[("no_ratchet", *k)] < 0 <= results[("full", *k)])
-        broke = sum(1 for k in keys if results[("full", *k)] < 0 <= results[("no_ratchet", *k)])
-        d = agg("full", sym, rule)[0] - agg("no_ratchet", sym, rule)[0]
-        print(f"  {symbols[sym]} rule {str(rule or 'ALLE'):>4}: verlies→winst {saved:>3}, winst→verlies {broke:>3}, ΔΣprofit {d:>+7.1f}%")
+
+def effect(base, new, label):
+    print(f"\n=== {label} ===")
+    for sym in COINS:
+        for rule in RULES + [None]:
+            keys = [(ss, rr, dt) for (vv, ss, rr, dt) in results if vv == new and ss == sym and (rule is None or rr == rule)]
+            if not keys:
+                continue
+            saved = sum(1 for k in keys if results[(base, *k)] < 0 <= results[(new, *k)])
+            broke = sum(1 for k in keys if results[(new, *k)] < 0 <= results[(base, *k)])
+            d = agg(new, sym, rule)[0] - agg(base, sym, rule)[0]
+            print(f"  {symbols[sym]} rule {str(rule or 'ALLE'):>4}: verlies→winst {saved:>3}, winst→verlies {broke:>3}, ΔΣprofit {d:>+7.1f}%")
+
+
+effect("no_ratchet", "full", "EFFECT winst-lock (full vs no_ratchet)")
+effect("full", "smooth", "EFFECT dode zone dichten (smooth vs full)")
