@@ -222,14 +222,15 @@ class CoinExplorer extends Component
             // changelog (klasse-veranderingen door heranalyse — auto schrijft hier, handmatig niet)
             $changes = \DB::table('coin_fires_changelog')->where('trading_symbol_id', $f->trading_symbol_id)
                 ->where('datetime', $f->datetime)->orderByDesc('id')->limit(5)->get()->all();
-            // overlay the promising period this fire belongs to (if any): band + best entry + peak
+            // overlay the promising period this fire belongs to (if any): band + best entry.
+            // De peak van de PERIODE laten we hier weg — voor deze trade is "beste sell" (binnen
+            // [koop, onze verkoop]) de relevante exit, niet de piek van de hele promising-periode
+            // (die ligt vaak vóór de koop en is misleidend). Periode-detail toont peak nog wel.
             $promising = null;
             if ($f->period_id && ($per = CoinPeriod::find($f->period_id))) {
                 $markers['pfrom'] = $per->period_from->getTimestampMs();
                 $markers['pto'] = $per->period_to->getTimestampMs();
                 $markers['pbest'] = $per->best_entry->getTimestampMs();
-                if ($per->peak_datetime) $markers['peak'] = $per->peak_datetime->getTimestampMs();
-                // hoe vroeg/laat tov de beste instap (negatief = vóór, positief = ná)
                 $deltaMin = $per->best_entry->diffInRealSeconds($f->datetime, false) / 60.0;
                 $inPeriod = $f->datetime->between($per->period_from, $per->period_to);
                 $promising = ['in_period' => $inPeriod, 'delta_min' => round($deltaMin, 1),
