@@ -121,6 +121,23 @@ for rule in RULES + [None]:
     print(f"{str(rule or 'TOT'):>5} | {cells[0]:>16} | {cells[1]:>16} | {cells[2]:>24}")
 
 
+def klasse(pl):
+    return "slecht(<0)" if pl < 0 else ("middel(0-3%)" if pl < 3 else "goed(>=3%)")
+
+
+KLASSES = ["slecht(<0)", "middel(0-3%)", "goed(>=3%)"]
+print("\n=== Verdeling trades over GEREALISEERDE resultaat-klassen (sell bepaalt dit) ===")
+for sym in COINS + [None]:
+    naam = symbols[sym] if sym else "ALLE COINS"
+    print(f"  {naam}:")
+    for variant in ["no_ratchet", "full"]:
+        cnt = {k: 0 for k in KLASSES}
+        for (vv, ss, rr, dt), v in results.items():
+            if vv == variant and (sym is None or ss == sym):
+                cnt[klasse(v)] += 1
+        print(f"    {variant:>11}: " + "   ".join(f"{k} {cnt[k]:>3}" for k in KLASSES))
+
+
 def effect(base, new, label):
     print(f"\n=== {label} ===")
     for sym in COINS:
