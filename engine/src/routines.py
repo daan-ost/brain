@@ -215,6 +215,23 @@ def routine_recall_triage(j):
     return "recall-triage · " + ", ".join(parts)
 
 
+def routine_buy_tuning(j):
+    """BUY-TUNING: meet read-only de futureprice b_min-drempels (welke trades worden bevestigd of
+    afgeblazen) en pas de veilige voorstellen toe. b_min zit op rule-niveau (geldt voor alle coins),
+    dus de gate checkt het gecombineerde effect. Alleen muterend met --apply."""
+    import buy_tuning
+    import buy_apply
+    report = buy_tuning.measure(write_json=True, verbose=False)
+    safe = [p for p in report["proposals"] if p["verdict"] == "SAFE"]
+    j.add(f"Buy-tuning gemeten: {len(safe)} veilige voorstellen · {len(report['proposals'])} doorgerekend.",
+          level="result", data={"safe": len(safe), "report_path": report.get("report_path")})
+    summary = buy_apply.apply_safe(lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data),
+                                    apply=APPLY, report=report)
+    if not APPLY:
+        j.add("Auto-apply: uit (geen --apply) — drempels alleen voorgesteld, niets gewijzigd.", level="info")
+    return f"buy-tuning · {summary}"
+
+
 def routine_sell_tuning(j):
     """SELL-TUNING: meet read-only per (munt, regel) of een andere instelknop betere verkopen geeft
     (holdout leidend, meetlat netto Σprofit) en PAS de veilige voorstellen toe achter de echte
@@ -277,11 +294,21 @@ REGISTRY_SELL = [
     ("sell-tuning", routine_sell_tuning),
 ]
 
+# A FIFTH set: buy-tuning. Fires when rules (futureprice b_min) or trade-data changes. Measures per
+# rule (b_min is rule-niveau, geldt voor alle coins) en past de veilige voorstellen toe achter de
+# gecombineerde herreken-poort. Uses the sell fingerprint (includes rules + trades).
+BUY_SET_KEY = "buy-tuning"
+BUY_SET_NAME = "Buy-tuning — futureprice koop-drempels afstellen"
+REGISTRY_BUY = [
+    ("buy-tuning", routine_buy_tuning),
+]
+
 SETS = {
     SET_KEY: (SET_NAME, REGISTRY, True),                 # gated by the data-changed fingerprint
     INTEGRITY_SET_KEY: (INTEGRITY_SET_NAME, REGISTRY_INTEGRITY, False),
     RECALL_SET_KEY: (RECALL_SET_NAME, REGISTRY_RECALL, True),   # gated; fingerprint includes ok-labels
     SELL_SET_KEY: (SELL_SET_NAME, REGISTRY_SELL, True),        # gated; fingerprint includes sell knobs + overrides
+    BUY_SET_KEY: (BUY_SET_NAME, REGISTRY_BUY, True),          # gated; fingerprint includes rules + trades
 }
 
 
@@ -327,7 +354,7 @@ def main():
     set_name, registry, gated = SETS[set_key]
 
     fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY),   # recall fires on new ok-labels too
-                           with_sell=(set_key == SELL_SET_KEY))        # sell-tuning fires on knob/override/coin changes
+                           with_sell=(set_key in (SELL_SET_KEY, BUY_SET_KEY)))  # sell/buy-tuning fire on knob/rule/trade changes
     if gated:
         # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
         prev = _state(conn, set_key)
