@@ -4,6 +4,7 @@ namespace App\Livewire\Trades;
 
 use App\Models\CoinFire;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -11,6 +12,9 @@ use Livewire\WithPagination;
 
 /**
  * Trades — browse OUR fires from the brain DB (coin_fires), filtered by coin, rule and outcome.
+ * Two tabs:
+ *  - 'summary' (default) — per-maand-per-coin aggregatie (aantal + Σwinst per klasse + totaal).
+ *  - 'list' — de bestaande trades-tabel (gepagineerd).
  * Reads only brain: coins/rules are whatever we actually rebuilt (DOGEAI + NOS, rules 20-23).
  */
 #[Layout('layouts.trading')]
@@ -18,6 +22,7 @@ class Index extends Component
 {
     use WithPagination;
 
+    #[Url] public string $tab = 'summary';    // 'summary' | 'list'
     #[Url] public string $coin = '';
     #[Url] public string $rule = '';
     #[Url] public string $outcome = '';       // '' | goed | middel | slecht | shadow
@@ -40,6 +45,12 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function setTab(string $tab): void
+    {
+        $this->tab = in_array($tab, ['summary', 'list'], true) ? $tab : 'summary';
+        $this->resetPage();
+    }
+
     private function baseQuery(): Builder
     {
         // Klasse-thresholds gerealiseerd resultaat: goed >=3%, middel 0..3%, slecht <0% (verlies).
@@ -55,10 +66,35 @@ class Index extends Component
             ->when($this->to !== '', fn (Builder $q) => $q->whereDate('datetime', '<=', $this->to));
     }
 
+    /** Per-maand-per-coin aggregatie voor de Samenvatting-tab. Telt alleen EXECUTED trades. */
+    private function summaryRows(): array
+    {
+        $q = DB::connection(config('database.default'))
+            ->table('coin_fires')
+            ->selectRaw("DATE_FORMAT(datetime, '%Y-%m') AS ym, trading_symbol_id, symbol,
+                COUNT(*) AS n_total,
+                SUM(CASE WHEN profit_loss >= 3 THEN 1 ELSE 0 END) AS n_goed,
+                SUM(CASE WHEN profit_loss >= 0 AND profit_loss < 3 THEN 1 ELSE 0 END) AS n_middel,
+                SUM(CASE WHEN profit_loss < 0 THEN 1 ELSE 0 END) AS n_slecht,
+                COALESCE(SUM(CASE WHEN profit_loss >= 3 THEN profit_loss END), 0) AS pl_goed,
+                COALESCE(SUM(CASE WHEN profit_loss >= 0 AND profit_loss < 3 THEN profit_loss END), 0) AS pl_middel,
+                COALESCE(SUM(CASE WHEN profit_loss < 0 THEN profit_loss END), 0) AS pl_slecht,
+                COALESCE(SUM(profit_loss), 0) AS pl_total")
+            ->where('is_executed', true)
+            ->whereNotNull('profit_loss')
+            ->when($this->coin !== '', fn ($q) => $q->where('trading_symbol_id', (int) $this->coin))
+            ->when($this->rule !== '', fn ($q) => $q->where('rule', (int) $this->rule))
+            ->when($this->from !== '', fn ($q) => $q->whereDate('datetime', '>=', $this->from))
+            ->when($this->to !== '', fn ($q) => $q->whereDate('datetime', '<=', $this->to))
+            ->groupBy('ym', 'trading_symbol_id', 'symbol')
+            ->orderByDesc('ym')
+            ->orderBy('symbol');
+
+        return $q->get()->map(fn ($r) => (array) $r)->all();
+    }
+
     public function render()
     {
-        $trades = $this->baseQuery()->orderByDesc('datetime')->paginate(50);
-
         // dropdowns from brain only (what we actually rebuilt: DOGEAI + NOS, rules 20-23)
         $coins = CoinFire::query()->select('trading_symbol_id', 'symbol')->distinct()
             ->orderBy('symbol')->get();
@@ -78,6 +114,12 @@ class Index extends Component
                    'avg' => (float) (clone $execQ)->avg('profit_loss'),
                    'pl' => (float) (clone $execQ)->sum('profit_loss')];
 
-        return view('livewire.trades.index', compact('trades', 'coins', 'rules', 'pills', 'totals'));
+        // tab-specifieke data: alleen ophalen wat de tab nodig heeft
+        $trades = $this->tab === 'list'
+            ? $this->baseQuery()->orderByDesc('datetime')->paginate(50)
+            : null;
+        $summary = $this->tab === 'summary' ? $this->summaryRows() : [];
+
+        return view('livewire.trades.index', compact('trades', 'summary', 'coins', 'rules', 'pills', 'totals'));
     }
 }

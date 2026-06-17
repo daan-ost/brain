@@ -5,6 +5,22 @@
         <p class="text-sm text-gray-500">Onze trades uit brain — per coin, rule en uitkomst.</p>
     </div>
 
+    {{-- Tabs --}}
+    <div class="border-b border-gray-200">
+        <nav class="-mb-px flex gap-6 text-sm font-medium">
+            <button type="button" wire:click="setTab('summary')"
+                class="border-b-2 px-1 py-3 transition
+                       {{ $tab === 'summary' ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300' }}">
+                Samenvatting
+            </button>
+            <button type="button" wire:click="setTab('list')"
+                class="border-b-2 px-1 py-3 transition
+                       {{ $tab === 'list' ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300' }}">
+                Trades
+            </button>
+        </nav>
+    </div>
+
     {{-- Filter bar --}}
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
@@ -62,6 +78,84 @@
         </div>
     </div>
 
+    @if ($tab === 'summary')
+        {{-- Samenvatting: per maand per coin — aantal + Σwinst per klasse + totaal --}}
+        @php
+            $pct = $pct ?? fn ($v) => ($v >= 0 ? '+' : '').number_format((float) $v, 1, ',', '.').'%';
+            // groepeer per maand zodat we per maand een sub-header kunnen tonen
+            $byMonth = collect($summary)->groupBy('ym');
+        @endphp
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                    <tr>
+                        <th class="px-4 py-3">Maand</th>
+                        <th class="px-4 py-3">Coin</th>
+                        <th class="px-4 py-3 text-right">Goed</th>
+                        <th class="px-4 py-3 text-right">Σ goed</th>
+                        <th class="px-4 py-3 text-right">Middel</th>
+                        <th class="px-4 py-3 text-right">Σ middel</th>
+                        <th class="px-4 py-3 text-right">Slecht</th>
+                        <th class="px-4 py-3 text-right">Σ slecht</th>
+                        <th class="px-4 py-3 text-right">Trades</th>
+                        <th class="px-4 py-3 text-right">Σ winst</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @forelse ($byMonth as $ym => $rows)
+                        @php
+                            $mTot = ['n' => 0, 'g' => 0, 'm' => 0, 's' => 0, 'pl' => 0.0,
+                                     'plG' => 0.0, 'plM' => 0.0, 'plS' => 0.0];
+                            foreach ($rows as $r) {
+                                $mTot['n']   += (int) $r['n_total'];
+                                $mTot['g']   += (int) $r['n_goed'];
+                                $mTot['m']   += (int) $r['n_middel'];
+                                $mTot['s']   += (int) $r['n_slecht'];
+                                $mTot['plG'] += (float) $r['pl_goed'];
+                                $mTot['plM'] += (float) $r['pl_middel'];
+                                $mTot['plS'] += (float) $r['pl_slecht'];
+                                $mTot['pl']  += (float) $r['pl_total'];
+                            }
+                            try { $mLabel = \Carbon\Carbon::createFromFormat('Y-m', $ym)->translatedFormat('F Y'); }
+                            catch (\Throwable $e) { $mLabel = $ym; }
+                        @endphp
+                        @foreach ($rows as $r)
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                                    @if ($loop->first){{ $mLabel }}@endif
+                                </td>
+                                <td class="px-4 py-3 text-gray-700">{{ $r['symbol'] }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-emerald-700">{{ $r['n_goed'] }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-emerald-700">{{ $pct($r['pl_goed']) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-orange-700">{{ $r['n_middel'] }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-orange-700">{{ $pct($r['pl_middel']) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-red-700">{{ $r['n_slecht'] }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-red-700">{{ $pct($r['pl_slecht']) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums font-semibold text-gray-800">{{ $r['n_total'] }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums font-semibold {{ $r['pl_total'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($r['pl_total']) }}</td>
+                            </tr>
+                        @endforeach
+                        @if ($rows->count() > 1)
+                            <tr class="bg-gray-50 text-xs">
+                                <td class="px-4 py-2 font-semibold text-gray-700">{{ $mLabel }} · totaal</td>
+                                <td class="px-4 py-2 text-gray-500">—</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-emerald-700 font-semibold">{{ $mTot['g'] }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-emerald-700 font-semibold">{{ $pct($mTot['plG']) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-orange-700 font-semibold">{{ $mTot['m'] }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-orange-700 font-semibold">{{ $pct($mTot['plM']) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-red-700 font-semibold">{{ $mTot['s'] }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-red-700 font-semibold">{{ $pct($mTot['plS']) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums font-bold text-gray-800">{{ $mTot['n'] }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums font-bold {{ $mTot['pl'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($mTot['pl']) }}</td>
+                            </tr>
+                        @endif
+                    @empty
+                        <tr><td colspan="10" class="px-4 py-8 text-center text-gray-500">Geen executed trades voor deze filters.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    @else
     {{-- Table --}}
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -114,4 +208,5 @@
     </div>
 
     <div>{{ $trades->links() }}</div>
+    @endif
 </div>
