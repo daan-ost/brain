@@ -155,7 +155,13 @@ Handmatige overrides per trade in `coin_moment_labels`:
 - **`sell_compare.py`** — draait de engine in 4 varianten (`bare`,
   `no_ratchet`, `full`, `smooth`) over alle trades en toont per coin,
   per rule en totaal de winst/verlies-ratio + Σprofit + klasse-verdeling.
-  Fundament voor de tuning-routine.
+  Fundament voor het meet-instrument.
+- **`sell_tuning.py`** — meet-instrument van de tuning-routine (read-only):
+  `measure()` levert per (coin, rule) de holdout-getoetste voorstellen +
+  `SAFE/OVERFIT/ZWAK`-oordeel. Schrijft `out/opt/sell_tuning_<date>.json`.
+- **`sell_apply.py`** — gated apply (`apply_safe`): schrijft de override naar
+  `coin_strategies`, herrekent, houdt of draait terug op de echte herreken-poort.
+  Default propose-only; muteert alleen met `--apply`.
 - **`persist_to_brain.py`** — de canonical re-fire/write-path. Snapshot
   vorige `profit_loss` voor de DELETE, leest `hard_sell_datetime` uit
   `coin_moment_labels` en geeft het mee aan de engine, schrijft de trades
@@ -208,13 +214,47 @@ Handmatige overrides per trade in `coin_moment_labels`:
 
 ## Roadmap (na deze fase)
 
-1. **Per-coin tuning-routine** (eigen sessie, via workflow): de knobs
-   per coin/rule bijstellen op basis van nieuwe trades, met als
-   meetlat de som van winst/verlies (NOS verliest nu Σprofit terwijl
-   het verliezers redt — de routine moet die ruil expliciet maken).
-2. **Keten-analyse**: vroeg eruit + herkopen vs vasthouden (de "snel
-   afbreken en daarna een nieuwe aankoop"-overweging).
-3. **Harde-drop-detectie binnen het venster** — automatisch verkopen
-   vóór een aankomende scherpe daling (los van de winst-lock-respons).
-4. **Promising-moment trails** — sell_ticks.py uitbreiden naar de
-   promising momenten (niet alleen executed fires).
+### 1. Per-coin tuning-routine — ✅ GEBOUWD + LIVE (2026-06-17)
+
+De knoppen worden nu **per munt** bijgesteld op nieuwe data, met als meetlat de
+**som van winst/verlies** (netto Σprofit), niet het aantal trades. Filosofie:
+*faithful first, measurably better, gated apply*.
+
+- **Opslag**: nieuwe tabel `coin_strategies` — een dunne override-laag per
+  (coin, rule) bovenop de globale `strategies`. `SellEngine` merget per-coin
+  eroverheen (`merge_sl()`, per-coin wint mits NOT NULL, erft de rest). Leeg =
+  byte-identiek aan nu (faithful). Migraties `2026_06_18_010000` (coin_strategies)
+  + `2026_06_18_020000` (provenance-kolommen op `routine_runs`).
+- **Meten** (`sell_tuning.py`, read-only): per (coin, rule) een kleine grid rond
+  de huidige waarde. **Holdout leidend**: oude helft afstellen, nieuwe helft
+  bevestigen. Voorstel telt alleen als `SAFE` als het óók op de holdout wint;
+  `OVERFIT` (train wint, holdout zakt) en `ZWAK` (raakt geen holdout-trade) vallen af.
+- **Toepassen** (`sell_apply.py`, gated, default dry-run): schrijf override →
+  herrekenen → houden iff Σprofit niet omlaag én verliezers niet omhoog,
+  anders terugdraaien. Handmatige overrides (`manual_set_at`) nooit aangeraakt.
+  Elke wijziging gelogd in `coin_fires_changelog` (`tuning-routine-<rule>-<knob>`).
+- **Routine** (`routines.py`, set `sell-tuning`): meet → auto-apply (achter
+  `--apply`) → journalt naar `/routines`. Dagelijks via een Claude Code CLI-routine
+  (`routines.py --set sell-tuning --trigger routine --apply`). De "Nu draaien"-knop
+  op het scherm blijft propose-only.
+- **Controle**: `validate_sell.py` is geparametriseerd op symbol — NOS heeft nu
+  óók een oracle (775 legacy-resultaten in `wp_trading_simulation`, basislijn
+  81,5% vs DOGEAI 95,3%). De oracle-gate zit bewust NIET in de apply-keten: die
+  meet trouw-aan-legacy, terwijl tunen juist beter-dan-legacy wil.
+- **Tests**: `test_sell_tuning.py` (faithful-merge, override-isolatie, de
+  holdout-poort, override-respect).
+- **Resultaat (live)**: NOS Σ+352,8→+373,9% (274→266 verlies), DOGEAI
+  Σ+379,9→+401,2% (359→339 verlies). Sterkste lever overal: `minimal_profit`.
+
+### Nog te bouwen
+
+2. **Rule-101 ontdekking (v2)**: nieuwe verkoopregels verzinnen uit
+   `coin_sell_ticks` + leren van handmatige hard-sells (≥3 nodig). Propose-only
+   eerst (rule-101 geldt voor beide munten; overfit-risico op 2 munten), met
+   volledige wijzigingshistorie per regel.
+3. **Keten-analyse**: vroeg eruit + herkopen vs vasthouden (Σprofit over
+   opeenvolgende trades per coin).
+4. **Best-sell-gap als lering**: onze sell vs `best_sell_in_window(until_dt=
+   volgende koop)` — welke ticks zaten ertussen, wat had ons eerder uitgeduwd.
+5. **Promising-moment trails** — `sell_ticks.py` uitbreiden naar de promising
+   momenten (niet alleen executed fires).

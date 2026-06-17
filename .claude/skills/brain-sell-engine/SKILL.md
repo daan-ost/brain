@@ -59,11 +59,22 @@ engine heeft niet al gesold → forceer sell op die tick.
     trade, **begrensd tot de volgende koop**.
   - `._determine_stop(...)` → dict met `stop, selling_price, orderstatus, floor, lock, mult`.
 - **`sell_ticks.py`** — schrijft trail → `coin_sell_ticks` voor executed trades.
-- **`validate_sell.py`** — oracle-replay (bot_signals). Win/loss-richting 95%, exacte sp 463/661.
+- **`validate_sell.py`** — oracle-replay (bot_signals). **Geparametriseerd op symbol** (`validate_sell.py [symbol_id]`,
+  default 2525); leest `SELL_MULT`/`ROUNDING` per munt uit `wp_trading_symbols` (NOS rondt op 5 af, DOGEAI 16).
+  Baseline win/loss-richting: DOGEAI 630/661 = 95,3%, **NOS 626/768 = 81,5%** (NOS reproduceert legacy minder
+  getrouw → oracle-floor per munt = "niet slechter dan eigen basislijn", niet absoluut 90%).
 - **`sell_compare.py`** — 4 varianten (`bare`, `no_ratchet`, `full`, `smooth`) per coin/rule/totaal
-  + klasse-verdeling. **Fundament voor de tuning-routine.**
+  + klasse-verdeling. Fundament voor het meet-instrument.
+- **`sell_tuning.py`** — **meet-instrument tuning-routine** (read-only). `measure()` → per (coin,rule)
+  mediaan-split (oude helft=train, nieuwe=holdout), netto Σprofit-ruil, klasse-transitiematrix, flips,
+  verdict `SAFE/OVERFIT/ZWAK/INERT/UNSAFE`. Knob-injectie via `eng.sl_by_rule` (geen monkey-patch).
+  Schrijft `out/opt/sell_tuning_<date>.json`.
+- **`sell_apply.py`** — **gated apply** (`apply_safe(emit, apply, report)`). Default propose-only;
+  muteert alleen met `--apply`. Schrijft de override naar `coin_strategies`, refire, gate (Σprofit niet
+  omlaag ÉN verliezers niet omhoog), keep-of-revert. Handmatige overrides nooit aangeraakt.
 - **`persist_to_brain.py`** — canonical re-fire. Snapshot vorige `profit_loss` vóór de DELETE,
-  leest `hard_sell_datetime` uit `coin_moment_labels`, schrijft de changelog.
+  leest `hard_sell_datetime` uit `coin_moment_labels`, schrijft de changelog. Env `CHANGELOG_REASON`
+  bepaalt de changelog-reden (default `sell-engine-rerun`; de tuning zet `tuning-routine-<rule>-<knob>`).
 
 ## Tabellen (brain)
 
@@ -72,8 +83,9 @@ engine heeft niet al gesold → forceer sell op die tick.
 | `coin_fires` (= trades) | Eindstand per trade: `selling_price`, `best_sell_price`, `best_sell_datetime` (begrensd tot volgende koop), `selling_datetime`, `profit_loss`. `is_executed=1` = echte trade. |
 | `coin_sell_ticks` | 1 rij per (trade, tick): `marketprice`, `profit`, `highest_profit`, `minimum_price`, `lock_price` (pre-clamp), `rule101_mult` (NULL = niet actief), `stoploss_price`, `selling_price`, `orderstatus`. |
 | `coin_moment_labels` | Handmatige + legacy overrides. `best_sell_datetime`, `hard_sell_datetime`, `manual_klasse`, `decision`, `category`, `comment`, `source` (`manual`/`legacy`), `manual_set_at` (gezet = "handmatig leidend"). |
-| `coin_fires_changelog` | Audit log van klasse-veranderingen door rerun. `field`, `old_value`, `new_value`, `reason` (bv `sell-engine-rerun`). |
-| `strategies.sl_settings` | JSON per rule met alle knobs (instelbaar). |
+| `coin_fires_changelog` | Audit log van klasse-veranderingen door rerun. `field`, `old_value`, `new_value`, `reason` (`sell-engine-rerun` of `tuning-routine-<rule>-<knob>`). |
+| `strategies.sl_settings` | JSON per rule met alle knobs (globale defaults). |
+| `coin_strategies` | **Per-(coin,rule) override-laag** bovenop `strategies` (`UNIQUE(trading_symbol_id, rule_number)`, `sl_settings` JSON met alleen de afwijkende knobs). `SellEngine` merget per-coin eroverheen (`merge_sl()`, per-coin wint mits NOT NULL, erft de rest). Leeg = byte-identiek aan globaal. Hierdoor kan DOGEAI (snel) anders afgesteld zijn dan NOS (traag). |
 
 ## Instelbare knobs (`strategies.sl_settings`)
 
@@ -108,6 +120,31 @@ Per coin: `coins.stoploss_multiplier` (0.9996) + `coins.roundingup` (16). Géén
 - **Live trades (DOGEAI + NOS, doorgevoerd)**: 859→868 trades, **608→548 verlies (60 minder)**,
   Σprofit **+488%→+579%** (+91%). Winnaars → verlies: **0**.
 
+## Per-coin tuning-routine (gebouwd — [[sell-tuning-routine-plan]])
+
+Een dagelijkse routine die de instelknoppen **per munt** beter afstelt op nieuwe data. Filosofie:
+*faithful first, measurably better, gated apply*.
+
+- **Opslag**: `coin_strategies` (dunne override-laag, zie tabel boven). Leeg = nul gedragsverandering.
+- **Meten** (`sell_tuning.py`): per (coin,rule) een kleine grid rond de huidige waarde
+  (`hp6/hp7/min_sl1/minimal_profit`; `hp_setting8` is dood, uitgesloten). Meetlat = **netto Σprofit**
+  (won−lost), **holdout leidend** (oude helft afstellen, nieuwe helft bevestigen). `ZWAK` = knop raakt
+  0 holdout-trades → geen bewijs, telt niet als SAFE.
+- **Toepassen** (`sell_apply.py`): schrijf override → `persist_to_brain` herrekent → houden iff Σprofit
+  niet omlaag ÉN verliezers niet omhoog (Daan's "gebalanceerd"), anders terugdraaien. **Oracle-gate
+  bewust weggelaten**: die meet trouw-aan-legacy, terwijl tunen beter-dan-legacy wil.
+- **Routine** (`routines.py` set `sell-tuning`): `routine_sell_tuning` meet → auto-apply (achter `--apply`)
+  → journalt naar `/routines`. Eigen fingerprint (`input_fingerprint(with_sell=True)`): trades +
+  `strategies`/`coin_strategies.updated_at` + `manual_set_at` + coins-count. Dagelijks via een Claude
+  Code CLI-routine: `routines.py --set sell-tuning --trigger routine --apply`.
+- **Tests**: `test_sell_tuning.py` (plat assert-script) — faithful-merge, override-isolatie, `metrics`,
+  de holdout-poort `verdict`, override-respect.
+- **Resultaat (2026-06-17, live)**: NOS Σ+352,8→+373,9% (274→266 verlies), DOGEAI Σ+379,9→+401,2%
+  (359→339 verlies). Sterkste lever overal: `minimal_profit`.
+- **v2 (nog niet gebouwd)**: nieuwe **rule-101 verkoopregels ontdekken** (uit `coin_sell_ticks`) +
+  leren van handmatige hard-sells (≥3 nodig, nu 2). Eis van Daan: rule-101 mag verzinnen/aanpassen
+  **mits de historie laat zien hóé elke regel is gewijzigd** (audit zoals `rules_history`).
+
 ## Vuistregels
 
 - **Heranalyse**: `persist_to_brain.py <coin>` — herrekent álles. Snapshot van vorige
@@ -116,7 +153,7 @@ Per coin: `coins.stoploss_multiplier` (0.9996) + `coins.roundingup` (16). Géén
 - **Eén bron van waarheid**: ratchet-arithmetiek alleen in `sell_lock.py`. Niet dupliceren in
   validator of engine.
 - **NOS vs DOGEAI**: zelfde knobs werken niet voor beide. NOS verliest Σprofit terwijl het
-  verliezers redt — per-coin tuning is de volgende stap (eigen sessie, via workflow).
+  verliezers redt — dáárom de per-coin override-laag (`coin_strategies`) + de tuning-routine (hierboven).
 - **Per-tick opslag** als diagnose: bij een gekke uitkomst → kijk eerst de trail in
   `coin_sell_ticks` (welk mechanisme zette welke stop op welke tick).
 - **Begrenzing beste sell**: altijd tot de volgende koop (`until_dt`). Een rebuy-rally hoort
@@ -124,15 +161,14 @@ Per coin: `coins.stoploss_multiplier` (0.9996) + `coins.roundingup` (16). Géén
 
 ## Open follow-ups
 
-1. **Per-coin tuning-routine** (volgende sessie, via workflow). `sell_compare.py` is het
-   meet-instrument: W/V-ratio + Σprofit per coin/rule/variant. Meetlat = som van winst/verlies,
-   niet alleen aantal trades.
-2. **Keten-analyse**: vroeg eruit + herkopen vs vasthouden (de "snel afbreken en daarna een nieuwe
-   aankoop"-overweging).
-3. **Harde-drop-detectie binnen het venster** — automatisch verkopen vóór een aankomende scherpe
-   daling.
-4. **Promising-moment trails** — `sell_ticks.py` uitbreiden naar promising momenten (nu alleen
-   executed fires).
+1. ✅ **Per-coin tuning-routine** — GEBOUWD + live (zie sectie hierboven, [[sell-tuning-routine-plan]]).
+2. **Rule-101 ontdekking (v2)** — nieuwe verkoopregels verzinnen uit `coin_sell_ticks` + leren van
+   handmatige hard-sells (≥3). Propose-only eerst (rule-101 geldt voor beide munten; overfit-risico op
+   2 munten). Met volledige wijzigingshistorie per regel (Daans eis).
+3. **Keten-analyse**: vroeg eruit + herkopen vs vasthouden (Σprofit over opeenvolgende trades per coin).
+4. **Best-sell-gap als lering**: onze sell vs `best_sell_in_window(until_dt=volgende koop)` — NIET
+   `coin_fires.best_sell_datetime` (dat is de piek binnen onze hold → gap altijd 0).
+5. **Dagelijks plannen** — Claude Code CLI-routine; hoort verder bij epic-08 (daily orchestration).
 
 Zie ook [[brain-engine]] voor de algemene engine-kaart, [[brain-routines]] voor het routine-runner-
 framework waarop de tuning-routine gaat draaien, en [[brain-promising-labeler]] voor het

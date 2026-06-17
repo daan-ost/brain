@@ -30,26 +30,43 @@ TRIGGER = sys.argv[sys.argv.index("--trigger") + 1] if "--trigger" in sys.argv e
 SET_ARG = sys.argv[sys.argv.index("--set") + 1] if "--set" in sys.argv else "rule-precision"
 
 
-def input_fingerprint(with_labels=False):
+def input_fingerprint(with_labels=False, with_sell=False):
     """Signature of everything that determines the analysis outcome: the raw `indicators` per coin
     (count + latest datetime) AND the active `rules` (count + latest change). New data OR a rule
     change (auto-applied last run, or a manual edit) bumps it; a converged run with no new data
     leaves it stable → the gate skips. For the RECALL set, the ok-LABELS also bump it (with_labels)
-    so new promising labels re-trigger the triage. coin_periods/coin_fires are derived, so not needed."""
+    so new promising labels re-trigger the triage. For the SELL-TUNING set (with_sell) the sell
+    instelknoppen (strategies + coin_strategies), the manual trade-overrides (manual_set_at) and the
+    coin count also bump it, so a knob-edit, a manual hard-sell/klasse, or a new coin re-triggers the
+    tuning. coin_periods/coin_fires are derived, so not needed."""
     conn = brain()
     with conn.cursor() as c:
         c.execute("SELECT trading_symbol_id s, COUNT(*) n, MAX(datetime) mx FROM indicators GROUP BY trading_symbol_id ORDER BY s")
         ind = c.fetchall()
         c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM rules WHERE active=1")
         rules = c.fetchone()
-        lab = None
+        lab = sell = None
         if with_labels:
             c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM coin_moment_labels WHERE decision='yes'")
             lab = c.fetchone()
+        if with_sell:
+            c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM strategies")
+            st = c.fetchone()
+            c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM coin_strategies")
+            cst = c.fetchone()
+            c.execute("SELECT COUNT(*) n, MAX(manual_set_at) mx FROM coin_moment_labels "
+                      "WHERE source='manual' AND manual_set_at IS NOT NULL")
+            mov = c.fetchone()
+            c.execute("SELECT COUNT(*) n FROM coins")
+            co = c.fetchone()
+            sell = (f"#strat:{st['n']}:{st['mx']}#cstrat:{cst['n']}:{cst['mx']}"
+                    f"#mov:{mov['n']}:{mov['mx']}#coins:{co['n']}")
     conn.close()
     sig = "|".join(f"{r['s']}:{r['n']}:{r['mx']}" for r in ind) + f"#rules:{rules['n']}:{rules['mx']}"
     if lab:
         sig += f"#labels:{lab['n']}:{lab['mx']}"
+    if sell:
+        sig += sell
     return hashlib.md5(sig.encode()).hexdigest()
 
 
@@ -198,6 +215,27 @@ def routine_recall_triage(j):
     return "recall-triage · " + ", ".join(parts)
 
 
+def routine_sell_tuning(j):
+    """SELL-TUNING: meet read-only per (munt, regel) of een andere instelknop betere verkopen geeft
+    (holdout leidend, meetlat netto Σprofit) en PAS de veilige voorstellen toe achter de echte
+    herreken-poort (Σprofit niet omlaag, verliezers niet omhoog). Schrijft altijd het rapport
+    (out/opt/sell_tuning_<date>.json) voor het scherm. Alleen muterend met --apply; zonder --apply
+    blijft het propose-only zodat de 'Nu draaien'-knop nooit live instellingen wijzigt."""
+    import sell_tuning
+    import sell_apply
+    report = sell_tuning.measure(write_json=True, verbose=False)   # read-only meting + rapport voor het scherm
+    safe = [p for p in report["proposals"] if p["verdict"] == "SAFE"]
+    overfit = [p for p in report["proposals"] if p["verdict"] == "OVERFIT"]
+    j.add(f"Sell-tuning gemeten: {len(safe)} veilige voorstellen · {len(overfit)} overfit afgekeurd "
+          f"(train wint, holdout zakt) · {len(report['proposals'])} doorgerekend.", level="result",
+          data={"safe": len(safe), "overfit": len(overfit), "report_path": report.get("report_path")})
+    summary = sell_apply.apply_safe(lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data),
+                                    apply=APPLY, report=report)
+    if not APPLY:
+        j.add("Auto-apply: uit (geen --apply) — instellingen alleen voorgesteld, niets gewijzigd.", level="info")
+    return f"sell-tuning · {summary}"
+
+
 # A SET is a named chain of routines with a shared goal. This set = eliminate existing bad trades
 # from the rules (tighten existing rules now; outlier-split into new rules = 2b, coming). Append
 # routines below; they run after each other in one journaled run, under this set's name.
@@ -229,10 +267,21 @@ REGISTRY_RECALL = [
     ("recall-triage", routine_recall_triage),
 ]
 
+# A FOURTH set: sell-tuning. Fires when new trades, a manual trade-override (manual_set_at), a knob-edit
+# (strategies/coin_strategies) or a new coin/rule changes the input (the fingerprint includes all four).
+# Measures per (coin,rule) and — in the scheduled --apply run — auto-applies the safe instelknoppen
+# behind the real re-fire gate. The on-screen 'Nu draaien' button runs without --apply = propose-only.
+SELL_SET_KEY = "sell-tuning"
+SELL_SET_NAME = "Sell-tuning — per-munt instelknoppen afstellen"
+REGISTRY_SELL = [
+    ("sell-tuning", routine_sell_tuning),
+]
+
 SETS = {
     SET_KEY: (SET_NAME, REGISTRY, True),                 # gated by the data-changed fingerprint
     INTEGRITY_SET_KEY: (INTEGRITY_SET_NAME, REGISTRY_INTEGRITY, False),
     RECALL_SET_KEY: (RECALL_SET_NAME, REGISTRY_RECALL, True),   # gated; fingerprint includes ok-labels
+    SELL_SET_KEY: (SELL_SET_NAME, REGISTRY_SELL, True),        # gated; fingerprint includes sell knobs + overrides
 }
 
 
@@ -277,7 +326,8 @@ def main():
     set_key = SET_ARG
     set_name, registry, gated = SETS[set_key]
 
-    fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY))   # recall fires on new ok-labels too
+    fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY),   # recall fires on new ok-labels too
+                           with_sell=(set_key == SELL_SET_KEY))        # sell-tuning fires on knob/override/coin changes
     if gated:
         # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
         prev = _state(conn, set_key)

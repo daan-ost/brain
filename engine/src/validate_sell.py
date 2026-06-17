@@ -16,15 +16,14 @@ inert per the spec, so it is omitted here.
 """
 import bisect
 import json
+import sys
 
 import pymysql
 
 from sell_rule101 import rule_engine_101
 from sell_lock import parse_sl, lock_profit
 
-SYM = 2525
-SELL_MULT = 0.9996      # wp_trading_symbols.stoploss_multiplier (DOGEAI)
-ROUNDING = 16           # wp_trading_symbols.roundingup
+SYM = int(sys.argv[1]) if len(sys.argv) > 1 else 2525     # 2525 DOGEAI (default), 244 NOS
 MAX_MIN = 1500
 
 src = pymysql.connect(host="127.0.0.1", port=8889, user="root", password="root",
@@ -35,6 +34,14 @@ def q(sql, args=()):
     with src.cursor() as c:
         c.execute(sql, args)
         return c.fetchall()
+
+
+# Per-symbol multiplier + afronding uit legacy wp_trading_symbols — NOS rondt op 5 af, DOGEAI op 16,
+# dus dit MOET per munt: een vaste 16 zou NOS' selling_price/profit_loss scheef trekken.
+_sym = q("SELECT symbol, stoploss_multiplier, roundingup FROM wp_trading_symbols WHERE ID=%s", (SYM,))
+SYM_NAME = _sym[0]["symbol"] if _sym else str(SYM)
+SELL_MULT = float(_sym[0]["stoploss_multiplier"]) if _sym else 0.9996
+ROUNDING = int(_sym[0]["roundingup"]) if _sym else 16
 
 
 # parse_sl + lock_profit come from sell_lock.py (shared with sell_engine.py — same arithmetic).
@@ -136,7 +143,7 @@ for t in trades:
 
 n = agree["n"]
 print("=" * 66)
-print(f"SELL validation — DOGEAI, {n} replayed (+{agree['none']} no-sell-in-1500m) of {len(trades)} closed trades")
+print(f"SELL validation — {SYM_NAME} ({SYM}), {n} replayed (+{agree['none']} no-sell-in-1500m) of {len(trades)} closed trades")
 print(f"  selling_price (exact) : {agree['price']}/{n}")
 print(f"  selling_date (exact)  : {agree['date']}/{n}")
 print(f"  profit_loss (exact)   : {agree['pl']}/{n}")

@@ -10,11 +10,31 @@ Reads brain.indicators (price), brain.strategies (SL settings), brain.coins (mul
 brain.rules (rule 101). bot_signals is not touched.
 """
 import bisect
+import json
 
 from db import brain
 from config import FORWARD_MINUTES
 from sell_rule101 import rule_engine_101
 from sell_lock import parse_sl, lock_profit
+
+
+def merge_sl(raw_by_rule, ovr_by_rule):
+    """Merge de per-coin override-laag (coin_strategies) over de globale strategy-JSON heen en parse.
+    raw_by_rule/ovr_by_rule = {rule: sl_settings JSON-string of None}. Per-coin wint mits NOT NULL en
+    erft de rest van de globale rule (merge op JSON-niveau vóór parse_sl). Lege override = byte-identiek
+    aan de globale rule (faithful). Pure functie zonder DB — daarom los testbaar."""
+    out = {}
+    for rule, raw in raw_by_rule.items():
+        ov = ovr_by_rule.get(rule)
+        if ov:
+            base = json.loads(raw) if raw else {}
+            base.update(json.loads(ov))
+            raw = json.dumps(base)
+        out[rule] = parse_sl(raw)
+    for rule, ov in ovr_by_rule.items():       # override op een rule zonder globale rij
+        if rule not in out:
+            out[rule] = parse_sl(ov)
+    return out
 
 
 class SellEngine:
@@ -42,7 +62,14 @@ class SellEngine:
             self.SELL_MULT = float(coin.get("stoploss_multiplier") or 0.9996)
             self.ROUNDING = int(coin.get("roundingup") or 16)
             c.execute("SELECT rule_number, sl_settings FROM strategies")
-            self.sl_by_rule = {int(r["rule_number"]): parse_sl(r["sl_settings"]) for r in c.fetchall()}
+            raw_by_rule = {int(r["rule_number"]): r["sl_settings"] for r in c.fetchall()}
+            # Per-coin override-laag (coin_strategies) bovenop de globale strategies — DOGEAI snel, NOS
+            # traag hebben andere instelknoppen nodig (de tuning-routine). Merge op JSON-niveau VÓÓR
+            # parse_sl: een override die maar een paar knobs zet erft de rest van de globale rule.
+            # Per-coin wint mits NOT NULL. Lege coin_strategies = geen override = byte-identiek (faithful).
+            c.execute("SELECT rule_number, sl_settings FROM coin_strategies WHERE trading_symbol_id=%s", (symbol,))
+            ovr_by_rule = {int(r["rule_number"]): r["sl_settings"] for r in c.fetchall() if r["sl_settings"]}
+            self.sl_by_rule = merge_sl(raw_by_rule, ovr_by_rule)
             c.execute("SELECT id AS ID, sort, subrulename, def1_value, b_min, b_max, operator, "
                       "value_condition, condition_rule FROM rules WHERE rule_number=101 AND active=1 ORDER BY sort, id")
             self.SUBRULES_101 = c.fetchall()

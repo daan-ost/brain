@@ -14,6 +14,7 @@ Usage: persist_to_brain.py [symbol_id] [from] [to] [gap_minutes]
 import bisect
 import datetime as _dt
 import json
+import os
 import sys
 
 from align import align_legacy_dt
@@ -31,6 +32,9 @@ SYM = int(sys.argv[1]) if len(sys.argv) > 1 else 2525
 FROM = sys.argv[2] if len(sys.argv) > 2 else None
 TO = sys.argv[3] if len(sys.argv) > 3 else None
 GAP = int(sys.argv[4]) if len(sys.argv) > 4 else CLUSTER_GAP_MINUTES
+# Changelog-reden voor klasse-overgangen door deze refire. Default = gewone heranalyse; de sell-tuning
+# routine zet CHANGELOG_REASON='tuning-routine-<rule>-<knob>' zodat de wijziging te herleiden is.
+CHANGELOG_REASON = (os.environ.get("CHANGELOG_REASON") or "sell-engine-rerun")[:80]
 _pf = lambda s: _dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S") if s and len(s) > 10 else (_dt.datetime.strptime(s, "%Y-%m-%d") if s else None)
 FROM_dt, TO_dt = _pf(FROM), _pf(TO)
 
@@ -183,8 +187,8 @@ with dst.cursor() as c:
                 with dst.cursor() as cc:
                     cc.execute("INSERT INTO coin_fires_changelog (trading_symbol_id, symbol, datetime, "
                                "field, old_value, new_value, reason, created_at, updated_at) "
-                               "VALUES (%s,%s,%s,'klasse',%s,%s,'sell-engine-rerun',NOW(),NOW())",
-                               (SYM, SYMBOL, dt, old_k, new_k))
+                               "VALUES (%s,%s,%s,'klasse',%s,%s,%s,NOW(),NOW())",
+                               (SYM, SYMBOL, dt, old_k, new_k, CHANGELOG_REASON))
 
         # best_sell = de hoogste prijs BINNEN onze hold [koop, onze verkoop]. Komt rechtstreeks uit
         # de sell-engine (hi_price/hi_dt). Als de prijs alleen daalde, blijft hi_dt = koop-moment en
