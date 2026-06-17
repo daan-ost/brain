@@ -43,6 +43,25 @@ class SellEngine:
         if self._own:
             self.conn.close()
 
+    def best_sell_in_window(self, buy_dt, buy, until_dt=None, minutes=None):
+        """The highest reachable sell for THIS trade — may lie after our own exit, but is cut off at
+        the NEXT buy (until_dt): a rally after a dip+rebuy belongs to the next trade, not this one.
+        Window = [buy, min(buy+minutes, until_dt)). Returns dict(price, datetime, profit_pct) or None.
+        NB: this is the first-order "highest before the next trade"; the hard-drop refinement (sell
+        before a sharp drop within the window) is for the tuning/analysis mode."""
+        minutes = FORWARD_MINUTES if minutes is None else minutes
+        i = bisect.bisect_right(self.DT, buy_dt)
+        best_px, best_dt = None, None
+        while i < len(self.DT) and (self.DT[i] - buy_dt).total_seconds() <= minutes * 60:
+            if until_dt is not None and self.DT[i] >= until_dt:
+                break               # next buy reached — its move belongs to the next trade
+            if best_px is None or self.PX[i] > best_px:
+                best_px, best_dt = self.PX[i], self.DT[i]
+            i += 1
+        if best_px is None:
+            return None
+        return dict(price=best_px, datetime=best_dt, profit_pct=round((best_px - buy) / buy * 100, 3))
+
     def _determine_stop(self, buy, market, minutes, profit, hi, stop_prev, sl, i, buy_dt, max_price):
         """Per-tick stop decision → dict(stop, selling_price, orderstatus, floor, lock, mult).
         floor = absolute minimum (min_sl1*buy); lock = lock_profit ratchet output (None if a CHECK
