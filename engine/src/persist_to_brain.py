@@ -133,10 +133,16 @@ with leg.cursor() as c:
 leg.close()
 
 # greedy single-position dedup + our sell-engine P&L
+# next_buy_dt[i] = the datetime of the next buy on this coin (any rule), or None if last.
+# A rally after a dip+rebuy belongs to the next trade, so best_sell is capped before it.
+next_buy_dt = [None] * len(all_fires)
+for idx in range(len(all_fires) - 1):
+    next_buy_dt[idx] = all_fires[idx + 1][0]
+
 open_until = open_at = None
 n_exec = n_shadow = n_good = 0
 with dst.cursor() as c:
-    for dt, rule in all_fires:
+    for idx, (dt, rule) in enumerate(all_fires):
         buy = price_at(dt)
         pr = eng.promising(dt)
         good = 1 if (pr and pr["verdict"] == "buy") else 0
@@ -155,6 +161,9 @@ with dst.cursor() as c:
             executed, shadow_parent = 1, None
             n_exec += 1
 
+        # best_sell = highest price reachable for THIS trade, capped before the next buy (so a
+        # post-rebuy rally is not credited to us). May lie AFTER our own selling_date.
+        best_for_trade = sell_eng.best_sell_in_window(dt, buy, until_dt=next_buy_dt[idx]) if buy else None
         best_up = best_upside_at(dt, buy)              # trade quality (best available exit)
         hz, low10 = horizons_at(dt, buy)               # per-horizon upside + early dip
         c.execute(
@@ -165,7 +174,8 @@ with dst.cursor() as c:
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
             (SYM, SYMBOL, dt, rule, good, executed, shadow_parent, period_of(dt),
              buy, sell["selling_price"] if sell else None,
-             sell["hi_price"] if sell else None, sell["hi_dt"] if sell else None,
+             best_for_trade["price"] if best_for_trade else None,
+             best_for_trade["datetime"] if best_for_trade else None,
              best_up, json.dumps(hz) if hz else None, low10,
              sell["selling_date"] if sell else None,
              sell["profit_loss"] if sell else None,

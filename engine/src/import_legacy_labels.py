@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Import legacy hand-labels into brain.coin_moment_labels (Epic L). Two legacy sources:
+Import legacy hand-labels into brain.coin_moment_labels (Epic L). Three legacy sources:
   1. wp_trading_simulation.result (1=goed/2=middel/3=slecht)  -> source='legacy' (kwaliteit-referentie,
      the "legacy" column). Per-coin rebuild (DELETE + insert), keyed (coin, datetime, rule).
   2. wp_trading_simulation_trades_result.ok_trade (1=ja/2=nee/3=geen-volume) -> the owner's explicit
      ok/niet-ok, imported as source='manual' moment-level decisions (rule=0), ONLY-IF-ABSENT so in-app
      marks set via the screen are never overwritten.
+  3. wp_trading_simulation.best_selling_datetime -> per-trade beste sell-datum override (snapped onto
+     our tick grid). Only-if-absent on best_sell_datetime so hand edits via the screen are not lost.
 Both align the +5s legacy buy-time onto our tick grid (align_legacy_dt). bot_signals stays read-only.
 No args = ALL coins with either source (full migration). Re-run per coin after it's built in brain so
 its labels snap to the fresh ticks.
@@ -43,8 +45,8 @@ snapped_n = 0
 ok_total = 0
 for sym in syms:
     with leg.cursor() as c:
-        c.execute("SELECT datetime, rule, result FROM wp_trading_simulation "
-                  "WHERE trading_symbol_id=%s AND result IN (1,2,3)", (sym,))
+        c.execute("SELECT datetime, rule, result, best_selling_datetime FROM wp_trading_simulation "
+                  "WHERE trading_symbol_id=%s AND (result IN (1,2,3) OR best_selling_datetime IS NOT NULL)", (sym,))
         rows = c.fetchall()
     with dst.cursor() as c:
         c.execute("SELECT symbol FROM coins WHERE id=%s", (sym,))
@@ -59,23 +61,31 @@ for sym in syms:
     with dst.cursor() as c:
         c.execute("DELETE FROM coin_moment_labels WHERE source='legacy' AND trading_symbol_id=%s", (sym,))
 
-    n = 0
+    n = best_n = 0
     with dst.cursor() as c:
         for row in rows:
-            res = int(row["result"])
+            res = row["result"]
             dt = align_legacy_dt(row["datetime"], ticks)   # -5s live wait -> 16:24:01 = signal 16:23:56
             if dt != row["datetime"]:
                 snapped_n += 1
-            c.execute(
-                "INSERT INTO coin_moment_labels "
-                "(trading_symbol_id, symbol, datetime, rule, decision, manual_klasse, "
-                " source, legacy_result, set_by, set_at, created_at, updated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,'legacy',%s,'import',NOW(),NOW(),NOW()) "
-                # COALESCE: een binnenkomende NULL (middel heeft geen yes/no) overschrijft geen bestaande waarde
-                "ON DUPLICATE KEY UPDATE decision=COALESCE(VALUES(decision), decision), "
-                " manual_klasse=VALUES(manual_klasse), legacy_result=VALUES(legacy_result), updated_at=NOW()",
-                (sym, symbol, dt, row["rule"], DECISION.get(res), KLASSE.get(res), res))
-            n += 1
+            best_dt = align_legacy_dt(row["best_selling_datetime"], ticks) if row["best_selling_datetime"] else None
+            # rows zonder result (alleen best_selling_datetime) krijgen géén nieuwe klasse-row -- skip insert,
+            # zet alleen best_sell_datetime op een bestaande (zeldzaam) of laat aan engine over.
+            if res in (1, 2, 3):
+                res = int(res)
+                c.execute(
+                    "INSERT INTO coin_moment_labels "
+                    "(trading_symbol_id, symbol, datetime, rule, decision, manual_klasse, best_sell_datetime, "
+                    " source, legacy_result, set_by, set_at, created_at, updated_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,'legacy',%s,'import',NOW(),NOW(),NOW()) "
+                    # COALESCE: NULL overschrijft geen bestaande waarde (geldt voor decision EN best_sell_datetime)
+                    "ON DUPLICATE KEY UPDATE decision=COALESCE(VALUES(decision), decision), "
+                    " manual_klasse=VALUES(manual_klasse), legacy_result=VALUES(legacy_result), "
+                    " best_sell_datetime=COALESCE(best_sell_datetime, VALUES(best_sell_datetime)), updated_at=NOW()",
+                    (sym, symbol, dt, row["rule"], DECISION.get(res), KLASSE.get(res), best_dt, res))
+                n += 1
+                if best_dt is not None:
+                    best_n += 1
     dst.commit()
 
     # ok_trade -> de eigenaar's ok/niet-ok als MANUAL decision (moment-niveau, rule=0). Only-if-absent:
@@ -99,7 +109,7 @@ for sym in syms:
                 (sym, symbol, dt, dec))
             ok_n += int(c.rowcount == 1)
     dst.commit()
-    print(f"  {symbol} ({sym}): {n} legacy-labels, {ok_n} ok/niet-ok")
+    print(f"  {symbol} ({sym}): {n} legacy-labels (waarvan {best_n} met beste sell-datum), {ok_n} ok/niet-ok")
     total += n
     ok_total += ok_n
 
