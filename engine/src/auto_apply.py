@@ -37,11 +37,13 @@ def _refire():
 
 
 def _totals():
-    """(total executed good, total executed slecht, {rule: (good, slecht)}) over both coins."""
+    """(total executed good, total executed slecht, {rule: (good, slecht)}) over both coins,
+    classified on PROFIT_LOSS (realized) — mirrors CoinFire::klasseKey() and what the UI shows.
+    Thresholds: goed pl>=3, slecht pl<0 (UI mirror)."""
     conn = brain()
     with conn.cursor() as c:
-        c.execute("SELECT rule, SUM(best_upside>=3) g, SUM(best_upside<0.5) s "
-                  "FROM coin_fires WHERE is_executed=1 AND best_upside IS NOT NULL GROUP BY rule")
+        c.execute("SELECT rule, SUM(profit_loss>=3) g, SUM(profit_loss<0) s "
+                  "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL GROUP BY rule")
         rows = c.fetchall()
     conn.close()
     per = {r["rule"]: (int(r["g"]), int(r["s"])) for r in rows}

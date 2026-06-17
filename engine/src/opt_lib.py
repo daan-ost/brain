@@ -23,6 +23,13 @@ import pandas as pd
 from db import brain
 from calc import WINDOW_METRIC_KEYS
 
+# Classification thresholds — must mirror www/app/Models/CoinFire.php::klasseKey().
+# For EXECUTED trades we now classify on profit_loss (realized result) to match the UI; this is
+# what Daan steers on. Shadow fires (no sell) fall back to best_upside in load_all_fires.
+# UI rule: profit_loss >= 3 → goed, 0..3 → middel, < 0 → slecht.
+# (Best_upside thresholds 3 / 0.5 are kept as the FALLBACK for shadows / non-executed analysis.)
+GOOD_PL = 3.0
+BAD_PL = 0.0
 GOOD_UPSIDE = 3.0
 BAD_UPSIDE = 0.5
 DOGEAI = 2525
@@ -62,20 +69,29 @@ def scale_unsafe(indicator, calc):
 
 
 def _cls(u):
+    """LEGACY classifier on best_upside (potentie). Used for shadows in load_all_fires (no sell)."""
     return "goed" if u >= GOOD_UPSIDE else ("slecht" if u < BAD_UPSIDE else "middel")
 
 
+def _cls_pl(pl):
+    """REALIZED classifier on profit_loss — mirrors CoinFire::klasseKey() for executed trades.
+    >=3% goed, 0..3% middel, <0% slecht. Used by the optimization routine since the UI shows this."""
+    return "goed" if pl >= GOOD_PL else ("slecht" if pl < BAD_PL else "middel")
+
+
 def load_trades():
-    """Executed trades (both coins) with best_upside class. One row per trade."""
+    """Executed trades (both coins). Classified on profit_loss (realized result) to match the UI.
+    The optimization routine therefore targets actually-realized winners/losers, not theoretical
+    upside-within-the-hour — a rule's "slecht" now includes trades the sell-engine couldn't capture."""
     if not glob.glob(METRICS_GLOB):
         raise SystemExit("no indicator_metrics parquet — run build_indicator_metrics.py first")
     conn = brain()
     with conn.cursor() as c:
-        c.execute("SELECT trading_symbol_id AS sym, datetime, rule, best_upside "
-                  "FROM coin_fires WHERE is_executed=1 AND best_upside IS NOT NULL")
+        c.execute("SELECT trading_symbol_id AS sym, datetime, rule, best_upside, profit_loss "
+                  "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL")
         df = pd.DataFrame(c.fetchall())
     conn.close()
-    df["cls"] = df["best_upside"].apply(_cls)
+    df["cls"] = df["profit_loss"].apply(_cls_pl)
     # per-coin time split: first 70% train, last 30% test
     df["split"] = "train"
     for sym, g in df.groupby("sym"):

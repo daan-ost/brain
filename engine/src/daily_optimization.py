@@ -54,8 +54,9 @@ def today():
 def current_ratios():
     conn = brain()
     with conn.cursor() as c:
-        c.execute("SELECT rule, SUM(best_upside>=3) goed, SUM(best_upside<0.5) slecht "
-                  "FROM coin_fires WHERE is_executed=1 AND best_upside IS NOT NULL GROUP BY rule ORDER BY rule")
+        # Classify executed trades on PROFIT_LOSS (realized) to mirror CoinFire::klasseKey() + the UI.
+        c.execute("SELECT rule, SUM(profit_loss>=3) goed, SUM(profit_loss<0) slecht "
+                  "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL GROUP BY rule ORDER BY rule")
         rows = c.fetchall()
     conn.close()
     return {r["rule"]: (int(r["goed"]), int(r["slecht"])) for r in rows}
