@@ -128,6 +128,27 @@
                         <div class="relative h-64 mb-4"><canvas x-ref="zv"></canvas></div>
                     </div>
 
+                    @if (! empty($detail['promising']))
+                        @php $pr = $detail['promising']; @endphp
+                        <div class="mb-3 flex items-center gap-2 text-sm border-b border-slate-800/60 pb-2">
+                            <span class="text-slate-400">promising</span>
+                            <span class="font-mono text-emerald-300">beste instap {{ $pr['best_entry'] }}</span>
+                            @if ($pr['delta_min'] < -0.5)
+                                <span class="text-xs text-emerald-300">✓ {{ abs($pr['delta_min']) }} min vóór beste instap</span>
+                            @elseif ($pr['delta_min'] <= 0.5)
+                                <span class="text-xs text-emerald-400 font-medium">✓ op beste instap</span>
+                            @elseif ($pr['in_period'])
+                                <span class="text-xs text-amber-300">⏰ {{ $pr['delta_min'] }} min ná beste instap (nog binnen promising-periode)</span>
+                            @else
+                                <span class="text-xs text-rose-400">⚠ {{ $pr['delta_min'] }} min ná beste instap — buiten promising-periode</span>
+                            @endif
+                        </div>
+                    @elseif ($selType === 'fire' && ($detail['is_executed'] ?? false))
+                        <div class="mb-3 flex items-center gap-2 text-sm border-b border-slate-800/60 pb-2">
+                            <span class="text-xs text-slate-500">⚠ deze trade valt niet binnen een promising-periode</span>
+                        </div>
+                    @endif
+
                     @if (! empty($detail['best_sell']))
                         <div class="mb-3 border-b border-slate-800/60 pb-2">
                             <div class="flex items-center gap-2 text-sm">
@@ -322,7 +343,9 @@ function zoomChart(d) {
             const ex = Chart.getChart(this.$refs.zv); if (ex) ex.destroy();
             const m = d.markers || {}, ann = {};
             if (m.pfrom && m.pto) ann.band = { type: 'box', xMin: m.pfrom, xMax: m.pto,
-                backgroundColor: 'rgba(16,185,129,0.10)', borderColor: 'rgba(16,185,129,0.35)', borderWidth: 1 };
+                backgroundColor: 'rgba(16,185,129,0.18)', borderColor: 'rgba(16,185,129,0.7)', borderWidth: 1,
+                label: { display: true, content: 'promising', position: { x: 'start', y: 'start' },
+                    backgroundColor: 'rgba(16,185,129,0.85)', color: '#fff', font: { size: 9 }, padding: 2 } };
             const line = (x, color, txt, pos) => ({ type: 'line', xMin: x, xMax: x, borderColor: color, borderWidth: 1.5,
                 label: { display: true, content: txt, position: pos || 'start', backgroundColor: color, color: '#fff', font: { size: 9 }, padding: 2 } });
             if (m.pbest) ann.pbest = line(m.pbest, 'rgba(16,185,129,0.95)', 'beste instap', 'end');

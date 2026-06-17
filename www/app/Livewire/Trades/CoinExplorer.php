@@ -211,11 +211,17 @@ class CoinExplorer extends Component
             $changes = \DB::table('coin_fires_changelog')->where('trading_symbol_id', $f->trading_symbol_id)
                 ->where('datetime', $f->datetime)->orderByDesc('id')->limit(5)->get()->all();
             // overlay the promising period this fire belongs to (if any): band + best entry + peak
+            $promising = null;
             if ($f->period_id && ($per = CoinPeriod::find($f->period_id))) {
                 $markers['pfrom'] = $per->period_from->getTimestampMs();
                 $markers['pto'] = $per->period_to->getTimestampMs();
                 $markers['pbest'] = $per->best_entry->getTimestampMs();
                 if ($per->peak_datetime) $markers['peak'] = $per->peak_datetime->getTimestampMs();
+                // hoe vroeg/laat tov de beste instap (negatief = vóór, positief = ná)
+                $deltaMin = $per->best_entry->diffInRealSeconds($f->datetime, false) / 60.0;
+                $inPeriod = $f->datetime->between($per->period_from, $per->period_to);
+                $promising = ['in_period' => $inPeriod, 'delta_min' => round($deltaMin, 1),
+                              'best_entry' => $this->localFmt($per->best_entry)];
             }
             [$from, $to] = $this->windowAround($markers);
             return [
@@ -235,6 +241,7 @@ class CoinExplorer extends Component
                 ] : null,
                 'legacy_best_sell' => $legacyRow?->best_sell_datetime
                     ? $this->localFmt($legacyRow->best_sell_datetime) : null,
+                'promising' => $promising,
                 'hard_sell' => $manualLabel?->hard_sell_datetime ? $this->localFmt($manualLabel->hard_sell_datetime) : null,
                 'changes' => array_map(fn ($r) => [
                     'when' => Carbon::parse($r->created_at)->format('Y-m-d H:i'),
