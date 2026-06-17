@@ -30,7 +30,14 @@ per coin (raw/min_volume); see the scale guard in [[brain-rule-tuning]].
 - **`volume.py`** — stateful volume subrules: `missingdata(rows)`, `check_volumeud_3(rows, min_volume, settings)`. Per-rule settings via `volume_settings(rule)` (base `_BASE_VOLUME` + `_VOLUME_OVERRIDES` for 20/21/22/23).
 - **`validate_period.py`** — THE validator. `validate_period.py [rule] [from] [to]`. Replays a rule at the oracle datetimes, compares value + pass + fire verdict.
 - **`validate_rule.py`** — single-datetime debug validator.
-- **`validate_sell.py` + `sell_rule101.py`** — sell-side replay vs oracle.
+- **`sell_lock.py`** — SHARED pure functions `parse_sl()` + `lock_profit()` (the trailing-floor
+  ratchet, ported byte-for-byte from legacy `functions_br.php:4744`). Used by BOTH `validate_sell.py`
+  (oracle, bot_signals) and `sell_engine.py` (production, brain) — one source of truth for the ratchet.
+- **`sell_engine.py`** — `SellEngine(symbol).sell(buy_dt, buy, rule, trace=False)` → the production sell
+  over brain, 1-hour hold. `trace=True` returns the full per-tick trail. **`sell_rule101.py`** — rule-101
+  subrules. **`validate_sell.py`** — sell-side replay vs oracle (the gate).
+- **`sell_ticks.py`** — writes the per-tick trail to `coin_sell_ticks` (1 row/tick) for the executed
+  fires, via `sell(trace=True)`. Daan's "store per datetime ALL values".
 - **`persist_to_brain.py`** — THE canonical re-fire/write path: replays rules 20-23 (`RULES` tuple)
   over the in-scope range, applies single-position dedup (first fire opens a position; later overlapping
   fires become `is_executed=0` shadows), and writes `coin_fires`/`coin_periods` with `best_upside` +
@@ -78,16 +85,27 @@ the engine-refire gate (0 good lost, total slecht drops) before keeping it.
 
 ## The sell model (authoritative — see methodology/selling-process.md)
 
-SL = **max of three mechanisms, NEVER lowered**, trailing up from market/peak:
-1. hard floor ~1% below buy (`min_sl1 * buy`) — max 1% loss,
-2. time-based rising stop (age ladder `[(5,-0.4),(7,-0.1),(8,0),(20,0.5)]`),
-3. rule-101 business exits (indicator drop → stop to ~99.5% market).
+SL = **max of mechanisms, NEVER lowered**, trailing up from market/peak. `determine_stop` runs in order:
+1. CHECK 1 — hard floor `min_sl1 * buy` (~0.988) — below it, always sell,
+2. CHECK 2 — age/profit ladder `array_profit` (`[[5,-0.4],[7,-0.1],[8,0],[20,0.5]]`) — too little profit for the age → sell,
+3. CHECK 3 — trailing breach (prev stop > market) → sell,
+4. else new stop = **max(lock_profit ratchet, rule-101 mult × market)** — lock wins unless rule-101 returns `overrule`.
 
-`selling_price = stop * stoploss_multiplier` (0.9996 DOGEAI). `profit_loss = round((selling_price-buy)/buy*100, 3)`. ROUNDING=16. Current fidelity ~87% of total P&L.
+**`lock_profit` ratchet** (the bit that was inert in the old 87% version — NOW ON): keys on
+`highest_profit_loss` (percent, incl. current tick). Tiers hp1..5 for small peaks, `+(hi/hp6)/100` (hp6=4)
+for 0.7–5%, `+(hi-hp7)/100` (hp7=15, hard) for ≥5%. All knobs (`hp_setting1..8`, `array_profit`) are
+configurable in `strategies.sl_settings`. `selling_price = stop * stoploss_multiplier` (0.9996 DOGEAI);
+`profit_loss = round((selling_price-buy)/buy*100, 3)`; ROUNDING=16.
+
+Turning the ratchet on lifted oracle agreement: **win/loss direction 80%→95%**, exact selling_price
+333→463/661, exact profit_loss 334→465/661. Total P&L now +1279% vs legacy +1102% (a ~16% overshoot
+concentrated in ~5 big winners — the remaining gap is **rule-101 sell-signal timing**, Epic S punt 2).
+The per-tick trail (`coin_sell_ticks`, byte-for-byte == the legacy log on sim 15212) is the instrument
+to debug that. **Promising-moment trails + the rule-101 timing fix are the open follow-ups.**
 
 ## Validation status
 
-Rules 20 (99.6%), 21 (99.96%), 22 (98.8%), 23 (99.7%) fire-agreement vs oracle. Rules 10/11/12/18 not yet ported (deferred). Sell-side ~87%.
+Rules 20 (99.6%), 21 (99.96%), 22 (98.8%), 23 (99.7%) fire-agreement vs oracle. Rules 10/11/12/18 not yet ported (deferred). Sell-side: ratchet ON, win/loss 95% vs oracle (rule-101 timing is the tail).
 
 ## When you change the engine
 
