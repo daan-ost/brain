@@ -114,6 +114,12 @@
                 <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
                     <div class="flex items-center gap-2">
                         <button wire:click="navDetail(-1)" title="vorige" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded text-sm">‹</button>
+                        @if ($selType === 'fire')
+                            <label class="flex items-center gap-1 text-xs text-slate-400 cursor-pointer select-none" title="alleen naar uitgevoerde trades springen (geen schaduwen)">
+                                <input type="checkbox" wire:model.live="skipShadows" class="accent-emerald-500" />
+                                <span>sla schaduw over</span>
+                            </label>
+                        @endif
                         <div class="flex items-baseline gap-2">
                             <h3 class="font-semibold text-white">{{ $detail['title'] }}</h3>
                             <span class="text-xs text-slate-500 font-mono">#{{ $detail['id'] }}</span>

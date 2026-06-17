@@ -39,6 +39,7 @@ class CoinExplorer extends Component
     public string $manualKlasse = '';   // '' = berekend, 'goed'|'middel'|'slecht' = handmatig override
     public string $bestSell = '';       // override beste sell — alleen TIJD (H:i:s); datum = koopdatum
     public string $hardSell = '';       // harde verkoopdatum — alleen TIJD (H:i:s); datum = koopdatum
+    public bool $skipShadows = true;    // nav-pijltjes slaan schaduw-trades over (default aan)
 
     public function mount(): void
     {
@@ -137,6 +138,15 @@ class CoinExplorer extends Component
         $ids = $this->dayTargetIds($this->selType);
         $i = array_search($this->selId, $ids, true);
         if ($i === false) {
+            // Huidige selectie zit niet in de gefilterde lijst (= we staan op een schaduw die nu
+            // overgeslagen wordt). Spring naar de eerstvolgende fire in die richting.
+            if ($this->selType === 'fire' && ($cur = CoinFire::find($this->selId))) {
+                $q = CoinFire::where('trading_symbol_id', $this->coin)
+                    ->where('datetime', $dir > 0 ? '>' : '<', $cur->datetime);
+                if ($this->skipShadows) $q->where('is_executed', true);
+                $next = $q->orderBy('datetime', $dir > 0 ? 'asc' : 'desc')->first();
+                if ($next) $this->open($this->selType, $next->id);
+            }
             return;
         }
         $this->open($this->selType, $ids[max(0, min(count($ids) - 1, $i + $dir))]);
@@ -147,8 +157,10 @@ class CoinExplorer extends Component
         $start = Carbon::parse($this->date)->startOfDay();
         $end = (clone $start)->endOfDay();
         if ($type === 'fire') {
-            return CoinFire::where('trading_symbol_id', $this->coin)
-                ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->pluck('id')->all();
+            $q = CoinFire::where('trading_symbol_id', $this->coin)
+                ->whereBetween('datetime', [$start, $end]);
+            if ($this->skipShadows) $q->where('is_executed', true);
+            return $q->orderBy('datetime')->pluck('id')->all();
         }
         return CoinPeriod::where('trading_symbol_id', $this->coin)
             ->where('period_from', '<=', $end)->where('period_to', '>=', $start)
