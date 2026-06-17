@@ -60,8 +60,9 @@ def load(sym):
         fr = c.fetchall()
         fires = sorted({r["datetime"] for r in fr})
         holds = sorted((r["datetime"], r["selling_datetime"]) for r in fr if r["selling_datetime"])
-        # volumeud price series + the volume_found candidate flag
-        c.execute("SELECT datetime, price, volume_found FROM indicators WHERE trading_symbol_id=%s "
+        # volumeud price series + the candidate flag — read brain_volume_found (same source the motor
+        # uses since the 2026-06-17 switch; see memory brain-volume-found-switch).
+        c.execute("SELECT datetime, price, brain_volume_found AS volume_found FROM indicators WHERE trading_symbol_id=%s "
                   "AND indicator='volumeud' AND price IS NOT NULL ORDER BY datetime", (sym,))
         rows = c.fetchall()
     conn.close()

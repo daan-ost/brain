@@ -28,7 +28,10 @@ class RuleEngine:
         # all indicator series for this coin, from brain
         self.series = {}
         with self.conn.cursor() as c:
-            c.execute("SELECT indicator, datetime, value, price, volume_found FROM indicators "
+            # candidate-gate: use brain_volume_found (brain's own computation, identical for all rules
+            # 20-23), not the legacy-copied volume_found which was only set on ticks where legacy ran.
+            # Switched 2026-06-17 — see memory brain-volume-found-switch.
+            c.execute("SELECT indicator, datetime, value, price, brain_volume_found AS volume_found FROM indicators "
                       "WHERE trading_symbol_id=%s AND value IS NOT NULL ORDER BY datetime", (symbol,))
             for r in c.fetchall():
                 s = self.series.setdefault(r["indicator"], {"dt": [], "v": [], "p": [], "vf": []})
