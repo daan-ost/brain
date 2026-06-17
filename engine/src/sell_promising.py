@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 """
-PREPARED — do NOT run for real yet. The sell-engine is parked/being improved (Epic S); only run with
---run once it's good.
-
 Runs the sell-engine over EVERY promising moment (max60 >= 3% AND early-dip >= -0.5% — the labeler's
 PromisingLabeler::isPromising definition) "as if bought there", and stores the outcome in
 brain.coin_moment_sells so the Promising labeler can show the realised P&L next to the buy-quality for
@@ -10,8 +7,8 @@ ANY promising moment, not just the rule-fires.
 
 Default = DRY-RUN (counts + a few samples, writes NOTHING). Pass --run to compute + write.
 NOTE: the per-moment SL rule is a placeholder (the fire's rule at that datetime, else 20) — refine with
-the improved sell-engine. The promising-scan is O(n*window); add a suffix-max before a full-history run.
-Keep PROM_REACH/PROM_DIP in sync with PromisingLabeler.
+the per-coin/per-rule tuning routine. The promising-scan is O(n*window); add a suffix-max before a
+full-history run. Keep PROM_REACH/PROM_DIP in sync with PromisingLabeler.
 
 Usage: sell_promising.py <symbol_id> [--run]
 """

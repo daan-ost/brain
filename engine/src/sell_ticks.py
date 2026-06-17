@@ -29,8 +29,12 @@ RUN = "--run" in sys.argv
 eng = SellEngine(SYM)
 dst = brain()
 with dst.cursor() as c:
-    c.execute("SELECT datetime, buy_price, rule, symbol FROM coin_fires "
-              "WHERE trading_symbol_id=%s AND is_executed=1 AND buy_price IS NOT NULL ORDER BY datetime", (SYM,))
+    # Meerdere rules kunnen op hetzelfde tijdstip fire'n + executed worden. De sell-trail is
+    # afhankelijk van (datetime, buy_price, rule); we dedupliceren op datetime (laagste rule wint)
+    # zodat de natural-key (coin, datetime, tick) niet botst — de UI toont één trail per trade-moment.
+    c.execute("SELECT datetime, buy_price, MIN(rule) rule, MAX(symbol) symbol FROM coin_fires "
+              "WHERE trading_symbol_id=%s AND is_executed=1 AND buy_price IS NOT NULL "
+              "GROUP BY datetime, buy_price ORDER BY datetime", (SYM,))
     fires = c.fetchall()
 SYMBOL = fires[0]["symbol"] if fires else str(SYM)
 trades = [(f["datetime"], float(f["buy_price"]), f["rule"]) for f in fires]

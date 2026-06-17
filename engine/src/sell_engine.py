@@ -26,9 +26,17 @@ class SellEngine:
             c.execute("SELECT datetime, price, value FROM indicators WHERE trading_symbol_id=%s "
                       "AND indicator='volumeud' AND price IS NOT NULL ORDER BY datetime", (symbol,))
             rows = c.fetchall()
-            self.DT = [r["datetime"] for r in rows]
-            self.PX = [float(r["price"]) for r in rows]
-            self.VV = [float(r["value"]) if r["value"] is not None else 0.0 for r in rows]
+            # Dedup op datetime — sommige coins (NOS: 1397 stuks) hebben dubbele volumeud-rijen met
+            # identieke prijs maar verschillende value. Een dubbele tick zou de natural-key in
+            # coin_sell_ticks breken (datetime+tick_datetime). Eerste wint, latere wordt genegeerd.
+            seen, self.DT, self.PX, self.VV = set(), [], [], []
+            for r in rows:
+                if r["datetime"] in seen:
+                    continue
+                seen.add(r["datetime"])
+                self.DT.append(r["datetime"])
+                self.PX.append(float(r["price"]))
+                self.VV.append(float(r["value"]) if r["value"] is not None else 0.0)
             c.execute("SELECT stoploss_multiplier, roundingup FROM coins WHERE id=%s", (symbol,))
             coin = c.fetchone() or {}
             self.SELL_MULT = float(coin.get("stoploss_multiplier") or 0.9996)
