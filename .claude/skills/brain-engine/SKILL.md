@@ -83,25 +83,19 @@ the engine-refire gate (0 good lost, total slecht drops) before keeping it.
 
 **`futureprice` / `futureprice_x_rows`** are backtest-only look-ahead (legacy disables live, `functions_br.php:782`). Treat as live "PASS" sentinel — leak-free; live rules fire more than backtest (correct).
 
-## The sell model (authoritative — see methodology/selling-process.md)
+## The sell model — see [[brain-sell-engine]]
 
-SL = **max of mechanisms, NEVER lowered**, trailing up from market/peak. `determine_stop` runs in order:
-1. CHECK 1 — hard floor `min_sl1 * buy` (~0.988) — below it, always sell,
-2. CHECK 2 — age/profit ladder `array_profit` (`[[5,-0.4],[7,-0.1],[8,0],[20,0.5]]`) — too little profit for the age → sell,
-3. CHECK 3 — trailing breach (prev stop > market) → sell,
-4. else new stop = **max(lock_profit ratchet, rule-101 mult × market)** — lock wins unless rule-101 returns `overrule`.
+Quick rules so you don't have to open the dedicated skill for trivial questions:
+- SL = `max(absolute floor, age/profit ladder, winst-lock, rule-101 mult × market)`, **never lowered**.
+- `selling_price = stop × stoploss_multiplier` (0.9996 DOGEAI); `profit_loss = round((sp − buy)/buy × 100, 3)`.
+- Winst-lock keys on `highest_profit_loss` (peak %): hp1..hp5 for 0,15–0,70%; `+(hi/hp6)/100` for
+  0,70–5%; `+(hi−hp7)/100` for ≥5%. hp6=4 ("bewaar ~25%"), hp7=15 ("bewaar ~50%").
+- Status: winst-lock ON, per-tick trail in `coin_sell_ticks`, knobs editable in `strategies.sl_settings`,
+  handmatige overrides + heranalyse-log in `coin_moment_labels` / `coin_fires_changelog`.
 
-**`lock_profit` ratchet** (the bit that was inert in the old 87% version — NOW ON): keys on
-`highest_profit_loss` (percent, incl. current tick). Tiers hp1..5 for small peaks, `+(hi/hp6)/100` (hp6=4)
-for 0.7–5%, `+(hi-hp7)/100` (hp7=15, hard) for ≥5%. All knobs (`hp_setting1..8`, `array_profit`) are
-configurable in `strategies.sl_settings`. `selling_price = stop * stoploss_multiplier` (0.9996 DOGEAI);
-`profit_loss = round((selling_price-buy)/buy*100, 3)`; ROUNDING=16.
-
-Turning the ratchet on lifted oracle agreement: **win/loss direction 80%→95%**, exact selling_price
-333→463/661, exact profit_loss 334→465/661. Total P&L now +1279% vs legacy +1102% (a ~16% overshoot
-concentrated in ~5 big winners — the remaining gap is **rule-101 sell-signal timing**, Epic S punt 2).
-The per-tick trail (`coin_sell_ticks`, byte-for-byte == the legacy log on sim 15212) is the instrument
-to debug that. **Promising-moment trails + the rule-101 timing fix are the open follow-ups.**
+Open the dedicated skill [[brain-sell-engine]] when you touch the engine, the override layer, or the
+detail-screen plumbing. Byte-for-byte legacy spec: [[docs/methodology/selling-process.md]]. Full
+functional + technical doc: [[docs/sell-engine.md]].
 
 ## Validation status
 

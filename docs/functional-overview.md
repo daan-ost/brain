@@ -16,11 +16,12 @@ The owner ran a legacy bot (`bot_signals`) that found trades on volatile coins u
 2. **Find a candidate entry.** Buy rules (currently 20, 21, 22, 23) evaluate the indicator series at each moment. A rule is a flat AND of subrules; each subrule computes one value over a lookback window and checks it against a min/max band.
 3. **Decide whether to take it (precision).** Not every rule-fire is a good trade. A precision layer (coin volatility gating + an ML meta-filter) decides whether to actually buy — the goal is "drop the bad trades without losing the good ones".
 4. **Buy.** On a real exchange (MEXC first) for the configured amount.
-5. **Manage the exit.** A stop-loss is the **maximum of three mechanisms**, and is **never lowered**:
+5. **Manage the exit (the sell-engine).** A stop-loss is the **maximum of four mechanisms**, and is **never lowered**:
    - a hard floor ~1% below the buy price (max 1% loss),
-   - a time-based rising stop (the longer in trade with no profit, the tighter),
-   - business-rule exits (rule 101) that tighten the stop when an indicator drops.
-   The stop trails up from the market/peak; when price breaches it, we sell.
+   - a time-based rising stop (the longer in trade with no profit, the tighter — the age/profit ladder),
+   - the **winst-lock**: the stop ratchets up with the trade's peak profit (e.g. peak +5% → save ~25% of it; peak +20% → save half),
+   - business-rule exits (rule 101) that tighten the stop when an indicator drops or volume turns negative.
+   The stop trails up from the market/peak; when price breaches it, we sell. Per trade we store the **full per-tick trail** (`coin_sell_ticks`): what each mechanism wanted at every minute. See [methodology/selling-process.md](methodology/selling-process.md) and [docs/sell-engine.md](sell-engine.md).
 6. **Record everything.** Every computed value, every entry, every exit, per datetime — so the system can learn.
 
 ## Two ideas that drive the design

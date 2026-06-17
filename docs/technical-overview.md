@@ -41,7 +41,10 @@
 | `volume.py` | The stateful volume subrules: `missingdata()` and `check_volumeud_3()` (volume-spike-after-accumulation). Per-rule settings via `volume_settings(rule)` (base + overrides for 20/21/22/23). |
 | `validate_period.py` | Scaled validator: replays a rule at the exact datetimes legacy evaluated (the oracle datetimes) and compares value + pass + fire verdict. Usage: `validate_period.py [rule] [from] [to]`. Uses the oracle's **historical** boundary (from the settings JSON) — boundaries drifted over time. |
 | `validate_rule.py` | Single-datetime validator (debug a specific moment). |
-| `validate_sell.py` + `sell_rule101.py` | Sell-side: stop-loss (max-of-mechanisms, never lowered) + rule 101 sell-signals. Replays closed trades and compares against the oracle (currently ~87% of total P&L). |
+| `sell_lock.py` | SHARED pure functions for the trailing-floor (`parse_sl()` + `lock_profit()` = winst-lock). Used by BOTH the validator and the production engine — one source of truth. |
+| `sell_engine.py` | Production sell-engine over brain. `SellEngine(symbol).sell(buy_dt, buy, rule, trace=False, hard_sell_dt=None)`. `trace=True` returns the full per-tick trail. `hard_sell_dt` forces a sell at-or-before that moment. |
+| `sell_ticks.py` | Writes the per-tick trail to `coin_sell_ticks` for executed trades (one row per tick: marketprice, profit, peak, floor, lock-price, rule-101 mult, stop, orderstatus). |
+| `validate_sell.py` + `sell_rule101.py` | Sell-side oracle replay; winst-lock ON. Win/loss direction 95% vs oracle, exact selling_price 463/661, total P&L +1279% vs legacy +1102%. |
 | `run_engine.py` / `populate_engine.py` | Replay the engine over candidates and write results to the brain DB. |
 | `poc_rule_filter.py` / `harden_rule_filter.py` | ML PoC for the precision filter (meta-labeling). |
 
@@ -51,7 +54,7 @@
 - **Boundary drift.** Rule bands (`b_min`/`b_max`) were widened over time. Validating against the *current* band gives false mismatches; always use `oracle_bound(settings, key)` from the oracle row.
 - **As-of alignment.** A subrule's value at time `T` uses the indicator value at/before `T` (newest-first window, index 0 = most recent ≤ T).
 - **`futureprice` is backtest-only.** Legacy disables it live (look-ahead). We treat it as a live "PASS" sentinel (leak-free) — so live rules fire more often than the backtest, which is correct.
-- **Sell model.** SL = `max(hard floor ~1% below buy, time-based rising stop, rule-101 indicator-drop stop)`, never lowered, trailing up from market/peak. `selling_price = stop * stoploss_multiplier` (0.9996 for DOGEAI). `profit_loss = round((selling_price - buy)/buy*100, 3)`.
+- **Sell model.** SL = `max(absolute floor min_sl1·buy, age/profit ladder, winst-lock ratchet, rule-101 multiplier·market)`, never lowered, trailing up from market/peak. `selling_price = stop * stoploss_multiplier` (0.9996 for DOGEAI). `profit_loss = round((selling_price - buy)/buy*100, 3)`. All knobs (`hp_setting1..8`, `array_profit`) configurable in `strategies.sl_settings`. Per-tick trail in `coin_sell_ticks`; overrides in `coin_moment_labels` (`best_sell_datetime`, `hard_sell_datetime`, `manual_klasse`). Heranalyse-log in `coin_fires_changelog`. Detail: [docs/sell-engine.md](sell-engine.md).
 
 ## Validation status
 
@@ -61,7 +64,7 @@
 | 21 | 99.96% |
 | 22 | 98.8% |
 | 23 | 99.7% |
-| Sell-side | ~87% of total P&L (mine +954.7% vs legacy +1102.0%) |
+| Sell-side (winst-lock ON) | win/loss direction 95% (530→630), exact selling_price 333→463, exact profit_loss 334→465. Total P&L +1279% vs legacy +1102%. Doorgevoerd op de live trades: 859→868 trades, 608→548 verlies (60 minder), +488→+579% totaal. |
 
 ## Reference data points
 

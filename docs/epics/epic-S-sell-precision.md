@@ -1,8 +1,8 @@
 # EPIC S: Sell-engine precision (87% → higher)
 
-**Phase:** 0/1 — Foundation dependency (high-level placeholder so this is not forgotten)
-**Status:** Parked — known gap, revisit before Epic A's per-datetime outcomes are trusted as ground truth.
-**Depends on:** `validate_sell.py`, `sell_rule101.py`, methodology/selling-process.md
+**Phase:** 1 — Foundation BUILT (2026-06-17). Winst-lock aan, doorgevoerd op de live trades, opslag/overrides/log staan.
+**Status:** Kern af. Verdere precisie = per-coin tuning (eigen sessie, via workflow).
+**Depends on:** `validate_sell.py`, `sell_rule101.py`, `sell_lock.py`, `sell_engine.py`, methodology/selling-process.md, [docs/sell-engine.md](../sell-engine.md).
 
 ## Why this exists
 
@@ -21,10 +21,16 @@ The 87% version is conservative and correct on the floor sells (the losing trade
 
 ## Acceptance criteria
 
-- [ ] Documented per-trade error bound between rebuilt and legacy sell outcomes.
-- [ ] Rule-101 sell-signal timing validated against the oracle on worked examples.
-- [ ] `validate_sell.py` total-P&L fidelity reported and improved vs the 87% baseline.
-- [ ] Epic A's per-datetime outcomes carry a confidence/tolerance value.
+- [x] **Winst-lock aangezet en getrouw geport.** `sell_lock.py` is byte-voor-byte uit legacy `functions_br.php:4744` (lock_profit). Win/loss-richting 80%→95% vs oracle, exacte selling_price 333→463 / 661, exacte profit_loss 334→465 / 661.
+- [x] **Knobs instelbaar in data.** `array_profit`, `hp_setting1..8` in `strategies.sl_settings`. Data-migration `2026_06_17_020000`.
+- [x] **Per-tick trail-opslag.** Tabel `coin_sell_ticks` (1 rij per tick: marketprice, profit, peak, floor, lock-price, rule101-mult, stop, orderstatus). Byte-voor-byte gelijk geverifieerd vs de legacy sell-log (sim 15212).
+- [x] **Doorgevoerd op de echte trades.** Beide coins herrekend: 859→868 trades, 608→548 verlies (60 minder), Σprofit +488→+579% (+91%). Geen winnaar zakt naar verlies.
+- [x] **Beste sell-datum begrensd tot volgende koop.** `best_sell_in_window(until_dt=...)` zodat een rebuy-rally niet aan deze trade wordt toegerekend. Legacy `best_selling_datetime` gemigreerd (342 DOGEAI + 123 NOS) en met voorrang: handmatig > legacy > berekend.
+- [x] **Handmatige overrides + audit log.** `manual_klasse` leidend (heranalyse overschrijft niet), `best_sell_datetime` + `hard_sell_datetime` invoerbaar in detailscherm, klasse-veranderingen door rerun in `coin_fires_changelog`.
+- [x] **Documentatie.** Functionele + technische beschrijving in [docs/sell-engine.md](../sell-engine.md), skill [`brain-sell-engine`].
+- [ ] **Per-coin tuning-routine** (volgende sessie, via workflow): de knobs per coin/rule bijstellen op basis van nieuwe trades, met Σprofit als meetlat. NOS levert nu Σprofit in terwijl het 21 verliezers redt — de routine moet die ruil expliciet maken.
+- [ ] **Rule-101 timing-staart** — handvol uitschieters (zoals 13069 +127% terwijl legacy +14% pakte). Het diagnose-instrument (de per-tick trail + oracle-log) ligt klaar.
+- [ ] **Per-datetime confidence** voor Epic A's outcomes.
 
 ## Out of scope
 
