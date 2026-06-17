@@ -36,8 +36,15 @@ dst = brain()
 with dst.cursor() as c:
     c.execute("SELECT datetime, rule, symbol FROM coin_fires WHERE trading_symbol_id=%s", (SYM,))
     fires = c.fetchall()
+    # Handmatig ok-gemarkeerde momenten ALTIJD meenemen, ongeacht de promising-criteria.
+    # Anders mist een ok-moment dat onder PROM_REACH (3%) of vroeger-dan PROM_DIP (-0.5%) ligt
+    # een sell-resultaat in het detailscherm. Zie integrity check_sell_coverage.
+    c.execute("SELECT datetime FROM coin_moment_labels "
+              "WHERE trading_symbol_id=%s AND decision='yes' AND source='manual'", (SYM,))
+    ok_dts = {r["datetime"] for r in c.fetchall()}
 rule_at = {r["datetime"]: r["rule"] for r in fires}
 SYMBOL = fires[0]["symbol"] if fires else str(SYM)
+dt_idx = {d: i for i, d in enumerate(DT)}
 
 
 def metrics(i):
@@ -50,11 +57,15 @@ def metrics(i):
 
 
 promising = [i for i in range(n) if (lambda b, mx, dip: mx >= PROM_REACH and dip >= PROM_DIP)(*metrics(i))]
-print(f"=== sell_promising — {SYMBOL} ({SYM}): {len(promising)} promising momenten ===")
+# Voeg de ok-momenten toe die niet al in `promising` zitten (uniek + gesorteerd).
+ok_extra = sorted({dt_idx[d] for d in ok_dts if d in dt_idx} - set(promising))
+all_idx = sorted(set(promising) | set(ok_extra))
+print(f"=== sell_promising — {SYMBOL} ({SYM}): {len(promising)} promising + {len(ok_extra)} ok-extra "
+      f"= {len(all_idx)} momenten ===")
 
 if not RUN:
     print("DRY-RUN (niets geschreven). Voorbeelden:")
-    for i in promising[:5]:
+    for i in all_idx[:5]:
         buy, mx, dip = metrics(i)
         print(f"  {DT[i]}  buy={buy}  max60={mx:.2f}%  dip={dip:.2f}%  rule={rule_at.get(DT[i], DEFAULT_RULE)}")
     print("Pas --run toe om te berekenen + schrijven — NA verbetering van de sell-engine (Epic S).")
@@ -65,7 +76,7 @@ dst.autocommit(False)
 written = 0
 with dst.cursor() as c:
     c.execute("DELETE FROM coin_moment_sells WHERE trading_symbol_id=%s", (SYM,))
-    for i in promising:
+    for i in all_idx:
         buy = PX[i]
         s = sell_eng.sell(DT[i], buy, rule_at.get(DT[i], DEFAULT_RULE))
         if not s:

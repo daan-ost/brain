@@ -403,6 +403,32 @@ def check_sell_record(ctx):
                   else "Er zijn executed buys zonder geldige verkoop.", per_coin)
 
 
+def check_sell_coverage(ctx):
+    """11b. Elk handmatig ok-gemarkeerd moment (coin_moment_labels.decision='yes', source='manual')
+    moet een sell-resultaat hebben — óf in coin_fires (executed trade) óf in coin_moment_sells
+    (promising-tick run). Een ok-moment zonder sell laat het detailscherm "⏳ onze sell-winst nog
+    niet berekend" tonen. Fix = sell_promising.py <coin> --run (idempotent rebuild; pakt ook
+    ok-momenten op die buiten PROM_REACH/PROM_DIP vallen)."""
+    per_coin = {}
+    status = "ok"
+    for cid in ctx.coins:
+        r = ctx.q(
+            "SELECT COUNT(*) n_ok, "
+            "SUM(s.id IS NULL AND f.id IS NULL) missing "
+            "FROM coin_moment_labels l "
+            "LEFT JOIN coin_moment_sells s ON s.trading_symbol_id=l.trading_symbol_id AND s.datetime=l.datetime "
+            "LEFT JOIN coin_fires f ON f.trading_symbol_id=l.trading_symbol_id AND f.datetime=l.datetime AND f.is_executed=1 "
+            "WHERE l.source='manual' AND l.decision='yes' AND l.trading_symbol_id=%s", (cid,))[0]
+        d = {"ok_momenten": int(r["n_ok"] or 0), "zonder_sell": int(r["missing"] or 0)}
+        per_coin[ctx.symbol[cid]] = d
+        if d["zonder_sell"]:
+            status = "warn"
+    return Result("sell_coverage", "Sell-resultaat per ok-moment", status,
+                  "Elk ok-moment heeft een sell-resultaat." if status == "ok"
+                  else "Er zijn ok-momenten zonder sell-resultaat — draai sell_promising.py per coin.",
+                  per_coin)
+
+
 def check_recall_worklist(ctx):
     """12. De recall-worklist (promising_recall_state) moet een exacte spiegel van de huidige ok-labels
     zijn. Een rij waarvan group_lead geen ok-moment (coin_moment_labels decision='yes') meer is = een
@@ -496,6 +522,7 @@ CHECKS = [
     ("rule_settings", check_rule_settings),
     ("routine_state", check_routine_state),
     ("sell_record", check_sell_record),
+    ("sell_coverage", check_sell_coverage),
     ("recall_worklist", check_recall_worklist),
     ("volume_found_vs_live", check_volume_found_vs_live),
 ]
