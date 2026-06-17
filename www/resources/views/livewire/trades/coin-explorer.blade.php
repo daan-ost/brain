@@ -44,7 +44,7 @@
                 <table class="w-full text-sm">
                     <thead class="bg-slate-800/60 text-slate-400">
                         <tr><th class="text-left px-3 py-2">tijd</th><th class="text-left px-3 py-2">rule</th>
-                            <th class="text-left px-3 py-2">uitkomst</th><th class="text-right px-3 py-2">beste up%</th>
+                            <th class="text-left px-3 py-2">uitkomst</th><th class="text-right px-3 py-2">beste sell%</th>
                             <th class="text-right px-3 py-2">onze sell%</th><th class="text-left px-3 py-2">label</th></tr>
                     </thead>
                     <tbody>
@@ -61,7 +61,13 @@
                                         <span class="{{ $klc }}">{{ $kl }}</span>
                                     @endif
                                 </td>
-                                <td class="px-3 py-1.5 text-right font-mono {{ $sh ? 'text-slate-500' : 'text-emerald-300' }}">{{ $f->best_upside !== null ? number_format($f->best_upside, 2) : '—' }}</td>
+                                @php
+                                    // % van de beste sell binnen onze hold. Als prijs alleen daalde,
+                                    // is best_sell_price = buy_price, dus 0% (niet null).
+                                    $bestPct = ($f->best_sell_price && $f->buy_price)
+                                        ? round(($f->best_sell_price - $f->buy_price) / $f->buy_price * 100, 2) : null;
+                                @endphp
+                                <td class="px-3 py-1.5 text-right font-mono {{ $sh ? 'text-slate-500' : ($bestPct > 0 ? 'text-emerald-300' : 'text-slate-500') }}">{{ $bestPct !== null ? number_format($bestPct, 2) : '—' }}</td>
                                 <td class="px-3 py-1.5 text-right font-mono {{ $sh ? 'text-slate-500' : (($f->profit_loss ?? 0) >= 0 ? 'text-slate-300' : 'text-rose-400') }}">{{ ($f->is_executed && $f->profit_loss !== null) ? number_format($f->profit_loss, 2) : '—' }}</td>
                                 <td class="px-3 py-1.5 text-xs text-amber-300">{{ optional($annotations->get('fire:'.$f->id))->category }}</td>
                             </tr>
