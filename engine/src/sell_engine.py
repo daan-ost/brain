@@ -96,11 +96,10 @@ class SellEngine:
         return dict(stop=new_stop, selling_price=round(new_stop * MULT, R), orderstatus=orderstatus,
                     floor=floor_price, lock=lock, mult=(None if mult == "" else mult))
 
-    def sell(self, buy_dt, buy, rule, trace=False):
+    def sell(self, buy_dt, buy, rule, trace=False, hard_sell_dt=None):
         """Return dict(selling_price, selling_date, profit_loss, hi, lo, hi_price, hi_dt[, ticks]) or None.
-        hi_price/hi_dt = the best price (and its time) reachable WITHIN our hold [buy, our sell] —
-        the favorable excursion the sell-engine left on the table. trace=True adds 'ticks': the full
-        per-minute trail (one dict per tick) for storage in coin_sell_ticks / analysis."""
+        hard_sell_dt = forced-sell-by-this-moment (handmatige override): de engine verkoopt op die
+        datum (eerste tick op/na), OF eerder als een normale trigger eerst vuurt — laten lopen kan niet."""
         sl = self.sl_by_rule.get(int(rule), parse_sl(None))
         i0 = i = bisect.bisect_right(self.DT, buy_dt)
         stop_prev, hi, lo, max_price, hi_dt = None, 0.0, 0.0, buy, buy_dt
@@ -116,6 +115,9 @@ class SellEngine:
             d = self._determine_stop(buy, market, minutes, profit, hi, stop_prev, sl, i, buy_dt, max_price)
             stop, selling_price, orderstatus = d["stop"], d["selling_price"], d["orderstatus"]
             sold = orderstatus == "sell" or breach
+            hard_hit = hard_sell_dt is not None and T >= hard_sell_dt
+            if hard_hit and not sold:                           # harde verkoopdatum bereikt: forceer sell
+                sold, stop, selling_price = True, market, round(market * self.SELL_MULT, self.ROUNDING)
             if breach:                                          # prior-stop breach: sell at the trailed stop
                 stop = market if stop > market else stop_prev
                 selling_price = stop

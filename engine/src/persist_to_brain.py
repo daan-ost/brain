@@ -42,6 +42,11 @@ with dst.cursor() as c:
 SYMBOL = row["symbol"] if row else str(SYM)
 LABEL = f"promising_v2_gap{GAP}"
 
+# Snapshot vorige profit_loss voordat we de tabel legen — nodig voor de changelog.
+with dst.cursor() as c:
+    c.execute("SELECT datetime, profit_loss FROM coin_fires WHERE trading_symbol_id=%s AND is_executed=1", (SYM,))
+    prev_pl = {r["datetime"]: r["profit_loss"] for r in c.fetchall()}
+
 # ---------------- promising periods (brain) ----------------
 eng = PromisingEngine(SYM, "asc")
 periods, _, _ = scan_periods(eng, FROM, TO, GAP)
@@ -132,6 +137,19 @@ with leg.cursor() as c:
     legmap = {(r["rule"], align_legacy_dt(r["datetime"], DT)): r for r in c.fetchall()}
 leg.close()
 
+# Handmatige overrides per (trade-datetime): harde verkoopdatum + handmatige klasse-stand.
+# - hard_sell_dt: sell-engine respecteert dit (verkoop op die datum of eerder).
+# prev_pl staat al hierboven; we gebruiken het samen met de nieuwe profit voor de changelog.
+with dst.cursor() as c:
+    c.execute("SELECT datetime, hard_sell_datetime, manual_set_at, manual_klasse FROM coin_moment_labels "
+              "WHERE trading_symbol_id=%s AND source='manual'", (SYM,))
+    overrides = {r["datetime"]: r for r in c.fetchall()}
+
+
+def klasse_of(pl):
+    if pl is None: return None
+    return "slecht" if pl < 0 else ("middel" if pl < 3 else "goed")
+
 # greedy single-position dedup + our sell-engine P&L
 # next_buy_dt[i] = the datetime of the next buy on this coin (any rule), or None if last.
 # A rally after a dip+rebuy belongs to the next trade, so best_sell is capped before it.
@@ -155,11 +173,24 @@ with dst.cursor() as c:
             executed, shadow_parent, sell = 0, open_at, None
             n_shadow += 1
         else:
-            sell = sell_eng.sell(dt, buy, rule) if buy else None
+            ov = overrides.get(dt) or {}
+            hard_dt = ov.get("hard_sell_datetime")
+            sell = sell_eng.sell(dt, buy, rule, hard_sell_dt=hard_dt) if buy else None
             open_until = sell["selling_date"] if sell else dt
             open_at = dt
             executed, shadow_parent = 1, None
             n_exec += 1
+            # Log klasse-verandering door de heranalyse (slecht->goed etc.). Handmatige klasse
+            # is leidend — die overschrijft de berekende, dus alleen de berekende loggen we hier.
+            new_pl = sell["profit_loss"] if sell else None
+            old_pl = float(prev_pl[dt]) if dt in prev_pl and prev_pl[dt] is not None else None
+            old_k, new_k = klasse_of(old_pl), klasse_of(new_pl)
+            if old_k is not None and new_k is not None and old_k != new_k:
+                with dst.cursor() as cc:
+                    cc.execute("INSERT INTO coin_fires_changelog (trading_symbol_id, symbol, datetime, "
+                               "field, old_value, new_value, reason, created_at, updated_at) "
+                               "VALUES (%s,%s,%s,'klasse',%s,%s,'sell-engine-rerun',NOW(),NOW())",
+                               (SYM, SYMBOL, dt, old_k, new_k))
 
         # best_sell = highest price reachable for THIS trade, capped before the next buy (so a
         # post-rebuy rally is not credited to us). May lie AFTER our own selling_date.

@@ -62,6 +62,8 @@ class PromisingLabeler extends Component
     public ?string $selKey = null;              // 'Y-m-d H:i:s' van het geselecteerde moment
     public string $decision = '';
     public string $klasse = '';
+    public string $bestSell = '';            // override beste-sell-datum ('Y-m-d H:i:s', leeg = berekend)
+    public string $hardSell = '';            // harde verkoopdatum (sell-engine respecteert dit)
     public string $category = '';
     public string $comment = '';
 
@@ -164,11 +166,16 @@ class PromisingLabeler extends Component
         $this->klasse = $l?->manual_klasse ?? '';
         $this->category = $l?->category ?? '';
         $this->comment = $l?->comment ?? '';
+        // beste-sell + harde-sell als 'Y-m-d H:i:s' voor de datetime-local input
+        $bs = $l?->best_sell_datetime;
+        $hs = $l?->hard_sell_datetime;
+        $this->bestSell = $bs ? Carbon::parse($bs)->format('Y-m-d\TH:i:s') : '';
+        $this->hardSell = $hs ? Carbon::parse($hs)->format('Y-m-d\TH:i:s') : '';
     }
 
     public function closeDetail(): void
     {
-        $this->reset(['selKey', 'decision', 'klasse', 'category', 'comment']);
+        $this->reset(['selKey', 'decision', 'klasse', 'category', 'comment', 'bestSell', 'hardSell']);
     }
 
     public function navDetail(int $dir): void
@@ -182,11 +189,15 @@ class PromisingLabeler extends Component
     public function saveLabel(): void
     {
         if (! $this->selKey) return;
+        $parseDt = fn (string $s) => $s ? Carbon::parse(str_replace('T', ' ', $s)) : null;
         CoinMomentLabel::setManual($this->coin, null, Carbon::parse($this->selKey), [
             'decision' => $this->decision ?: null,
             'manual_klasse' => $this->klasse ?: null,
             'category' => $this->category ?: null,
             'comment' => $this->comment ?: null,
+            'best_sell_datetime' => $parseDt($this->bestSell),
+            'hard_sell_datetime' => $parseDt($this->hardSell),
+            'manual_set_at' => now(),
         ], auth()->user()?->email);
         $this->momentMemo = $this->momentMemoKey = null;
         $this->dispatch('label-saved');
@@ -456,7 +467,7 @@ class PromisingLabeler extends Component
 
         $markers = ['buy' => $when->getTimestampMs()];
         if ($fire?->selling_datetime) $markers['sell'] = $fire->selling_datetime->getTimestampMs();
-        if ($fire?->best_sell_datetime) $markers['bestsell'] = $fire->best_sell_datetime->getTimestampMs();
+        // marker zet de beste-sell-lijn op de met-voorrang gekozen datum (handmatig > legacy > berekend)
         foreach (self::HORIZONS as $h) {
             $markers["h{$h}"] = $m['hz'][$h]['peak_at']->getTimestampMs();
         }
@@ -470,6 +481,19 @@ class PromisingLabeler extends Component
 
         $legacyLabel = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'legacy')
             ->where('datetime', $when)->value('manual_klasse');
+        // beste-sell-datum met voorrang: handmatig (manual_set_at IS NOT NULL) > legacy (source=legacy) > berekend (coin_fires)
+        $manualLabel = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'manual')
+            ->where('datetime', $when)->first();
+        $legacyRow = CoinMomentLabel::where('trading_symbol_id', $this->coin)->where('source', 'legacy')
+            ->where('datetime', $when)->first();
+        $bestSellDt = $manualLabel?->best_sell_datetime ?? $legacyRow?->best_sell_datetime ?? $fire?->best_sell_datetime;
+        $bestSellSrc = $manualLabel?->best_sell_datetime
+            ? 'handmatig' : ($legacyRow?->best_sell_datetime ? 'legacy' : ($fire?->best_sell_datetime ? 'berekend' : null));
+        $bestSellPct = $bestSellDt && $buy
+            ? ($this->priceAt($bestSellDt) ? round(($this->priceAt($bestSellDt) - $buy) / $buy * 100, 2) : null) : null;
+        // changelog (klasse-veranderingen door heranalyse)
+        $changes = \DB::table('coin_fires_changelog')->where('trading_symbol_id', $this->coin)
+            ->where('datetime', $when)->orderByDesc('id')->limit(5)->get()->all();
 
         // groep waar dit moment bij hoort (zelfde stijging) — toont de andere instapmomenten + hun labels
         $gd = $this->dayMoments();
@@ -495,23 +519,46 @@ class PromisingLabeler extends Component
             'promising' => self::isPromising(...self::promInputs($m)),
             'legacy_klasse' => $legacyLabel,
             'price' => $this->priceBetween($from, $to),
-            'markers' => $markers,
+            'markers' => array_merge($markers, array_filter([
+                'bestsell' => $bestSellDt ? Carbon::parse($bestSellDt)->getTimestampMs() : null,
+                'hardsell' => $manualLabel?->hard_sell_datetime?->getTimestampMs(),
+            ])),
             'horizons' => collect(self::HORIZONS)->map(fn ($h) => [
                 'h' => $h, 'val' => $m['hz'][$h]['val'], 'peak_at' => $this->localFmt($m['hz'][$h]['peak_at']),
             ])->all(),
             // sell-engine nog niet gedraaid voor dit (promising) moment? -> toon een nette melding
             'sell_pending' => $pl === null && self::isPromising(...self::promInputs($m)),
+            'best_sell' => $bestSellDt ? [
+                'datetime' => $this->localFmt($bestSellDt),
+                'pct' => $bestSellPct,
+                'source' => $bestSellSrc,
+            ] : null,
+            'hard_sell' => $manualLabel?->hard_sell_datetime ? $this->localFmt($manualLabel->hard_sell_datetime) : null,
+            'changes' => array_map(fn ($r) => [
+                'when' => Carbon::parse($r->created_at)->format('Y-m-d H:i'),
+                'field' => $r->field, 'from' => $r->old_value, 'to' => $r->new_value, 'reason' => $r->reason,
+            ], $changes),
+            'manual_klasse_set' => (bool) $manualLabel?->manual_klasse,    // handmatige klasse leidend?
             'stats' => array_filter([
-                'beste upside % (60m)' => $m['max'],
-                'vroege dip %' => $m['low10'],
                 'aankoopprijs' => $buy,
                 'onze sell-winst %' => $pl,
                 'sell exit' => $sell ? $this->localFmt($sell->selling_datetime) : null,
                 'sell hoogste %' => $sell?->hi_pl,
                 'sell laagste %' => $sell?->lo_pl,
+                'vroege dip %' => $m['low10'],
                 'legacy P&L' => $fire?->legacy_profit_loss,
             ], fn ($v) => $v !== null && $v !== ''),
         ];
+    }
+
+    /** Prijs op exact één tick — voor het % bij de beste-sell-datum. */
+    private function priceAt(\DateTimeInterface $dt): ?float
+    {
+        [$dts, $px] = $this->series();
+        foreach ($dts as $idx => $d) {
+            if ($d->eq(Carbon::parse($dt))) return (float) $px[$idx];
+        }
+        return null;
     }
 
     public function render()

@@ -173,6 +173,23 @@
                         @endforeach
                     </div>
 
+                    @if ($detail['best_sell'])
+                        <div class="mb-3 flex items-center gap-2 text-sm border-b border-slate-800/60 pb-2">
+                            <span class="text-slate-400">beste sell</span>
+                            <span class="font-mono text-purple-300">{{ $detail['best_sell']['datetime'] }}</span>
+                            @if ($detail['best_sell']['pct'] !== null)
+                                <span class="font-mono {{ $detail['best_sell']['pct'] >= 0 ? 'text-emerald-400' : 'text-rose-400' }}">
+                                    {{ $detail['best_sell']['pct'] >= 0 ? '+' : '' }}{{ $detail['best_sell']['pct'] }}%
+                                </span>
+                            @endif
+                            <span class="ml-auto text-xs px-2 py-0.5 rounded-full
+                                {{ $detail['best_sell']['source'] === 'handmatig' ? 'bg-amber-600/30 text-amber-300' :
+                                   ($detail['best_sell']['source'] === 'legacy' ? 'bg-sky-700/30 text-sky-300' : 'bg-slate-700/40 text-slate-400') }}">
+                                bron: {{ $detail['best_sell']['source'] }}
+                            </span>
+                        </div>
+                    @endif
+
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-sm mb-4">
                         @foreach ($detail['stats'] as $k => $v)
                             <div class="flex justify-between border-b border-slate-800/60 py-0.5">
@@ -181,6 +198,22 @@
                             </div>
                         @endforeach
                     </div>
+
+                    @if (! empty($detail['changes']))
+                        <div class="mb-4 text-xs">
+                            <div class="text-slate-400 mb-1">Heranalyse-log:</div>
+                            <ul class="space-y-0.5">
+                                @foreach ($detail['changes'] as $ch)
+                                    <li class="font-mono text-slate-300">
+                                        <span class="text-slate-500">{{ $ch['when'] }}</span> ·
+                                        {{ $ch['field'] }}: <span class="text-rose-400">{{ $ch['from'] }}</span> →
+                                        <span class="text-emerald-400">{{ $ch['to'] }}</span>
+                                        <span class="text-slate-500">({{ $ch['reason'] }})</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
 
                     @if ($detail['sell_pending'])
                         <div class="text-xs text-slate-500 mb-4">⏳ onze sell-winst nog niet berekend voor dit moment — de sell-engine draait pas over alle promising momenten na verbetering (Epic S).</div>
@@ -255,10 +288,30 @@
                         </div>
                         <textarea wire:model="comment" rows="2" placeholder="opmerking (optioneel)"
                                   class="w-full bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200 placeholder-slate-500 resize-none"></textarea>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-500 mb-0.5">beste sell-datum overschrijven</span>
+                                <input type="datetime-local" step="1" wire:model="bestSell"
+                                       class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200" />
+                                <span class="text-[10px] text-slate-500 mt-0.5">leeg = berekend gebruiken</span>
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-500 mb-0.5">harde verkoopdatum (sell-engine)</span>
+                                <input type="datetime-local" step="1" wire:model="hardSell"
+                                       class="bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200" />
+                                <span class="text-[10px] text-slate-500 mt-0.5">verkoop uiterlijk op deze datum (of eerder bij een drop)</span>
+                            </div>
+                        </div>
+
+                        @if ($detail['manual_klasse_set'])
+                            <div class="text-xs text-amber-300">⚠ handmatige kwaliteit is leidend — heranalyse overschrijft dit niet.</div>
+                        @endif
+
                         <div class="flex items-center gap-3">
                             <button wire:click="saveLabel" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">Opslaan</button>
                             <span x-data="flashMsg()" x-show="shown" x-on:label-saved.window="flash()" class="text-xs text-emerald-400">opgeslagen ✓</span>
-                            <span class="text-xs text-slate-500">leeg + opslaan = label intrekken</span>
+                            <span class="text-xs text-slate-500">alles leeg + opslaan = label intrekken</span>
                         </div>
                     </div>
                 </div>
@@ -338,6 +391,7 @@ function zoomChart(d) {
             if (m.buy) ann.buy = line(m.buy, 'rgba(56,189,248,0.95)', 'koop');
             if (m.sell) ann.sell = line(m.sell, 'rgba(244,63,94,0.95)', 'onze sell');
             if (m.bestsell) ann.bestsell = line(m.bestsell, 'rgba(168,85,247,0.95)', 'beste sell', 'end');
+            if (m.hardsell) ann.hardsell = line(m.hardsell, 'rgba(220,38,38,0.95)', 'harde verkoop', 'end');
             if (m.peak) ann.peak = line(m.peak, 'rgba(251,191,36,0.95)', 'piek', 'end');
             ['h5','h10','h15','h30','h45','h60'].forEach((k) => {
                 if (m[k]) ann[k] = { type: 'line', xMin: m[k], xMax: m[k], borderColor: 'rgba(148,163,184,0.3)', borderWidth: 1, borderDash: [2, 2] };

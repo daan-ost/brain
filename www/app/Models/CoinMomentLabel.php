@@ -23,6 +23,9 @@ class CoinMomentLabel extends Model
     protected $casts = [
         'datetime' => 'datetime',
         'set_at' => 'datetime',
+        'manual_set_at' => 'datetime',
+        'best_sell_datetime' => 'datetime',
+        'hard_sell_datetime' => 'datetime',
     ];
 
     public const DECISIONS = ['yes', 'no', 'no_volume'];
@@ -93,7 +96,8 @@ class CoinMomentLabel extends Model
     {
         $key = ['trading_symbol_id' => $coin, 'datetime' => $dt, 'rule' => self::MOMENT_RULE, 'source' => 'manual'];
         $hasAny = ($fields['decision'] ?? null) || ($fields['manual_klasse'] ?? null)
-            || ($fields['category'] ?? null) || trim((string) ($fields['comment'] ?? ''));
+            || ($fields['category'] ?? null) || trim((string) ($fields['comment'] ?? ''))
+            || ($fields['best_sell_datetime'] ?? null) || ($fields['hard_sell_datetime'] ?? null);
         if (! $hasAny) {
             static::query()->where($key)->delete();   // intrekken i.p.v. een lege rij
             return null;
