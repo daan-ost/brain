@@ -94,4 +94,19 @@ def rule_engine_101(DT, PX, VV, i, buy_dt, buy, market, subrules, max_price_sinc
                 stoploss = 1.1
                 orderstatus = "overrule"
 
+        # --- D: peak_reversal (exit when trade drops too far from its peak, within a time window) ---
+        elif name == "peak_reversal":
+            max_min = float(sr["def1_value"]) if sr["def1_value"] else 60
+            minutes_in = (DT[i] - buy_dt).total_seconds() / 60.0
+            if minutes_in > max_min:
+                continue
+            peak_min = float(sr["b_min"]) if sr["b_min"] is not None else 0.5
+            drop_thr = float(sr["b_max"]) if sr["b_max"] is not None else 1.0
+            hi_pct = calc_percentage(buy, max_price_since_buy)
+            cur_pct = calc_percentage(buy, market)
+            if hi_pct >= peak_min and (hi_pct - cur_pct) >= drop_thr:
+                vc = float(sr["value_condition"]) if sr["value_condition"] else 0.999
+                orderstatus = "sell"
+                raise_stop(vc)
+
     return orderstatus, ("" if stoploss is None else stoploss)

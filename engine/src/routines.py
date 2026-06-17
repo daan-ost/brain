@@ -232,6 +232,24 @@ def routine_buy_tuning(j):
     return f"buy-tuning · {summary}"
 
 
+def routine_sell_discovery(j):
+    """SELL-DISCOVERY: zoek verbeteringen in rule-101 subrule-parameters (previous_value b_min,
+    sell_negative_volume vc) en pas de beste veilige wijziging toe. Muteert brain.rules (niet
+    coin_strategies) en refired alle coins. Alleen muterend met --apply."""
+    import sell_discovery
+    import sell_discovery_apply
+    report = sell_discovery.measure(write_json=True, verbose=False)
+    safe = [p for p in report["proposals"] if p["combined_verdict"] == "SAFE"]
+    j.add(f"Sell-discovery gemeten: {len(safe)} veilige voorstellen · {len(report['proposals'])} doorgerekend.",
+          level="result", data={"safe": len(safe), "report_path": report.get("report_path")})
+    summary = sell_discovery_apply.apply_safe(
+        lambda m, level="change", rule=None, data=None: j.add(m, level, rule, data),
+        apply=APPLY, report=report)
+    if not APPLY:
+        j.add("Auto-apply: uit (geen --apply) — rule-101 wijzigingen alleen voorgesteld, niets gewijzigd.", level="info")
+    return f"sell-discovery · {summary}"
+
+
 def routine_sell_tuning(j):
     """SELL-TUNING: meet read-only per (munt, regel) of een andere instelknop betere verkopen geeft
     (holdout leidend, meetlat netto Σprofit) en PAS de veilige voorstellen toe achter de echte
@@ -303,12 +321,22 @@ REGISTRY_BUY = [
     ("buy-tuning", routine_buy_tuning),
 ]
 
+# A SIXTH set: sell-discovery. Zoekt verbeteringen in rule-101 subrule-parameters (b_min, vc) en past
+# de beste veilige wijziging toe (muteert brain.rules, refired alle coins). Uses the sell fingerprint
+# (includes rules + trades + overrides) — a rule-101 change or new trades re-trigger the discovery.
+SELL_DISC_SET_KEY = "sell-discovery"
+SELL_DISC_SET_NAME = "Sell-discovery — rule-101 structuur-verbetering"
+REGISTRY_SELL_DISC = [
+    ("sell-discovery", routine_sell_discovery),
+]
+
 SETS = {
     SET_KEY: (SET_NAME, REGISTRY, True),                 # gated by the data-changed fingerprint
     INTEGRITY_SET_KEY: (INTEGRITY_SET_NAME, REGISTRY_INTEGRITY, False),
     RECALL_SET_KEY: (RECALL_SET_NAME, REGISTRY_RECALL, True),   # gated; fingerprint includes ok-labels
     SELL_SET_KEY: (SELL_SET_NAME, REGISTRY_SELL, True),        # gated; fingerprint includes sell knobs + overrides
     BUY_SET_KEY: (BUY_SET_NAME, REGISTRY_BUY, True),          # gated; fingerprint includes rules + trades
+    SELL_DISC_SET_KEY: (SELL_DISC_SET_NAME, REGISTRY_SELL_DISC, True),  # gated; fingerprint includes rules + trades
 }
 
 
@@ -354,7 +382,7 @@ def main():
     set_name, registry, gated = SETS[set_key]
 
     fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY),   # recall fires on new ok-labels too
-                           with_sell=(set_key in (SELL_SET_KEY, BUY_SET_KEY)))  # sell/buy-tuning fire on knob/rule/trade changes
+                           with_sell=(set_key in (SELL_SET_KEY, BUY_SET_KEY, SELL_DISC_SET_KEY)))  # sell/buy/discovery fire on knob/rule/trade changes
     if gated:
         # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
         prev = _state(conn, set_key)
