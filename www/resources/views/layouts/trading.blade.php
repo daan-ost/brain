@@ -29,6 +29,11 @@
                       {{ request()->routeIs('trades.index') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
                 <span class="w-2 h-2 rounded-full {{ request()->routeIs('trades.index') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Trades
             </a>
+            <a href="{{ route('coins.ranking') }}"
+               class="flex items-center gap-3 rounded-lg px-3 py-2 transition
+                      {{ request()->routeIs('coins.*') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">
+                <span class="w-2 h-2 rounded-full {{ request()->routeIs('coins.*') ? 'bg-emerald-400' : 'bg-gray-600' }}"></span> Munten
+            </a>
             <a href="{{ route('trades.explorer') }}"
                class="flex items-center gap-3 rounded-lg px-3 py-2 transition
                       {{ request()->routeIs('trades.explorer') ? 'bg-emerald-500/10 text-white border-l-2 border-emerald-400' : 'hover:bg-white/5 hover:text-white' }}">

@@ -319,6 +319,8 @@ Route::middleware(['auth', 'two_factor'])->group(function () {
     // TRADING (admin) — trades overview + faithful rule-engine replay
     // -------------------------------------------------------------------------
     Route::get('/trades', \App\Livewire\Trades\Index::class)->name('trades.index');
+    Route::get('/coins', \App\Livewire\Coins\Ranking::class)->name('coins.ranking');
+    Route::get('/coins/mexc', \App\Livewire\Coins\MexcScan::class)->name('coins.mexc');
     Route::get('/coin-explorer', \App\Livewire\Trades\CoinExplorer::class)->name('trades.explorer');
     Route::get('/promising-labeler', \App\Livewire\Trades\PromisingLabeler::class)->name('trades.labeler');
     Route::get('/routines', \App\Livewire\Routines\Index::class)->name('routines.index');

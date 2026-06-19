@@ -271,6 +271,42 @@ def routine_sell_tuning(j):
     return f"sell-tuning · {summary}"
 
 
+def routine_mexc_scan(j):
+    """MEXC-SCAN: scan de hele MEXC-spotmarkt op volatiele, handelbare USDT-kandidaten; schrijf
+    snapshot naar mexc_market_scan. Read-only ontdekking — muteert nooit rules/trades/bot_signals.
+    Niet gegated: draait elke dag (de markt verandert dagelijks, los van engine-data)."""
+    import mexc_scan
+    res = mexc_scan.run(verbose=False)
+    j.add(f"MEXC-scan: {res['fetched']} paren opgehaald, {res['written']} geschreven, "
+          f"{res['kept']} kandidaten (mcap>10M & vol>100k & age>=7d). "
+          f"mcap-dekking: {res['with_mcap']}/{res['fetched']}.",
+          level="result", data=res)
+    for c in res.get("top", [])[:5]:
+        j.add(f"  {c['symbol']}: volat {c['volat_pct']:.1f}% | "
+              f"24u-vol ${c['vol24h_usd']:,.0f} | "
+              f"mcap ${c.get('mcap_usd', 0):,.0f} | "
+              f"{c.get('age_days', '?')}d ({c.get('age_source', '?')})",
+              level="finding")
+    return f"mexc-scan | {res['fetched']} paren | {res['kept']} kandidaten"
+
+
+def routine_coin_metrics(j):
+    """COIN-METRICS: meet read-only per (munt, dag) de KANSRIJK-score (up_pct = % momenten met >=3%
+    stijging binnen 60 min) + beweeglijkheid (vol_pct) + liquiditeit (n_ticks), en schrijf naar
+    coin_daily_metrics. Geeft de actuele kansrijkheid-ranking (coins gesorteerd op laatste up_7d) in
+    het journaal. Muteert NOOIT rules/trades — alleen de metrics-tabel. Niet gegated: draait elke dag,
+    ook zonder nieuwe trades."""
+    import coin_metrics
+    res = coin_metrics.run(force=False, verbose=False)
+    rank = " > ".join(f"{r['sym']} ({r['up_7d']:.0f}%)" for r in res["ranking"])
+    j.add(f"Coin-metrics bijgewerkt: {res['days_added']} dagen voor {res['coins']} coin(s). "
+          f"Kansrijkheid-ranking (up_7d): {rank}", level="result", data=res)
+    for i, r in enumerate(res["ranking"], 1):
+        j.add(f"  #{i} coin {r['sym']}: kansrijk={r['up_7d']:.1f}% · beweeglijkheid={r['vol_7d']:.2f} · "
+              f"ticks={r['n_ticks']} ({r['date']})", level="finding")
+    return f"coin-metrics · {res['days_added']} dagen · {res['coins']} coins"
+
+
 # A SET is a named chain of routines with a shared goal. This set = eliminate existing bad trades
 # from the rules (tighten existing rules now; outlier-split into new rules = 2b, coming). Append
 # routines below; they run after each other in one journaled run, under this set's name.
@@ -330,6 +366,21 @@ REGISTRY_SELL_DISC = [
     ("sell-discovery", routine_sell_discovery),
 ]
 
+# A SEVENTH set: coin-metrics. Meet per (munt,dag) de kansrijkheid (up_pct) + beweeglijkheid + liquiditeit
+# en houdt de cross-coin ranking bij. Read-only meet-fundament voor coin-rotatie. NIET gegated — moet elke
+# dag draaien, ook zonder nieuwe trades (de prijsdata verandert dagelijks, los van trades).
+MEXC_SET_KEY = "mexc-scan"
+MEXC_SET_NAME = "MEXC-markt — volatiele kandidaten (dagelijks)"
+REGISTRY_MEXC = [
+    ("mexc-scan", routine_mexc_scan),
+]
+
+VOL_SET_KEY = "coin-metrics"
+VOL_SET_NAME = "Coin-metrics — kansrijkheid per munt meten + ranken"
+REGISTRY_VOL = [
+    ("coin-metrics", routine_coin_metrics),
+]
+
 SETS = {
     SET_KEY: (SET_NAME, REGISTRY, True),                 # gated by the data-changed fingerprint
     INTEGRITY_SET_KEY: (INTEGRITY_SET_NAME, REGISTRY_INTEGRITY, False),
@@ -337,6 +388,8 @@ SETS = {
     SELL_SET_KEY: (SELL_SET_NAME, REGISTRY_SELL, True),        # gated; fingerprint includes sell knobs + overrides
     BUY_SET_KEY: (BUY_SET_NAME, REGISTRY_BUY, True),          # gated; fingerprint includes rules + trades
     SELL_DISC_SET_KEY: (SELL_DISC_SET_NAME, REGISTRY_SELL_DISC, True),  # gated; fingerprint includes rules + trades
+    VOL_SET_KEY: (VOL_SET_NAME, REGISTRY_VOL, False),         # NIET gegated — draait elke dag
+    MEXC_SET_KEY: (MEXC_SET_NAME, REGISTRY_MEXC, False),     # NIET gegated — draait elke dag
 }
 
 
@@ -383,16 +436,16 @@ def main():
 
     fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY),   # recall fires on new ok-labels too
                            with_sell=(set_key in (SELL_SET_KEY, BUY_SET_KEY, SELL_DISC_SET_KEY)))  # sell/buy/discovery fire on knob/rule/trade changes
+    prev = _state(conn, set_key)            # huidige opgeslagen fingerprint (nodig voor de retry-na-fail logica)
     if gated:
         # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
-        prev = _state(conn, set_key)
         if prev and prev["fingerprint"] == fp and not FORCE:
             _save_state(conn, set_key, fp, now, None, "geen wijziging — overgeslagen")
             conn.close()
             print(f"[{run_date}] geen data- of rule-wijziging sinds laatste run — overgeslagen (gebruik --force om toch te draaien).")
             return
     else:
-        # CONCURRENCY GUARD (integrity): never run alongside another active routine — we saw a 1412 +
+        # CONCURRENCY GUARD (integrity): never run alongside ANY other active routine — we saw a 1412 +
         # snapshot-drift when the integrity checks/cache-fix overlapped the hourly rule chain.
         active = _active_recent_run(conn)
         if active and not FORCE:
@@ -401,6 +454,19 @@ def main():
             print(f"[{run_date}] andere routine actief (run #{active['id']}, set {active['set_key']}) — "
                   f"data-integriteit overgeslagen (gebruik --force om toch te draaien).")
             return
+
+    # MUTEX: één run per set tegelijk. MySQL user-level lock is per-connectie → atomair, geen TOCTOU.
+    # conn.close() in de finally hieronder releaest de lock automatisch (MySQL-garantie).
+    lock_name = f"routine:{set_key}"
+    with conn.cursor() as c:
+        c.execute("SELECT GET_LOCK(%s, 0) got", (lock_name,))
+        lock_acquired = bool(c.fetchone()["got"])
+    if not lock_acquired:
+        outcome = f"overgeslagen — andere {set_key}-run actief (lock)"
+        _save_state(conn, set_key, prev["fingerprint"] if prev else fp, now, None, outcome)
+        conn.close()
+        print(f"[{run_date}] andere {set_key}-run actief (lock) — overgeslagen.")
+        return
 
     with conn.cursor() as c:
         c.execute("INSERT INTO routine_runs (set_key, set_name, run_date, started_at, status, `trigger`, "
@@ -417,7 +483,9 @@ def main():
             j = Journal(key)
             try:
                 summary = fn(j)
-            except Exception as e:  # one routine failing must not lose the journal
+            except (Exception, SystemExit) as e:  # one routine failing must not lose the journal.
+                # SystemExit (geen Exception-subclass!) komt uit de refire-helpers en opt.run; zonder
+                # deze vangst ontsnapt die crash en wordt de run alsnog als 'success' gejournald.
                 j.add(f"FOUT in routine {key}: {e}", level="error")
                 summary = f"FOUT: {e}"
                 status = "failed"
@@ -441,7 +509,11 @@ def main():
         conn.commit()
         # store the START fingerprint of this executed run: if a routine changed the rules, the next
         # run's fingerprint differs (→ re-runs, compounding); if nothing changed, it matches (→ skips).
-        _save_state(conn, set_key, fp, end, end, " | ".join(summaries)[:160])
+        # ALLEEN bij succes: een gefaalde run mag de fingerprint NIET als 'verwerkt' opslaan, anders
+        # skipt de volgende run (zelfde data → zelfde fp) de retry. Bij falen schrijven we een sentinel
+        # die nooit gelijk is aan een echte (md5-)fingerprint → de gate ziet een verschil → retry.
+        saved_fp = fp if status == "success" else "retry-after-fail"
+        _save_state(conn, set_key, saved_fp, end, end, " | ".join(summaries)[:160])
         conn.close()
 
     print(f"routine-run #{run_id} [{status}] {run_date}")

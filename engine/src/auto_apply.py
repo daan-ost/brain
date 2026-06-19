@@ -96,7 +96,22 @@ def apply_safe(emit):
         bnd = "≥" if cand["bound"] == "lower" else "≤"
         label = f"{cand['indicator']}/{cand['calc']}/lb{cand['lookback']} {bnd} {round(cand['threshold'], 5)}"
         sid = _insert(cand)
-        _refire()
+        try:
+            _refire()
+        except SystemExit as _e:
+            # Subrule is in DB maar refire mislukt — verwijder subrule en probeer te refire
+            emit(f"KRITIEK: refire mislukte na insert ({_e}) — subrule terugdraaien.", "error", rule,
+                 {"candidate": cand})
+            _delete(sid)
+            try:
+                _refire()
+            except SystemExit as _e2:
+                emit(f"KRITIEK: ook revert-refire mislukte ({_e2}). Subrule verwijderd uit DB "
+                     f"maar coin_fires mogelijk inconsistent. Handmatig: persist_to_brain.py.",
+                     "error", rule, {"candidate": cand})
+            rejected += 1
+            continue
+
         now_good, now_slecht, now_per = _totals()
         slecht_before = base_per.get(rule, (0, 0))[1]
         slecht_after = now_per.get(rule, (0, 0))[1]
@@ -111,7 +126,12 @@ def apply_safe(emit):
             applied.append((rule, cand, slecht_before, slecht_after))
         else:
             _delete(sid)
-            _refire()
+            try:
+                _refire()
+            except SystemExit as _e:
+                emit(f"KRITIEK: revert-refire mislukte ({_e}). Subrule verwijderd uit DB maar "
+                     f"coin_fires mogelijk inconsistent. Handmatig: persist_to_brain.py.",
+                     "error", rule, {"candidate": cand})
             reason = (f"zou {base_good - now_good} goede trade(s) verliezen" if now_good < base_good
                       else "totaal slechte trades daalt niet (dedup verschuift evenveel bad)")
             emit(f"rule {rule}: kandidaat {label} AFGEWEZEN door engine-refire — {reason}. Teruggedraaid.",

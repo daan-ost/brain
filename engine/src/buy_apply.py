@@ -139,11 +139,33 @@ def apply_safe(emit, apply=False, report=None, conn=None):
         base_sig, base_ver, _ = combined_totals(conn)
         prev_bmin = read_bmin(conn, rule)
         write_bmin(conn, rule, p["to"])
-        refire_all(reason)
+
+        try:
+            refire_all(reason)
+        except SystemExit as _e:
+            # Forward-refire mislukt — b_min terug, dan refire opnieuw proberen
+            emit(f"KRITIEK: refire mislukte na b_min-schrijven ({_e}) — zet b_min terug.", "error", rule, None)
+            write_bmin(conn, rule, prev_bmin)
+            try:
+                refire_all(f"{reason}-revert-na-forward-fail")
+            except SystemExit as _e2:
+                emit(f"KRITIEK: ook revert-refire mislukte ({_e2}). b_min in DB staat op {prev_bmin} "
+                     f"maar coin_fires mogelijk half-hersteld. Handmatig: persist_to_brain.py.",
+                     "error", rule, None)
+            rejected.append((rule, p))
+            continue
 
         for sym in COINS:
             if manual_count(conn, sym) != man0[sym]:
-                raise SystemExit("FATALE FOUT: aantal handmatige overrides veranderde door de refire — afgebroken.")
+                # Overrides veranderd — revert vóór afbreken zodat de state schoon is
+                write_bmin(conn, rule, prev_bmin)
+                try:
+                    refire_all(f"{reason}-revert-na-manual-change")
+                except SystemExit as _e:
+                    emit(f"KRITIEK: revert-refire na manual-change mislukte ({_e}).", "error", rule, None)
+                raise SystemExit(
+                    f"FATALE FOUT: handmatige overrides veranderd door refire (coin {sym}) — "
+                    f"b_min teruggezet naar {prev_bmin}, afgebroken.")
 
         new_sig, new_ver, _ = combined_totals(conn)
 
@@ -157,7 +179,12 @@ def apply_safe(emit, apply=False, report=None, conn=None):
             applied.append((rule, p, base_sig, new_sig, base_ver, new_ver))
         else:
             write_bmin(conn, rule, prev_bmin)
-            refire_all(f"{reason}-revert")
+            try:
+                refire_all(f"{reason}-revert")
+            except SystemExit as _e:
+                emit(f"KRITIEK: revert-refire mislukte ({_e}). b_min staat op {prev_bmin} (DB correct) "
+                     f"maar coin_fires mogelijk half-hersteld. Handmatig: persist_to_brain.py.",
+                     "error", rule, None)
             why = "Σprofit zou dalen" if new_sig < base_sig - 1e-6 else "verliezers zouden stijgen"
             emit(f"{head} → AFGEWEZEN op echte herreken-poort ({why}): Σprofit {base_sig:+.1f}%→{new_sig:+.1f}%, "
                  f"verliezers {base_ver}→{new_ver}. Teruggedraaid.", "info", rule, {"proposal": p})
