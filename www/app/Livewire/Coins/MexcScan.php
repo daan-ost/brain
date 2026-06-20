@@ -3,6 +3,7 @@
 namespace App\Livewire\Coins;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -18,10 +19,30 @@ class MexcScan extends Component
     public int $mcapMin = 10_000_000;
     public int $minVol24h = 100_000;
     public bool $hideUnder7d = true;
+    public ?string $error = null;
 
     public function mount(): void
     {
         abort_unless(auth()->user()?->is_admin, 403);
+    }
+
+    /**
+     * Verse marktscan draaien (MEXC + CoinGecko) en de snapshot atomair herschrijven.
+     * Synchroon — duurt ~30-90s; daarna re-rendert de pagina met de nieuwe data.
+     */
+    public function scanNow(): void
+    {
+        abort_unless(auth()->user()?->is_admin, 403);
+
+        $this->error = null;
+        set_time_limit(0); // scan duurt ~20-90s; voorkom PHP max_execution_time-afbreking
+        $engine = realpath(base_path('../engine'));
+        $result = Process::path($engine.'/src')->timeout(300)->run([
+            $engine.'/.venv/bin/python', 'mexc_scan.py',
+        ]);
+        if (! $result->successful()) {
+            $this->error = 'Scan mislukt: '.trim($result->errorOutput() ?: $result->output());
+        }
     }
 
     private function coins(): array

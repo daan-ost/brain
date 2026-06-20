@@ -1,9 +1,31 @@
 <div class="max-w-7xl mx-auto space-y-6">
 
-    <div>
-        <h1 class="text-2xl font-semibold text-gray-900">Munten</h1>
-        <p class="text-sm text-gray-500">Volatiele MEXC-kandidaten voor rotatie — gesorteerd op 24u-volatiliteit.</p>
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-semibold text-gray-900">Munten</h1>
+            <p class="text-sm text-gray-500">Volatiele MEXC-kandidaten voor rotatie — gesorteerd op 24u-volatiliteit.</p>
+        </div>
+        <button wire:click="scanNow" wire:loading.attr="disabled" wire:target="scanNow"
+                class="shrink-0 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg
+                       bg-emerald-600 text-white hover:bg-emerald-700 transition
+                       disabled:opacity-60 disabled:cursor-not-allowed">
+            <svg wire:loading.remove wire:target="scanNow" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            <svg wire:loading wire:target="scanNow" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span wire:loading.remove wire:target="scanNow">Nu verversen</span>
+            <span wire:loading wire:target="scanNow">Bezig met scannen…</span>
+        </button>
     </div>
+
+    @if ($error)
+        <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+            {{ $error }}
+        </div>
+    @endif
 
     {{-- Tab-balk --}}
     <div class="flex gap-1 border-b border-gray-200">
