@@ -35,13 +35,14 @@
             <button wire:click="step(1)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm">dag ›</button>
         </div>
 
-        <select wire:model.live="view" class="bg-slate-800 border-slate-700 rounded-lg text-sm py-1.5" title="filter">
-            <option value="promising">alleen promising</option>
-            <option value="all">alle momenten</option>
-            <option value="trades">alleen trades</option>
-            <option value="executed">alleen uitgevoerd</option>
-            <option value="verificatie">✓ verificatie (auto-ok)</option>
-        </select>
+        <div class="inline-flex rounded-lg border border-slate-700 overflow-hidden" title="weergave">
+            @foreach (['promising' => 'promising', 'all' => 'alle', 'trades' => 'trades', 'executed' => 'uitgevoerd'] as $v => $lbl)
+                <button wire:click="$set('view', '{{ $v }}')"
+                        class="px-3 py-1.5 text-sm transition border-r border-slate-700 {{ $view === $v ? 'bg-sky-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700' }}">{{ $lbl }}</button>
+            @endforeach
+            <button wire:click="$set('view', 'verificatie')"
+                    class="px-3 py-1.5 text-sm font-medium transition {{ $view === 'verificatie' ? 'bg-emerald-600 text-white' : 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60' }}">✓ verificatie</button>
+        </div>
 
         <select wire:model.live="sellMin" class="bg-slate-800 border-slate-700 rounded-lg text-sm py-1.5" title="filter op onze sell-winst">
             <option value="">onze sell: alle</option>
