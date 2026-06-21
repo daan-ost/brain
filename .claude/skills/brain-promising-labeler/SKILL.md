@@ -201,6 +201,24 @@ or snapshot+restore.
   at each volumeud tick — "all indicators in it" = available as-of, not "every indicator's tick is a row".
   (This is why a legacy buy = volumeud signal tick + ≤5s; see [[bot-signals-schema]] +5s offset.)
 
+## Auto-ok labeling (tijdsbesparing — `php artisan trades:auto-ok`)
+
+Handmatig elk promising moment op ok tikken is traag. `app/Console/Commands/AutoOkLabels.php` zet sterke
+momenten automatisch op `decision='yes'`. Het werkt op `coin_moment_sells` (= de promising-universe) met
+twee knoppen: `--sell` (min onze-sell-winst %) en `--min` (min minuten-in-trade). Default DRY-RUN, `--run`
+schrijft. **Veiligheid:** slaat elk moment met een bestaand handmatig label over (overschrijft NOOIT je
+ok/niet-ok), schrijft `set_by='auto-ok'` zodat `DELETE FROM coin_moment_labels WHERE set_by='auto-ok'`
+alles terugdraait.
+
+**Gekalibreerd op Daans marks (DOGEAI 2525, 8 dagen, 160 ok / 28 niet-ok):**
+- De recall-gap is volledig de sell-drempel: 84 van 160 ok-marks hebben sell ≤8%, dus 8% mist de helft.
+- De **minuten-in-trade is de veiligheidsknop**, niet de cluster: 3→15 min laat conflict van 6→1 zakken
+  (weert de snelle pumps die je in de praktijk niet pakt; sold in 6/12 min = de 2 echte conflicten).
+- De cluster-eis ("≥3 binnen 5 min") voegt GEEN veiligheid toe (A/B/C/D allemaal 3 conflicten op de
+  hele set) en kost alleen recall → weggelaten.
+- Sweet spot = **sell≥5% + min≥15** → ~61% recall, 1 conflict op 28. sell≥3/min≥15 = 69% recall, 6 conf.
+  Methode = [[parent-gate-gemene-deler]]-stijl: regel toetsen tegen je marks (recall) én je niet-ok (conf).
+
 ## Sell-engine per moment (punt 4 — PREPARED, not run)
 
 `coin_moment_sells` (coin, datetime) holds the sell-engine outcome per buy-moment (P&L, exit, hi/lo,
