@@ -48,6 +48,32 @@ class AutoOkLabeler
         return $out;
     }
 
+    /**
+     * De conflicten: momenten die aan de drempels voldoen (regel zou ok zetten) maar die jij/legacy op
+     * niet-ok hebt gezet. Voor de verificatie-review. Gesorteerd op sell aflopend (meest verdacht eerst).
+     *
+     * @return Collection<array{datetime, date, time, sell, min, set_by}>
+     */
+    public function conflicts(int|string $coin, float $sellMin, int $minMin, ?string $from = null, ?string $to = null): Collection
+    {
+        $sells = $this->candidateSells($coin, $sellMin, $minMin, $from, $to);
+        if ($sells->isEmpty()) {
+            return collect();
+        }
+        $no = CoinMomentLabel::where('trading_symbol_id', $coin)->where('source', 'manual')
+            ->where('decision', 'no')->whereIn('datetime', $sells->pluck('datetime'))->get()
+            ->keyBy(fn ($l) => CoinMomentLabel::momentKey($l->datetime));
+        return $sells->filter(fn ($s) => $no->has(CoinMomentLabel::momentKey($s->datetime)))
+            ->map(fn ($s) => [
+                'datetime' => $s->datetime,
+                'date' => $s->datetime->format('Y-m-d'),
+                'time' => $s->datetime->format('H:i:s'),
+                'sell' => round($s->profit_loss, 1),
+                'min' => $s->minutes_in_trade,
+                'set_by' => $no->get(CoinMomentLabel::momentKey($s->datetime))->set_by,
+            ])->sortByDesc('sell')->values();
+    }
+
     /** Schrijf de nieuwe ok-labels (met reden). Retourneert het aantal geschreven labels. */
     public function apply(int|string $coin, float $sellMin, int $minMin, string $reason, ?string $from = null, ?string $to = null): int
     {

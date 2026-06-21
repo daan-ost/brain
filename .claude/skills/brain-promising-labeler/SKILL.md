@@ -213,10 +213,15 @@ schrijft `set_by='auto-ok'` + reden (category `'goed / top'` + comment met sell%
 
 Twee aanroepen, zelfde service:
 - **CLI** `app/Console/Commands/AutoOkLabels.php` (`php artisan trades:auto-ok {coin} --sell= --min= --from= --to= --run`); default DRY-RUN.
-- **Verificatie-tab** in de labeler (`view='verificatie'`): preset-chips (top/breed/agressief) + sell/min/reden-velden,
-  live preview-cijfers (deze dag + alle dagen, met conflict-telling), en knoppen *Toepassen op deze dag* /
-  *op alle dagen* (met `wire:confirm`). De tabel toont exact de kandidaten, groen=nieuw / rood=conflict
-  (overgeslagen). `previewAutoOk()` / `applyAutoOk($scope)` op het component delegeren naar de service.
+- **Verificatie-tab** in de labeler (`view='verificatie'`, zichtbare tab-knoppen i.p.v. dropdown):
+  preset-chips (top/breed/agressief) + sell/min/reden-velden, live preview-cijfers (deze dag + alle dagen,
+  met conflict-telling), en knoppen *Toepassen op deze dag* / *op alle dagen* (met `wire:confirm`). De tabel
+  toont exact de kandidaten, groen=nieuw / rood=conflict (overgeslagen). `previewAutoOk()` /
+  `applyAutoOk($scope)` delegeren naar de service.
+- **Conflict-review:** het conflict-getal is klikbaar (`toggleConflicts()` → `AutoOkLabeler::conflicts()`):
+  toont ALLE conflicten over alle dagen (regel zou ok zetten maar staat op niet-ok), gesorteerd op sell
+  aflopend, met bron-badge (jij vs legacy) + *bekijk →* (`gotoConflict()` springt naar die dag + opent de
+  modal om te herzien/herlabelen). Zo vind je je eigen verdachte niet-ok-marks (de "jij"-badges).
 
 **Gekalibreerd op Daans marks (DOGEAI 2525, 8 dagen, 160 ok / 28 niet-ok):**
 - De recall-gap is volledig de sell-drempel: 84 van 160 ok-marks hebben sell ≤8%, dus 8% mist de helft.

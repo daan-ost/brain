@@ -64,6 +64,8 @@ class PromisingLabeler extends Component
     #[Url] public string $vMin = '15';                        // min minuten-in-trade
     public string $vReason = 'sterk sell-resultaat (auto)';   // reden bij elk auto-ok label
     public ?array $vStats = null;                             // preview-cijfers (dag + alle dagen)
+    public bool $vShowConflicts = false;                      // conflict-lijst open?
+    public ?array $vConflicts = null;                         // alle conflicten over alle dagen
 
     // modal / label state
     public ?string $selKey = null;              // 'Y-m-d H:i:s' van het geselecteerde moment
@@ -120,20 +122,39 @@ class PromisingLabeler extends Component
         $this->date = optional($this->dayList()->first())?->format('Y-m-d') ?? $this->date;
         $this->resetMemo();
         $this->closeDetail();
+        $this->vStats = null; $this->vConflicts = null; $this->vShowConflicts = false;
     }
 
     public function updatedDate(): void { $this->resetMemo(); $this->closeDetail(); }
     public function updatedView(): void { $this->resetMemo(); $this->closeDetail(); $this->vStats = null; }
     public function updatedSellMin(): void { $this->resetMemo(); $this->closeDetail(); }
-    public function updatedVSell(): void { $this->resetMemo(); $this->vStats = null; }
-    public function updatedVMin(): void { $this->resetMemo(); $this->vStats = null; }
+    public function updatedVSell(): void { $this->resetMemo(); $this->vStats = null; $this->vConflicts = null; }
+    public function updatedVMin(): void { $this->resetMemo(); $this->vStats = null; $this->vConflicts = null; }
 
     // ---- verificatie-tab: auto-ok preview + toepassen ----
 
     public function setVThresholds(string $sell, string $min): void
     {
         $this->vSell = $sell; $this->vMin = $min;
-        $this->resetMemo(); $this->vStats = null;
+        $this->resetMemo(); $this->vStats = null; $this->vConflicts = null;
+    }
+
+    /** Toon/verberg de volledige conflict-lijst (alle dagen) voor de huidige drempels. */
+    public function toggleConflicts(): void
+    {
+        $this->vShowConflicts = ! $this->vShowConflicts;
+        if ($this->vShowConflicts) {
+            $this->vConflicts = app(\App\Services\AutoOkLabeler::class)
+                ->conflicts($this->coin, (float) $this->vSell, (int) $this->vMin)->all();
+        }
+    }
+
+    /** Spring naar een conflict-moment: ga naar die dag + open de modal om te herzien/herlabelen. */
+    public function gotoConflict(string $date, string $key): void
+    {
+        $this->date = $date;
+        $this->resetMemo();
+        $this->open($key);
     }
 
     /** Dry-run preview voor deze dag én alle dagen (zonder te schrijven). */

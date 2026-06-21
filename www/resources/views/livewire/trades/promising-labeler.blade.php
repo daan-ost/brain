@@ -110,8 +110,57 @@
                         <div class="text-xs text-slate-500">alle dagen</div>
                         <div><span class="text-emerald-400 font-semibold">{{ $vStats['allNew'] }}</span> nieuw
                             · <span class="text-slate-400">{{ $vStats['allYes'] }} al ok</span>
-                            · <span class="{{ $vStats['allConf'] ? 'text-rose-400' : 'text-slate-500' }}">{{ $vStats['allConf'] }} conflict</span></div>
+                            · @if ($vStats['allConf'])
+                                <button wire:click="toggleConflicts" class="text-rose-400 underline decoration-dotted hover:text-rose-300">{{ $vStats['allConf'] }} conflict{{ $vShowConflicts ? ' ▲' : ' ▼' }}</button>
+                              @else
+                                <span class="text-slate-500">0 conflict</span>
+                              @endif
+                        </div>
                     </div>
+                </div>
+            @endif
+
+            @if ($vShowConflicts && $vConflicts !== null)
+                <div class="mt-3 border border-rose-900/50 rounded-lg overflow-hidden">
+                    <div class="px-3 py-2 bg-rose-950/40 text-xs text-rose-300 flex items-center justify-between">
+                        <span>Alle conflicten — regel zou ok zetten, maar staat op niet-ok ({{ count($vConflicts) }})</span>
+                        <button wire:click="toggleConflicts" class="text-slate-400 hover:text-white">sluit ✕</button>
+                    </div>
+                    @if (count($vConflicts))
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-800/60 text-slate-400 text-xs">
+                                <tr>
+                                    <th class="text-left px-3 py-1.5">datum</th>
+                                    <th class="text-left px-3 py-1.5">tijd</th>
+                                    <th class="text-right px-3 py-1.5">onze sell%</th>
+                                    <th class="text-right px-3 py-1.5">min</th>
+                                    <th class="text-left px-3 py-1.5">bron</th>
+                                    <th class="px-3 py-1.5"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($vConflicts as $c)
+                                    <tr class="border-t border-slate-800 hover:bg-slate-800/40">
+                                        <td class="px-3 py-1.5 font-mono text-xs text-slate-300">{{ $c['date'] }}</td>
+                                        <td class="px-3 py-1.5 font-mono text-xs text-slate-300">{{ $c['time'] }}</td>
+                                        <td class="px-3 py-1.5 text-right font-mono text-xs text-emerald-400">{{ number_format($c['sell'], 1) }}</td>
+                                        <td class="px-3 py-1.5 text-right font-mono text-xs text-slate-400">{{ $c['min'] }}</td>
+                                        <td class="px-3 py-1.5 text-xs">
+                                            <span class="px-1.5 py-0.5 rounded-full {{ $c['set_by'] === 'legacy-ok' ? 'bg-slate-700/50 text-slate-400' : 'bg-amber-600/30 text-amber-300' }}">
+                                                {{ $c['set_by'] === 'legacy-ok' ? 'legacy' : 'jij' }}
+                                            </span>
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right">
+                                            <button wire:click="gotoConflict('{{ $c['date'] }}', '{{ $c['date'] }} {{ $c['time'] }}')"
+                                                    class="px-2 py-0.5 rounded text-xs bg-slate-800 border border-slate-700 text-sky-300 hover:bg-slate-700">bekijk →</button>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    @else
+                        <div class="px-3 py-3 text-xs text-slate-500">Geen conflicten bij deze drempels.</div>
+                    @endif
                 </div>
             @endif
 
