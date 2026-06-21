@@ -2,8 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\CoinMomentLabel;
-use App\Models\CoinMomentSell;
+use App\Services\AutoOkLabeler;
 use Illuminate\Console\Command;
 
 /**
@@ -33,53 +32,31 @@ class AutoOkLabels extends Command
 
     protected $description = 'Zet sterke promising momenten (sell>=X%, >=M min) automatisch op ok — vult alleen lege momenten.';
 
-    public function handle(): int
+    public function handle(AutoOkLabeler $labeler): int
     {
         $coin = $this->argument('coin');
         $sellMin = (float) $this->option('sell');
         $minMin = (int) $this->option('min');
         $run = (bool) $this->option('run');
+        $from = $this->option('from') ?: null;
+        $to = $this->option('to') ?: null;
 
-        $q = CoinMomentSell::query()->where('trading_symbol_id', $coin)
-            ->where('profit_loss', '>=', $sellMin)
-            ->where('minutes_in_trade', '>=', $minMin);
-        if ($from = $this->option('from')) $q->where('datetime', '>=', $from.' 00:00:00');
-        if ($to = $this->option('to')) $q->where('datetime', '<=', $to.' 23:59:59');
-        $candidates = $q->orderBy('datetime')->get();
-
-        if ($candidates->isEmpty()) {
+        $p = $labeler->preview($coin, $sellMin, $minMin, $from, $to);
+        if ($p['candidates'] === 0) {
             $this->warn("Geen kandidaten (coin {$coin}, sell>={$sellMin}%, min>={$minMin}). Draaide sell_promising al voor deze coin?");
             return self::SUCCESS;
         }
 
-        // bestaande handmatige labels in één query — om overschrijven te voorkomen
-        $existing = CoinMomentLabel::where('trading_symbol_id', $coin)->where('source', 'manual')
-            ->whereIn('datetime', $candidates->pluck('datetime'))->get()
-            ->keyBy(fn ($l) => CoinMomentLabel::momentKey($l->datetime));
-
-        $toMark = [];
-        $skipExisting = ['yes' => 0, 'no' => 0, 'other' => 0];
-        foreach ($candidates as $s) {
-            $k = CoinMomentLabel::momentKey($s->datetime);
-            if ($lab = $existing->get($k)) {
-                $d = $lab->decision;
-                $skipExisting[$d === 'yes' ? 'yes' : ($d === 'no' ? 'no' : 'other')]++;
-                continue;   // NOOIT overschrijven
-            }
-            $toMark[] = $s;
-        }
-
         $this->info(sprintf('coin %s · regel: promising + sell>=%.0f%% + min>=%d', $coin, $sellMin, $minMin));
-        $this->line(sprintf('  kandidaten:        %d', $candidates->count()));
+        $this->line(sprintf('  kandidaten:        %d', $p['candidates']));
         $this->line(sprintf('  al gelabeld (skip): %d  (ok:%d, niet-ok:%d, overig:%d)',
-            array_sum($skipExisting), $skipExisting['yes'], $skipExisting['no'], $skipExisting['other']));
-        $this->line(sprintf('  NIEUW op ok zetten: %d', count($toMark)));
+            $p['skipYes'] + $p['conflicts'] + $p['skipOther'], $p['skipYes'], $p['conflicts'], $p['skipOther']));
+        $this->line(sprintf('  NIEUW op ok zetten: %d', $p['toMark']->count()));
 
-        // voorbeeld
-        foreach (array_slice($toMark, 0, 8) as $s) {
+        foreach ($p['toMark']->take(8) as $s) {
             $this->line(sprintf('    %s  sell=%.2f%%  %dmin', $s->datetime->format('Y-m-d H:i:s'), $s->profit_loss, $s->minutes_in_trade));
         }
-        if (count($toMark) > 8) $this->line(sprintf('    … +%d meer', count($toMark) - 8));
+        if ($p['toMark']->count() > 8) $this->line(sprintf('    … +%d meer', $p['toMark']->count() - 8));
 
         if (! $run) {
             $this->newLine();
@@ -88,13 +65,7 @@ class AutoOkLabels extends Command
             return self::SUCCESS;
         }
 
-        $written = 0;
-        foreach ($toMark as $s) {
-            CoinMomentLabel::setManual($coin, $s->symbol, $s->datetime, [
-                'decision' => 'yes',
-            ], 'auto-ok');
-            $written++;
-        }
+        $written = $labeler->apply($coin, $sellMin, $minMin, '', $from, $to);
         $this->info("Geschreven: {$written} ok-labels (set_by='auto-ok').");
         return self::SUCCESS;
     }

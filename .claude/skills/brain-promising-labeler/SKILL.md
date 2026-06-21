@@ -203,12 +203,20 @@ or snapshot+restore.
 
 ## Auto-ok labeling (tijdsbesparing — `php artisan trades:auto-ok`)
 
-Handmatig elk promising moment op ok tikken is traag. `app/Console/Commands/AutoOkLabels.php` zet sterke
-momenten automatisch op `decision='yes'`. Het werkt op `coin_moment_sells` (= de promising-universe) met
-twee knoppen: `--sell` (min onze-sell-winst %) en `--min` (min minuten-in-trade). Default DRY-RUN, `--run`
-schrijft. **Veiligheid:** slaat elk moment met een bestaand handmatig label over (overschrijft NOOIT je
-ok/niet-ok), schrijft `set_by='auto-ok'` zodat `DELETE FROM coin_moment_labels WHERE set_by='auto-ok'`
-alles terugdraait.
+Handmatig elk promising moment op ok tikken is traag. De selectie-logica zit in
+`app/Services/AutoOkLabeler.php` (één bron van waarheid) met `preview()` (dry-run telt kandidaten /
+al-gelabeld / conflicten / toMark) en `apply()` (schrijft, in een transactie). Twee knoppen: sell-drempel
+(min onze-sell-winst %) en min-minuten-in-trade. Het werkt op `coin_moment_sells` (= de promising-universe).
+**Veiligheid:** slaat elk moment met een bestaand handmatig label over (overschrijft NOOIT je ok/niet-ok),
+schrijft `set_by='auto-ok'` + reden (category `'goed / top'` + comment met sell%/min) zodat
+`DELETE FROM coin_moment_labels WHERE set_by='auto-ok'` alles terugdraait.
+
+Twee aanroepen, zelfde service:
+- **CLI** `app/Console/Commands/AutoOkLabels.php` (`php artisan trades:auto-ok {coin} --sell= --min= --from= --to= --run`); default DRY-RUN.
+- **Verificatie-tab** in de labeler (`view='verificatie'`): preset-chips (top/breed/agressief) + sell/min/reden-velden,
+  live preview-cijfers (deze dag + alle dagen, met conflict-telling), en knoppen *Toepassen op deze dag* /
+  *op alle dagen* (met `wire:confirm`). De tabel toont exact de kandidaten, groen=nieuw / rood=conflict
+  (overgeslagen). `previewAutoOk()` / `applyAutoOk($scope)` op het component delegeren naar de service.
 
 **Gekalibreerd op Daans marks (DOGEAI 2525, 8 dagen, 160 ok / 28 niet-ok):**
 - De recall-gap is volledig de sell-drempel: 84 van 160 ok-marks hebben sell ≤8%, dus 8% mist de helft.

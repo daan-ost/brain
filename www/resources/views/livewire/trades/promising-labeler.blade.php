@@ -40,6 +40,7 @@
             <option value="all">alle momenten</option>
             <option value="trades">alleen trades</option>
             <option value="executed">alleen uitgevoerd</option>
+            <option value="verificatie">✓ verificatie (auto-ok)</option>
         </select>
 
         <select wire:model.live="sellMin" class="bg-slate-800 border-slate-700 rounded-lg text-sm py-1.5" title="filter op onze sell-winst">
@@ -62,6 +63,73 @@
     @if ($truncated)
         <div class="mb-4 text-xs text-amber-300 bg-amber-950/40 border border-amber-900/50 rounded-lg px-3 py-2">
             {{ $total }} momenten voldoen aan het filter — eerste {{ $rowCap }} getoond. Kies een ander filter om te verfijnen.
+        </div>
+    @endif
+
+    {{-- ───────── verificatie / auto-ok paneel ───────── --}}
+    @if ($view === 'verificatie')
+        <div class="bg-slate-900/60 border border-sky-900/50 rounded-xl p-4 mb-5">
+            <div class="flex items-center gap-2 mb-3">
+                <h2 class="text-sm font-semibold text-sky-300">Verificatie — auto-ok regel</h2>
+                <span class="text-xs text-slate-500">zet sterke promising trades op ok: sell hoog genoeg én lang genoeg vastgehouden (geen snelle pump)</span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                <span class="text-xs text-slate-500">snel:</span>
+                @foreach ([['10','15','top · ≥10% / 15min'],['5','15','breed · ≥5% / 15min'],['3','15','agressief · ≥3% / 15min']] as [$s,$m,$lbl])
+                    <button wire:click="setVThresholds('{{ $s }}','{{ $m }}')"
+                        class="px-2.5 py-1 rounded-lg text-xs border transition {{ $vSell === $s && $vMin === $m ? 'bg-sky-600 border-sky-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' }}">{{ $lbl }}</button>
+                @endforeach
+            </div>
+
+            <div class="flex flex-wrap items-end gap-3">
+                <label class="flex flex-col text-xs text-slate-500">sell ≥ %
+                    <input type="number" step="1" min="0" wire:model.live.debounce.400ms="vSell"
+                           class="mt-0.5 w-20 bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">
+                </label>
+                <label class="flex flex-col text-xs text-slate-500">min minuten
+                    <input type="number" step="1" min="0" wire:model.live.debounce.400ms="vMin"
+                           class="mt-0.5 w-20 bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">
+                </label>
+                <label class="flex flex-col text-xs text-slate-500 grow min-w-[14rem]">reden (op elk label)
+                    <input type="text" wire:model="vReason"
+                           class="mt-0.5 bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">
+                </label>
+            </div>
+
+            @if ($vStats)
+                <div class="flex flex-wrap gap-3 mt-3 text-sm">
+                    <div class="px-3 py-2 rounded-lg bg-slate-800/70">
+                        <div class="text-xs text-slate-500">deze dag · {{ $date }}</div>
+                        <div><span class="text-emerald-400 font-semibold">{{ $vStats['dayNew'] }}</span> nieuw
+                            · <span class="text-slate-400">{{ $vStats['dayYes'] }} al ok</span>
+                            · <span class="{{ $vStats['dayConf'] ? 'text-rose-400' : 'text-slate-500' }}">{{ $vStats['dayConf'] }} conflict</span></div>
+                    </div>
+                    <div class="px-3 py-2 rounded-lg bg-slate-800/70">
+                        <div class="text-xs text-slate-500">alle dagen</div>
+                        <div><span class="text-emerald-400 font-semibold">{{ $vStats['allNew'] }}</span> nieuw
+                            · <span class="text-slate-400">{{ $vStats['allYes'] }} al ok</span>
+                            · <span class="{{ $vStats['allConf'] ? 'text-rose-400' : 'text-slate-500' }}">{{ $vStats['allConf'] }} conflict</span></div>
+                    </div>
+                </div>
+            @endif
+
+            <div class="flex flex-wrap items-center gap-3 mt-3">
+                <button wire:click="applyAutoOk('day')"
+                        wire:confirm="Zet {{ $vStats['dayNew'] ?? '?' }} momenten van {{ $date }} op ok?"
+                        class="px-3 py-2 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white">✓ Toepassen op deze dag</button>
+                <button wire:click="applyAutoOk('all')"
+                        wire:confirm="Zet {{ $vStats['allNew'] ?? '?' }} momenten over ALLE dagen op ok? (terug te draaien)"
+                        class="px-3 py-2 rounded-lg text-sm font-medium bg-emerald-700 hover:bg-emerald-600 text-white">✓✓ Toepassen op alle dagen</button>
+                <span wire:loading wire:target="applyAutoOk" class="text-xs text-amber-300">bezig met schrijven…</span>
+                <span x-data="flashMsg()" x-show="shown" x-on:autook-applied.window="flash()" class="text-xs text-emerald-400">toegepast ✓</span>
+                <span class="text-xs text-slate-500 ml-auto">terugdraaien: <code class="text-slate-400">set_by='auto-ok'</code> verwijderen</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-2">
+                <span class="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-950 border border-emerald-700 align-middle"></span> nieuw (wordt gezet) ·
+                <span class="inline-block w-2.5 h-2.5 rounded-sm bg-rose-950 border border-rose-700 align-middle"></span> conflict (jij zei niet-ok → <b>overgeslagen</b>, nooit overschreven).
+                De tabel toont exact de kandidaten van deze dag.
+            </p>
         </div>
     @endif
 
@@ -100,9 +168,16 @@
             </thead>
             <tbody>
                 @forelse ($rows as $r)
+                    @php
+                        $vTint = '';
+                        if ($view === 'verificatie') {
+                            $vTint = $r['decision'] === 'no' ? 'bg-rose-950/40'
+                                : ($r['decision'] === 'yes' ? '' : 'bg-emerald-950/30');
+                        }
+                    @endphp
                     <tr wire:key="row-{{ $r['key'] }}" wire:click="selectMoment('{{ $r['key'] }}')"
                         class="border-t border-slate-800 cursor-pointer hover:bg-slate-800/40 {{ $grpBorder($r['group']) }}
-                               {{ $r['sell_gap'] ? 'bg-rose-950/40' : '' }}
+                               {{ $r['sell_gap'] ? 'bg-rose-950/40' : $vTint }}
                                {{ $selKey === $r['key'] ? 'bg-slate-800/60' : '' }}">
                         <td class="px-3 py-1.5 font-mono text-xs">{{ $r['time'] }}</td>
                         <td class="px-3 py-1.5 text-xs">
