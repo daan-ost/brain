@@ -57,6 +57,7 @@ class PromisingLabeler extends Component
     #[Url] public string $coin = '2525';
     #[Url] public string $date = '';
     #[Url] public string $view = 'promising';   // promising | all | trades | executed
+    #[Url] public string $sellMin = '';         // '' | '3' | '5' | '10' — filter: onze sell-winst >= x%
 
     // modal / label state
     public ?string $selKey = null;              // 'Y-m-d H:i:s' van het geselecteerde moment
@@ -117,6 +118,7 @@ class PromisingLabeler extends Component
 
     public function updatedDate(): void { $this->resetMemo(); $this->closeDetail(); }
     public function updatedView(): void { $this->resetMemo(); $this->closeDetail(); }
+    public function updatedSellMin(): void { $this->resetMemo(); $this->closeDetail(); }
 
     private function resetMemo(): void
     {
@@ -321,7 +323,7 @@ class PromisingLabeler extends Component
     /** The day's rows after the view filter + a row cap. Memoized per (coin,date,view). */
     private function dayMoments(): array
     {
-        $key = "{$this->coin}|{$this->date}|{$this->view}";
+        $key = "{$this->coin}|{$this->date}|{$this->view}|{$this->sellMin}";
         if ($this->momentMemo !== null && $this->momentMemoKey === $key) {
             return $this->momentMemo;
         }
@@ -404,6 +406,11 @@ class PromisingLabeler extends Component
             if ($this->view === 'executed' && ! ($fire && $fire->is_executed)) continue;
             if ($this->view === 'promising' && ! $mo['prom']) continue;
 
+            // sell-engine P&L: per-moment store (punt 4) > executed-fire fallback > nog niet berekend
+            $pl = $sells->get($k)?->profit_loss ?? (($fire && $fire->is_executed) ? $fire->profit_loss : null);
+            // filter onze sell-winst >= x% (null = nog niet berekend telt niet mee)
+            if ($this->sellMin !== '' && ($pl === null || $pl < (float) $this->sellMin)) continue;
+
             $total++;
             if (count($rows) >= self::ROW_CAP) continue;   // tel door, render begrensd
             $m = $mo['m']; $i = $mo['i'];
@@ -422,8 +429,7 @@ class PromisingLabeler extends Component
                 ])->all(),
                 'max_up' => $m['max'],
                 'low10' => $m['low10'],
-                // sell-engine P&L: per-moment store (punt 4) > executed-fire fallback > nog niet berekend
-                'profit_loss' => $sells->get($k)?->profit_loss ?? (($fire && $fire->is_executed) ? $fire->profit_loss : null),
+                'profit_loss' => $pl,
                 'auto' => self::autoKlasse($m),
                 'legacy' => $legacy->get($k)?->manual_klasse,   // snapped legacy label on this moment
                 'manual' => $label?->manual_klasse,

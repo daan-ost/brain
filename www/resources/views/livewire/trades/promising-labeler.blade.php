@@ -42,6 +42,13 @@
             <option value="executed">alleen uitgevoerd</option>
         </select>
 
+        <select wire:model.live="sellMin" class="bg-slate-800 border-slate-700 rounded-lg text-sm py-1.5" title="filter op onze sell-winst">
+            <option value="">onze sell: alle</option>
+            <option value="3">onze sell ≥ 3%</option>
+            <option value="5">onze sell ≥ 5%</option>
+            <option value="10">onze sell ≥ 10%</option>
+        </select>
+
         <span class="text-xs text-slate-500" title="promising = +5m ≥ 0,5% EN +15m ≥ 3% EN vroege dip ≥ −0,5% EN geen 1-tick spike (piek-isolatie < 3%)">promising-regel ⓘ</span>
 
         <span class="text-xs text-slate-400">{{ $dayCount }} dagen</span>
@@ -79,12 +86,12 @@
                     <th class="text-left px-3 py-2">trade</th>
                     <th class="text-center px-2 py-2" title="volume-rule (volume_found) op deze tick">vol</th>
                     <th class="text-center px-3 py-2">ok?</th>
+                    <th class="text-right px-3 py-2">onze sell%</th>
                     @foreach ($horizons as $h)
                         <th class="text-right px-2 py-2">+{{ $h }}m</th>
                     @endforeach
                     <th class="text-right px-2 py-2">max up%</th>
                     <th class="text-right px-2 py-2">dip%</th>
-                    <th class="text-right px-3 py-2">onze sell%</th>
                     <th class="text-left px-2 py-2">auto</th>
                     <th class="text-left px-2 py-2">legacy</th>
                     <th class="text-left px-2 py-2">mijn</th>
@@ -119,13 +126,13 @@
                                         title="niet ok">✗</button>
                             </div>
                         </td>
+                        <td class="px-3 py-1.5 text-right font-mono text-xs {{ ($r['profit_loss'] ?? 0) < 0 ? 'text-rose-400' : 'text-slate-300' }}">{{ $r['profit_loss'] === null ? '—' : $fmt($r['profit_loss']) }}</td>
                         @foreach ($r['horizons'] as $hz)
                             <td class="px-2 py-1.5 text-right font-mono text-xs {{ $upc($hz['val']) }}"
                                 title="piek om {{ $hz['peak_at'] ?? '—' }}">{{ $fmt($hz['val']) }}</td>
                         @endforeach
                         <td class="px-2 py-1.5 text-right font-mono text-xs {{ $upc($r['max_up']) }} font-semibold">{{ $fmt($r['max_up']) }}</td>
                         <td class="px-2 py-1.5 text-right font-mono text-xs {{ ($r['low10'] ?? 0) < -0.1 ? 'text-rose-400' : 'text-slate-500' }}">{{ $fmt($r['low10']) }}</td>
-                        <td class="px-3 py-1.5 text-right font-mono text-xs {{ ($r['profit_loss'] ?? 0) < 0 ? 'text-rose-400' : 'text-slate-300' }}">{{ $r['profit_loss'] === null ? '—' : $fmt($r['profit_loss']) }}</td>
                         <td class="px-2 py-1.5 text-xs {{ $klc($r['auto']) }}">{{ $r['auto'] === 'onbekend' ? '—' : $r['auto'] }}</td>
                         <td class="px-2 py-1.5 text-xs {{ $klc($r['legacy']) }}">{{ $r['legacy'] ?? '—' }}</td>
                         <td class="px-2 py-1.5 text-xs">
