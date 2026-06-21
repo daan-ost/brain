@@ -92,6 +92,10 @@
                     <input type="number" step="1" min="0" wire:model.live.debounce.400ms="vMin"
                            class="mt-0.5 w-20 bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">
                 </label>
+                <label class="flex flex-col text-xs text-slate-500" title="vroege dip mag niet dieper dan dit (weert 'eerst in de min')">vroege dip ≥ %
+                    <input type="number" step="0.1" wire:model.live.debounce.400ms="vDip"
+                           class="mt-0.5 w-20 bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">
+                </label>
                 <label class="flex flex-col text-xs text-slate-500 grow min-w-[14rem]">reden (op elk label)
                     <input type="text" wire:model="vReason"
                            class="mt-0.5 bg-slate-800 border border-slate-700 rounded-lg text-sm py-1.5 px-2 text-slate-200">

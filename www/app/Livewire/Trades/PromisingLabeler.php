@@ -62,6 +62,7 @@ class PromisingLabeler extends Component
     // verificatie-tab (auto-ok regel: preview + toepassen, gedeeld via AutoOkLabeler)
     #[Url] public string $vSell = '10';                       // sell-drempel %
     #[Url] public string $vMin = '15';                        // min minuten-in-trade
+    #[Url] public string $vDip = '-0.3';                      // max vroege dip % (lo_pl >= dit)
     public string $vReason = 'sterk sell-resultaat (auto)';   // reden bij elk auto-ok label
     public ?array $vStats = null;                             // preview-cijfers (dag + alle dagen)
     public bool $vShowConflicts = false;                      // conflict-lijst open?
@@ -130,6 +131,7 @@ class PromisingLabeler extends Component
     public function updatedSellMin(): void { $this->resetMemo(); $this->closeDetail(); }
     public function updatedVSell(): void { $this->resetMemo(); $this->vStats = null; $this->vConflicts = null; }
     public function updatedVMin(): void { $this->resetMemo(); $this->vStats = null; $this->vConflicts = null; }
+    public function updatedVDip(): void { $this->resetMemo(); $this->vStats = null; $this->vConflicts = null; }
 
     // ---- verificatie-tab: auto-ok preview + toepassen ----
 
@@ -139,13 +141,15 @@ class PromisingLabeler extends Component
         $this->resetMemo(); $this->vStats = null; $this->vConflicts = null;
     }
 
+    private function vDipF(): float { return (float) $this->vDip; }
+
     /** Toon/verberg de volledige conflict-lijst (alle dagen) voor de huidige drempels. */
     public function toggleConflicts(): void
     {
         $this->vShowConflicts = ! $this->vShowConflicts;
         if ($this->vShowConflicts) {
             $this->vConflicts = app(\App\Services\AutoOkLabeler::class)
-                ->conflicts($this->coin, (float) $this->vSell, (int) $this->vMin)->all();
+                ->conflicts($this->coin, (float) $this->vSell, (int) $this->vMin, null, null, $this->vDipF())->all();
         }
     }
 
@@ -161,9 +165,9 @@ class PromisingLabeler extends Component
     public function previewAutoOk(): void
     {
         $svc = app(\App\Services\AutoOkLabeler::class);
-        $sell = (float) $this->vSell; $min = (int) $this->vMin;
-        $all = $svc->preview($this->coin, $sell, $min);
-        $day = $svc->preview($this->coin, $sell, $min, $this->date, $this->date);
+        $sell = (float) $this->vSell; $min = (int) $this->vMin; $dip = $this->vDipF();
+        $all = $svc->preview($this->coin, $sell, $min, null, null, $dip);
+        $day = $svc->preview($this->coin, $sell, $min, $this->date, $this->date, $dip);
         $this->vStats = [
             'allCand' => $all['candidates'], 'allNew' => $all['toMark']->count(),
             'allConf' => $all['conflicts'], 'allYes' => $all['skipYes'],
@@ -176,10 +180,10 @@ class PromisingLabeler extends Component
     public function applyAutoOk(string $scope): void
     {
         $svc = app(\App\Services\AutoOkLabeler::class);
-        $sell = (float) $this->vSell; $min = (int) $this->vMin;
+        $sell = (float) $this->vSell; $min = (int) $this->vMin; $dip = $this->vDipF();
         $n = $scope === 'day'
-            ? $svc->apply($this->coin, $sell, $min, $this->vReason, $this->date, $this->date)
-            : $svc->apply($this->coin, $sell, $min, $this->vReason);
+            ? $svc->apply($this->coin, $sell, $min, $this->vReason, $this->date, $this->date, $dip)
+            : $svc->apply($this->coin, $sell, $min, $this->vReason, null, null, $dip);
         $this->resetMemo(); $this->vStats = null;
         $this->previewAutoOk();
         $this->dispatch('autook-applied', count: $n, scope: $scope);
@@ -388,7 +392,7 @@ class PromisingLabeler extends Component
     /** The day's rows after the view filter + a row cap. Memoized per (coin,date,view). */
     private function dayMoments(): array
     {
-        $key = "{$this->coin}|{$this->date}|{$this->view}|{$this->sellMin}|{$this->vSell}|{$this->vMin}";
+        $key = "{$this->coin}|{$this->date}|{$this->view}|{$this->sellMin}|{$this->vSell}|{$this->vMin}|{$this->vDip}";
         if ($this->momentMemo !== null && $this->momentMemoKey === $key) {
             return $this->momentMemo;
         }
@@ -474,10 +478,11 @@ class PromisingLabeler extends Component
             // sell-engine P&L: per-moment store (punt 4) > executed-fire fallback > nog niet berekend
             $sellRow = $sells->get($k);
             $pl = $sellRow?->profit_loss ?? (($fire && $fire->is_executed) ? $fire->profit_loss : null);
-            // verificatie-view: alleen de auto-ok kandidaten (sell>=vSell & min>=vMin) tonen
+            // verificatie-view: alleen de auto-ok kandidaten (sell>=vSell & min>=vMin & dip>=vDip) tonen
             if ($this->view === 'verificatie'
                 && (! $sellRow || $sellRow->profit_loss < (float) $this->vSell
-                    || $sellRow->minutes_in_trade < (int) $this->vMin)) continue;
+                    || $sellRow->minutes_in_trade < (int) $this->vMin
+                    || $sellRow->lo_pl < $this->vDipF())) continue;
             // filter onze sell-winst >= x% (null = nog niet berekend telt niet mee) — niet in verificatie
             if ($this->view !== 'verificatie' && $this->sellMin !== ''
                 && ($pl === null || $pl < (float) $this->sellMin)) continue;

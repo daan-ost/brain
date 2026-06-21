@@ -26,6 +26,7 @@ class AutoOkLabels extends Command
         {coin=2525 : trading_symbol_id}
         {--sell=5 : minimale onze-sell-winst %}
         {--min=15 : minimale minuten-in-trade (weert snelle pumps)}
+        {--dip=-0.3 : max vroege dip (lo_pl >= dit; weert "eerst in de min")}
         {--from= : begindatum Y-m-d (optioneel)}
         {--to= : einddatum Y-m-d (optioneel)}
         {--run : daadwerkelijk schrijven (anders dry-run)}';
@@ -37,17 +38,18 @@ class AutoOkLabels extends Command
         $coin = $this->argument('coin');
         $sellMin = (float) $this->option('sell');
         $minMin = (int) $this->option('min');
+        $maxDip = (float) $this->option('dip');
         $run = (bool) $this->option('run');
         $from = $this->option('from') ?: null;
         $to = $this->option('to') ?: null;
 
-        $p = $labeler->preview($coin, $sellMin, $minMin, $from, $to);
+        $p = $labeler->preview($coin, $sellMin, $minMin, $from, $to, $maxDip);
         if ($p['candidates'] === 0) {
-            $this->warn("Geen kandidaten (coin {$coin}, sell>={$sellMin}%, min>={$minMin}). Draaide sell_promising al voor deze coin?");
+            $this->warn("Geen kandidaten (coin {$coin}, sell>={$sellMin}%, min>={$minMin}, dip>={$maxDip}). Draaide sell_promising al voor deze coin?");
             return self::SUCCESS;
         }
 
-        $this->info(sprintf('coin %s · regel: promising + sell>=%.0f%% + min>=%d', $coin, $sellMin, $minMin));
+        $this->info(sprintf('coin %s · regel: promising + sell>=%.0f%% + min>=%d + vroege dip>=%.2f%%', $coin, $sellMin, $minMin, $maxDip));
         $this->line(sprintf('  kandidaten:        %d', $p['candidates']));
         $this->line(sprintf('  al gelabeld (skip): %d  (ok:%d, niet-ok:%d, overig:%d)',
             $p['skipYes'] + $p['conflicts'] + $p['skipOther'], $p['skipYes'], $p['conflicts'], $p['skipOther']));
@@ -65,7 +67,7 @@ class AutoOkLabels extends Command
             return self::SUCCESS;
         }
 
-        $written = $labeler->apply($coin, $sellMin, $minMin, '', $from, $to);
+        $written = $labeler->apply($coin, $sellMin, $minMin, '', $from, $to, $maxDip);
         $this->info("Geschreven: {$written} ok-labels (set_by='auto-ok').");
         return self::SUCCESS;
     }

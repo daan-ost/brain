@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 class AutoOkLabeler
 {
     public const REASON_CATEGORY = 'goed / top';
+    public const DEFAULT_MAX_DIP = -0.3;   // vroege dip (lo_pl) mag niet dieper dan dit — weert "eerst in de min"
 
     /**
      * Dry-run: wat zou er gebeuren? Telt kandidaten, reeds-gelabelde (overgeslagen, met conflict =
@@ -26,9 +27,9 @@ class AutoOkLabeler
      *
      * @return array{candidates:int, skipYes:int, conflicts:int, skipOther:int, toMark:Collection<CoinMomentSell>}
      */
-    public function preview(int|string $coin, float $sellMin, int $minMin, ?string $from = null, ?string $to = null): array
+    public function preview(int|string $coin, float $sellMin, int $minMin, ?string $from = null, ?string $to = null, float $maxDip = self::DEFAULT_MAX_DIP): array
     {
-        $sells = $this->candidateSells($coin, $sellMin, $minMin, $from, $to);
+        $sells = $this->candidateSells($coin, $sellMin, $minMin, $from, $to, $maxDip);
         $out = ['candidates' => $sells->count(), 'skipYes' => 0, 'conflicts' => 0, 'skipOther' => 0, 'toMark' => collect()];
         if ($sells->isEmpty()) {
             return $out;
@@ -54,9 +55,9 @@ class AutoOkLabeler
      *
      * @return Collection<array{datetime, date, time, sell, min, set_by}>
      */
-    public function conflicts(int|string $coin, float $sellMin, int $minMin, ?string $from = null, ?string $to = null): Collection
+    public function conflicts(int|string $coin, float $sellMin, int $minMin, ?string $from = null, ?string $to = null, float $maxDip = self::DEFAULT_MAX_DIP): Collection
     {
-        $sells = $this->candidateSells($coin, $sellMin, $minMin, $from, $to);
+        $sells = $this->candidateSells($coin, $sellMin, $minMin, $from, $to, $maxDip);
         if ($sells->isEmpty()) {
             return collect();
         }
@@ -75,9 +76,9 @@ class AutoOkLabeler
     }
 
     /** Schrijf de nieuwe ok-labels (met reden). Retourneert het aantal geschreven labels. */
-    public function apply(int|string $coin, float $sellMin, int $minMin, string $reason, ?string $from = null, ?string $to = null): int
+    public function apply(int|string $coin, float $sellMin, int $minMin, string $reason, ?string $from = null, ?string $to = null, float $maxDip = self::DEFAULT_MAX_DIP): int
     {
-        $toMark = $this->preview($coin, $sellMin, $minMin, $from, $to)['toMark'];
+        $toMark = $this->preview($coin, $sellMin, $minMin, $from, $to, $maxDip)['toMark'];
         if ($toMark->isEmpty()) {
             return 0;
         }
@@ -96,11 +97,16 @@ class AutoOkLabeler
         });
     }
 
-    /** De promising momenten (coin_moment_sells = promising-universe) die aan de drempels voldoen. */
-    private function candidateSells(int|string $coin, float $sellMin, int $minMin, ?string $from, ?string $to): Collection
+    /**
+     * De promising momenten (coin_moment_sells = promising-universe) die aan de drempels voldoen.
+     * `$maxDip` weert momenten met een te diepe vroege dip: `lo_pl >= maxDip` (lo_pl = laagste P&L in de
+     * trade ≈ de vroege dip voor winst-lock-winnaars; "eerst in de min" is in de praktijk niet te pakken).
+     */
+    private function candidateSells(int|string $coin, float $sellMin, int $minMin, ?string $from, ?string $to, float $maxDip = self::DEFAULT_MAX_DIP): Collection
     {
         $q = CoinMomentSell::query()->where('trading_symbol_id', $coin)
-            ->where('profit_loss', '>=', $sellMin)->where('minutes_in_trade', '>=', $minMin);
+            ->where('profit_loss', '>=', $sellMin)->where('minutes_in_trade', '>=', $minMin)
+            ->where('lo_pl', '>=', $maxDip);
         if ($from) $q->where('datetime', '>=', $from.' 00:00:00');
         if ($to) $q->where('datetime', '<=', $to.' 23:59:59');
         return $q->orderBy('datetime')->get();

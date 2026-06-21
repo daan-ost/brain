@@ -205,8 +205,16 @@ or snapshot+restore.
 
 Handmatig elk promising moment op ok tikken is traag. De selectie-logica zit in
 `app/Services/AutoOkLabeler.php` (één bron van waarheid) met `preview()` (dry-run telt kandidaten /
-al-gelabeld / conflicten / toMark) en `apply()` (schrijft, in een transactie). Twee knoppen: sell-drempel
-(min onze-sell-winst %) en min-minuten-in-trade. Het werkt op `coin_moment_sells` (= de promising-universe).
+al-gelabeld / conflicten / toMark) en `apply()` (schrijft, in een transactie). Drie knoppen: sell-drempel
+(min onze-sell-winst %), min-minuten-in-trade, en **max vroege dip** (`lo_pl >= maxDip`, default −0,3 via
+`DEFAULT_MAX_DIP`). Het werkt op `coin_moment_sells` (= de promising-universe).
+
+**Waarom de dip-grens (Daans feedback):** een moment dat binnen ~5 min ONDER 0 zakt koop je in de praktijk
+niet — je zit eerst in de min. `lo_pl` (laagste P&L in de trade) ≈ de vroege dip voor winst-lock-winnaars
+(na de dip stijgt de koers en de stop loopt mee, dus de trade revisiteert het dieptepunt niet). Kalibratie:
+"dip < 0 = uitsluiten" is TE streng (raakt 35 van Daans 167 eigen ok-marks die zelf een dip onder 0 hadden);
+zijn niet-ok marks dippen juist nauwelijks (gem −0,03). −0,3 zit in de diepe staart: vangt het −0,48
+voorbeeld (2025-02-16 01:17:57) + de legacy "163%-na-diepe-dip"-conflicten, raakt ~25/674 kandidaten.
 **Veiligheid:** slaat elk moment met een bestaand handmatig label over (overschrijft NOOIT je ok/niet-ok),
 schrijft `set_by='auto-ok'` + reden (category `'goed / top'` + comment met sell%/min) zodat
 `DELETE FROM coin_moment_labels WHERE set_by='auto-ok'` alles terugdraait.
