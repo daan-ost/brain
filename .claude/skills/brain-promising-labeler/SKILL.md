@@ -219,6 +219,17 @@ alles terugdraait.
 - Sweet spot = **sell≥5% + min≥15** → ~61% recall, 1 conflict op 28. sell≥3/min≥15 = 69% recall, 6 conf.
   Methode = [[parent-gate-gemene-deler]]-stijl: regel toetsen tegen je marks (recall) én je niet-ok (conf).
 
+**Hoog-yield-eerst workflow (Daans voorkeur):** zet eerst een schone, duidelijk winstgevende set op ok
+(`--sell=10 --min=15` → 599 labels op 2525) zodat er meteen genoeg data is om vervolg-analyses op te
+draaien; verbreed later met lagere `--sell`. set_by='auto-ok' houdt deze gescheiden van je eigen marks.
+
+**Mislabel-review (zelfde data, omgekeerd toegepast).** Verdachte eigen labels vind je door de marks tegen
+het sell-resultaat te leggen:
+- *ok maar lage sell* → splits op `hi_pl` (hoogste punt in trade): `hi_pl≥3` = goede koop die de
+  sell-engine niet verzilverde (NIET jouw fout, Epic S); `hi_pl<3` = moment dat nooit ~3% haalde =
+  mogelijk te gul gevinkt → checken. (Kern-invariant: koop-kwaliteit ≠ sell-resultaat — zie boven.)
+- *niet-ok maar sell hoog én min≥15* (geen snelle pump) = mogelijk onterecht afgekeurd → checken.
+
 ## Sell-engine per moment (punt 4 — PREPARED, not run)
 
 `coin_moment_sells` (coin, datetime) holds the sell-engine outcome per buy-moment (P&L, exit, hi/lo,
