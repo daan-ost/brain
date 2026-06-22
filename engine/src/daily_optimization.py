@@ -112,7 +112,7 @@ def main():
     res = run_optimization(rebuild=not NO_REBUILD)
     ratios, new = res["ratios"], res["new"]
 
-    log += ["", "## Ratio per rule (executed, best_upside-klasse)", "",
+    log += ["", "## Ratio per rule (executed, profit_loss-klasse: goed>=3% / slecht<0%)", "",
             "| rule | goed | slecht | ratio |", "|---|---|---|---|"]
     for rule in sorted(ratios):
         g, s = ratios[rule]

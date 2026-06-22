@@ -3,3 +3,6 @@ data/
 out/
 __pycache__/
 *.pyc
+
+# rule-discovery dev-cache (Epic RD) — geen Parquet-store, alleen herhaal-versneller
+src/discovery/.cache/

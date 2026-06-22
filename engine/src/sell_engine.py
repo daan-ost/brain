@@ -16,6 +16,7 @@ from db import brain
 from config import FORWARD_MINUTES
 from sell_rule101 import rule_engine_101
 from sell_lock import parse_sl, lock_profit
+from outlier_guard import filter_outliers
 
 
 def merge_sl(raw_by_rule, ovr_by_rule):
@@ -57,6 +58,11 @@ class SellEngine:
                 self.DT.append(r["datetime"])
                 self.PX.append(float(r["price"]))
                 self.VV.append(float(r["value"]) if r["value"] is not None else 0.0)
+            # Defense-in-depth: gooi prijs-outliers (feed-glitch, bv. price=23044 waar ~0,02304
+            # hoort) uit de reeks vóór we verkoopprijzen scannen. De LEIDENDE fix zit bij ingest
+            # (import_indicators.py zet price=NULL); dit vangt een tick op die toch ongezuiverd in
+            # de DB staat, zodat geen koop-moment ooit tegen een rotte tick "verkoopt".
+            self.DT, self.PX, self.VV, _dropped = filter_outliers(self.DT, self.PX, self.VV)
             c.execute("SELECT stoploss_multiplier, roundingup FROM coins WHERE id=%s", (symbol,))
             coin = c.fetchone() or {}
             self.SELL_MULT = float(coin.get("stoploss_multiplier") or 0.9996)

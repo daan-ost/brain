@@ -1,0 +1,18 @@
+# Engine Python-dependencies — engine/.venv (Python 3.10)
+# Installeren:  python3.10 -m venv .venv && .venv/bin/pip install -r requirements.txt
+
+# --- kern-stack (data + sell-engine + bestaande parent_*-harness) ---
+pymysql
+numpy<2.0.0          # pysubgroup eist numpy<2; de engine werkt hier prima mee
+scipy
+pandas
+scikit-learn
+duckdb
+
+# --- rule-discovery engine (Epic RD) ---
+pysubgroup==0.9.0    # segmenteren van de goede trades (Subgroup Discovery)
+wittgenstein==0.3.5  # RIPPER (reserve-subregel-leerder voor de funnel)
+
+# LET OP — numba/llvmlite (transitieve dep van pysubgroup) crasht met SIGBUS bij JIT-compilatie
+# op Apple Silicon. Zet daarom NUMBA_DISABLE_JIT=1 vóór het importeren van pysubgroup. Dat gebeurt
+# automatisch in discovery/segment.py; pysubgroup's kern-algoritmes draaien prima zonder JIT.

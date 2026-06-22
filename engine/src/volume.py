@@ -60,6 +60,9 @@ def check_volumeud_3(rows, min_volume, s=RULE21_VOLUME_SETTINGS):
     """Volume-spike-after-accumulation detector. rows: newest-first list of dicts
     {value, price} for the last `minutes_to_analyse` minutes. Returns True (buy) / False.
     Faithful port of functions_br.php:5761-5984."""
+    # ticks zonder prijs (feed-glitch; sell-engine filtert ze ook) kunnen geen geldig volume-signaal
+    # zijn — eruit, anders crasht de prijs-vergelijking. Hardening + maakt compute_volume_found robuust.
+    rows = [r for r in rows if r.get("price") is not None]
     if not rows or len(rows) < s["minimal_rows_to_analyse"]:
         return False
     value_0 = round(float(rows[0]["value"]))

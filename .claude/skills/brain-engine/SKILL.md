@@ -52,6 +52,7 @@ per coin (raw/min_volume); see the scale guard in [[brain-rule-tuning]].
 - **`rules_vs_promising.py`** — overlays actual legacy rule-fires on promising periods. Shows rules' low recall + low precision vs the good ground truth. Use the recorded-trade overlay (section A), not the current-boundary live re-eval (section B, drifts).
 - **`feature_store.py`** (Epic B) — builds the Parquet feature store: per in-scope datetime × indicator × lookback 1..20, the full window_metrics. Modes: `full` (promising-period dts + fires) / `fires` (labeled fires only, fast). Writes engine/data/features/ (gitignored). Leak-free as-of.
 - **`feature_query.py`** — sweeps the store: ranks (indicator,lookback,metric) by good/bad separation (Cohen's d). The new-rule / precision-feature discovery primitive. Finding: volume features dominate; edge is multivariate (no single threshold).
+- **`parent_*.py`** (rule-DISCOVERY harness, READ-ONLY) — bottom-up nieuwe rules uit de yes-marks: regime-clustering + parent-cascade + gestapelde vorm-subregels, tijd-holdout, sell-engine als eindtoets. Beoordeelt op gerealiseerde `profit_loss` (geen best_upside). Zie skill [[brain-rule-discovery]] + `docs/methodology/rule-discovery.md`.
 
 ## How a buy rule works
 

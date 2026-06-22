@@ -13,8 +13,10 @@ Hard rule: `bot_signals` is a **read-only source** — never written to.
 | [S](epic-S-sell-precision.md) | Sell-engine precision (87% → higher) — **parked**, dependency of A | E09 (faithful, not optimized) |
 | [R](epic-R-rule-tuning-discovery.md) | Rule tuning, scoring & automated discovery (goal: per coin/rule #bad ≤ #good) | E06 + E03/E05 |
 | [L](epic-L-promising-labeler.md) | Promising labeler — per-moment buy-quality labeling + classification tuning (imports legacy yes/no labels) | A + E02 |
+| [RD](epic-RD-rule-discovery-engine.md) | Rule-discovery engine — bottom-up nieuwe rules uit promising trades (Subgroup Discovery + Rule Induction + overfit-discipline) | L + A + B + sell-engine |
+| [RDA](epic-RDA-rule-discovery-automation.md) | Rule-discovery automatisering — autonome loop + routine-aanpassingen (verfijnt E06/E08) | RD + E07 |
 
-A and B are the concrete, buildable versions of the foundation. R is the path to ~legacy level (interpretable rules, before ML). S is a parked dependency. The numbered E01–E11 below remain the grand plan.
+A and B are the concrete, buildable versions of the foundation. R is the path to ~legacy level (interpretable rules, before ML). **RD = de bewezen bottom-up discovery-methodiek als bouwbare engine; RDA = de automatisering ervan (verfijnt E06/E08), incl. aanpassingen aan de huidige routines.** Methodiek: [../methodology/rule-discovery.md](../methodology/rule-discovery.md). S is a parked dependency. The numbered E01–E11 below remain the grand plan.
 
 ## Grand plan
 

@@ -128,7 +128,7 @@ def horizons_at(dt, buy):
 
 
 all_fires = []
-for rule in RULES:
+for rule in sorted(rule_eng.rules.keys()):          # 20-23 + actieve discovery-rules (bv. 30)
     for dt in rule_eng.fires(rule, FROM_dt, TO_dt):
         all_fires.append((dt, rule))
 all_fires.sort()

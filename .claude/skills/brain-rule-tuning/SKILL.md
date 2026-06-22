@@ -8,14 +8,17 @@ How we sharpen the main buy rules (20/21/22/23) by adding subrule conditions, us
 
 ## Good / bad (the target)
 
-GOOD trade = executed, `best_upside >= 3%` (the opportunity was real — see brain-indicator-metrics).
-BAD trade = executed, `best_upside < 0.5%` (slecht — to prevent). Middel (0.5-3%) is the grey zone.
-Quality is the best available exit, NOT our sell P&L (the sell-engine is separate, Epic S).
+**Beoordeel op gerealiseerde `profit_loss`, NIET op best_upside** (per [[feedback-hard-numbers-only]]):
+GOOD = `profit_loss >= 3%`, slecht = `profit_loss < 0%`, middel = 0–3%. De potentiële-stijging-maat
+(`best_upside`) is afgeschaft als oordeel — de sell-engine geeft het harde getal. (De routine-code
+classificeert al op `profit_loss` via `opt_lib._cls_pl`; oude docstrings die best_upside noemen zijn
+verouderd.)
 
-**Success bar** (see memory rule-success-criterion): a rule is "successful" iff (1) `#goed ≥ 2×#slecht`
-AND (2) `Σbest_upside(goed) ≥ 3×Σbest_upside(slecht)`. As of 2026-06: criterion 2 is met everywhere;
-the BINDING gap is criterion 1 (count) — all rules sit at 1.2–1.85×. So the routine's job is to push
-the count ratio to ≥2 via tighten (drop slecht) + loosen (add goed).
+**Success bar.** Voor het bijslijpen van bestaande rules 20-23: drop slecht zonder goed te verliezen
+(engine-refire-gate). Voor de eindtoets van een GEHEEL NIEUWE rule geldt de **20-23-lat** — zie
+[[brain-rule-discovery]] / `docs/methodology/rule-discovery.md` §5 (selectiviteit ≤~0,1% v.d. ticks,
+gem ≥+0,7%/trade, slecht ≤~45%, holdout + 2e munt). Het oude `#goed≥2×#slecht`-criterium op best_upside
+(memory `rule-success-criterion`) is hiermee vervangen.
 
 ## Principle 1 — as FEW subrules per main rule as possible
 
@@ -101,4 +104,5 @@ full snapshot + diff vs previous + per-rule toelichting + `source`), written by 
 the changelog. Reconstruct rule R at version N = latest row for R with version ≤ N. The `source` on a
 subrule (`legacy-seed` / `tuned-precision` / `auto-applied`) tells you where it came from.
 
-Related: [[brain-indicator-metrics]] (the calc cache), [[brain-engine]] (rule evaluation).
+Related: [[brain-indicator-metrics]] (the calc cache), [[brain-engine]] (rule evaluation),
+[[brain-rule-discovery]] (NIEUWE rules vinden — buurman van tunen; bottom-up uit yes-marks).

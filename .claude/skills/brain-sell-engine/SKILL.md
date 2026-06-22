@@ -45,6 +45,39 @@ leidend bij heranalyse. Klasse-veranderingen door een rerun komen automatisch in
 **Harde verkoopdatum** (handmatig) — apart van de vier: bereikt tick T ≥ `hard_sell_dt` en de
 engine heeft niet al gesold → forceer sell op die tick.
 
+## Outlier-guard op prijs-ticks (datakwaliteit — verplicht weten)
+
+Eén corrupte feed-tick (decimaal-/schaal-glitch) in `brain.indicators` veroorzaakt downstream
+**absurde winst**: de sell-engine scant ~60 min vooruit naar de hoogste verkoopprijs en "verkoopt"
+elk koop-moment in dat venster tegen die ene rotte tick. Bekend geval: DOGEAI (2525), `volumeud`,
+**2025-06-10 13:06:37**, `price=23044` (echte prijs ~0,02304) → 15 rijen in `coin_moment_sells` met
+`profit_loss` tot ~100.000.000%. De engine doet niets fout (garbage in, garbage out) — dit is een
+**datakwaliteit**-probleem.
+
+- **`outlier_guard.py`** — gedeelde guard. `OUTLIER_FACTOR = 10.0`, `OUTLIER_WINDOW = 5`. Een tick
+  is een outlier als zijn `price` meer dan `OUTLIER_FACTOR`× afwijkt van de **mediaan van zijn buren**
+  (robuust tegen één losse uitschieter én tegen een legitieme trend; een echte pump van ~2-3x blijft
+  staan). Functies: `is_price_outlier`, `outlier_indices`, `filter_outliers(DT,PX,VV)`,
+  `null_price_outliers(conn, symbols, indicators)`.
+- **Twee plekken (defense-in-depth):**
+  1. **LEIDEND — bij ingest** (`import_indicators.py`): na de `INSERT..SELECT` zet
+     `null_price_outliers` `price=NULL` voor elke outlier per (symbol, indicator) in `brain.indicators`.
+     Een re-import kopieert de glitch wél opnieuw uit legacy, maar de guard verwijdert hem **meteen weer**.
+     `bot_signals` blijft strikt read-only.
+  2. **Vangnet — in `SellEngine.__init__`**: `filter_outliers` gooit een outlier-tick alsnog uit `PX`
+     vóór het scannen, mocht er toch een ongezuiverde tick in de DB staan.
+- **NULL i.p.v. delete**: alles downstream filtert al op `price IS NOT NULL`, dus NULL-en verwijdert de
+  tick uit alle prijslogica terwijl de `value`-rij blijft staan.
+- **Opschonen na een glitch**: draai de guard tegen de huidige data (of re-import), dán
+  `sell_promising.py <coin> --run`. Verifieer: `coin_moment_sells WHERE profit_loss>1000` → 0 en
+  `indicators WHERE price>1` → 0. Een fires-rebuild is alleen nodig als een **executed** trade in het
+  glitch-venster viel (bij DOGEAI was dat niet zo → `coin_fires` was al schoon).
+- **Tijdelijk vangnet in de UI**: `Trades\Index::summaryRows()` filtert `>1000%` weg
+  (`SANE_MIN_PL`/`SANE_MAX_PL`). Sinds deze guard hoeft die niets meer weg te filteren; laat hem staan
+  als defense-in-depth.
+- Tests: `test_outlier_guard.py` (plat assert-script) — glitch afgewezen, normale reeks + echte pump
+  intact, drempel-grens, `filter_outliers`-uitlijning.
+
 ## Modules (`engine/src/`)
 
 - **`sell_lock.py`** — gedeelde `parse_sl()` + `lock_profit()`. Single source of truth voor de

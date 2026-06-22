@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "brain",
+      "runtimeExecutable": "echo",
+      "runtimeArgs": ["MAMP serves brain at https://brain:8890"],
+      "port": 8890
+    }
+  ]
+}

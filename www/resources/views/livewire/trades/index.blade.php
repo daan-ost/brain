@@ -75,6 +75,12 @@
             <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-800">Goed {{ $pills['goed']['n'] }} · ⌀{{ $pct($pills['goed']['avg']) }} · Σ {{ $pct($pills['goed']['pl']) }}</span>
             <span class="px-2.5 py-1 rounded-full bg-orange-100 text-orange-800">Middel {{ $pills['middel']['n'] }} · Σ {{ $pct($pills['middel']['pl']) }}</span>
             <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-800">Slecht {{ $pills['slecht']['n'] }} · Σ {{ $pct($pills['slecht']['pl']) }}</span>
+            <span class="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800"
+                  title="Promising kansen (goede koop-stijgingen, één positie tegelijk: overlappende momenten binnen hetzelfde hold-window tellen als één trade) met Σ sell-winst van het vroegste instapmoment, en welk deel we verhandeld hebben. Het totaal is rule-onafhankelijk; het verhandeld-deel volgt wél de rule-filter.">
+                Promising {{ number_format($promPill['n'], 0, ',', '.') }} · Σ {{ $pct($promPill['pl']) }} ·
+                <span class="font-semibold">{{ number_format($promPill['pct'], 1, ',', '.') }}% verhandeld</span>
+                ({{ $promPill['traded'] }}/{{ $promPill['n'] }})
+            </span>
         </div>
     </div>
 
@@ -85,6 +91,12 @@
             // groepeer per maand zodat we per maand een sub-header kunnen tonen
             $byMonth = collect($summary)->groupBy('ym');
         @endphp
+        @php
+            // ingedikte klasse-cel: "n (±x,x%)" — aantal met Σwinst tussen haakjes
+            $clsCell = fn ($n, $pl, $color) => $n == 0
+                ? '<span class="text-gray-300">0</span>'
+                : '<span class="'.$color.' font-medium">'.$n.'</span> <span class="'.$color.' opacity-60 text-xs">('.$pct($pl).')</span>';
+        @endphp
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
@@ -92,20 +104,20 @@
                         <th class="px-4 py-3">Maand</th>
                         <th class="px-4 py-3">Coin</th>
                         <th class="px-4 py-3 text-right">Goed</th>
-                        <th class="px-4 py-3 text-right">Σ goed</th>
                         <th class="px-4 py-3 text-right">Middel</th>
-                        <th class="px-4 py-3 text-right">Σ middel</th>
                         <th class="px-4 py-3 text-right">Slecht</th>
-                        <th class="px-4 py-3 text-right">Σ slecht</th>
                         <th class="px-4 py-3 text-right">Trades</th>
                         <th class="px-4 py-3 text-right">Σ winst</th>
+                        <th class="px-4 py-3 text-right border-l border-gray-200" title="Promising kansen: goede koop-stijgingen (max 60min ≥ 3% & geen vroege dip), gegroepeerd per hold-window (één positie tegelijk — overlappende momenten tellen als één trade). Winst = die van het vroegste instapmoment (pakt de meeste upside). De potentie.">Promising</th>
+                        <th class="px-4 py-3 text-right" title="Hoeveel van de promising rises we daadwerkelijk verhandeld hebben. Het verschil (+N) = potentie voor nieuwe rules.">Verhandeld</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
                     @forelse ($byMonth as $ym => $rows)
                         @php
                             $mTot = ['n' => 0, 'g' => 0, 'm' => 0, 's' => 0, 'pl' => 0.0,
-                                     'plG' => 0.0, 'plM' => 0.0, 'plS' => 0.0];
+                                     'plG' => 0.0, 'plM' => 0.0, 'plS' => 0.0,
+                                     'pn' => 0, 'ppl' => 0.0, 'pt' => 0];
                             foreach ($rows as $r) {
                                 $mTot['n']   += (int) $r['n_total'];
                                 $mTot['g']   += (int) $r['n_goed'];
@@ -115,46 +127,79 @@
                                 $mTot['plM'] += (float) $r['pl_middel'];
                                 $mTot['plS'] += (float) $r['pl_slecht'];
                                 $mTot['pl']  += (float) $r['pl_total'];
+                                $mTot['pn']  += (int) $r['prom_n'];
+                                $mTot['ppl'] += (float) $r['prom_pl'];
+                                $mTot['pt']  += (int) $r['prom_traded'];
                             }
                             try { $mLabel = \Carbon\Carbon::createFromFormat('Y-m', $ym)->translatedFormat('F Y'); }
                             catch (\Throwable $e) { $mLabel = $ym; }
                         @endphp
                         @foreach ($rows as $r)
+                            @php $miss = (int) $r['prom_n'] - (int) $r['prom_traded']; @endphp
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                                     @if ($loop->first){{ $mLabel }}@endif
                                 </td>
                                 <td class="px-4 py-3 text-gray-700">{{ $r['symbol'] }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-emerald-700">{{ $r['n_goed'] }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-emerald-700">{{ $pct($r['pl_goed']) }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-orange-700">{{ $r['n_middel'] }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-orange-700">{{ $pct($r['pl_middel']) }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-red-700">{{ $r['n_slecht'] }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-red-700">{{ $pct($r['pl_slecht']) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">{!! $clsCell($r['n_goed'], $r['pl_goed'], 'text-emerald-700') !!}</td>
+                                <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">{!! $clsCell($r['n_middel'], $r['pl_middel'], 'text-orange-700') !!}</td>
+                                <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">{!! $clsCell($r['n_slecht'], $r['pl_slecht'], 'text-red-700') !!}</td>
                                 <td class="px-4 py-3 text-right tabular-nums font-semibold text-gray-800">{{ $r['n_total'] }}</td>
                                 <td class="px-4 py-3 text-right tabular-nums font-semibold {{ $r['pl_total'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($r['pl_total']) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap border-l border-gray-100">
+                                    @if ($r['prom_n'] > 0)
+                                        <span class="font-medium text-indigo-700">{{ $r['prom_n'] }}</span>
+                                        <span class="text-indigo-700 opacity-60 text-xs">({{ $pct($r['prom_pl']) }})</span>
+                                    @else
+                                        <span class="text-gray-300">—</span>
+                                    @endif
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums whitespace-nowrap">
+                                    @if ($r['prom_n'] > 0)
+                                        <span class="font-medium text-gray-800">{{ $r['prom_traded'] }}</span><span class="text-gray-400">/{{ $r['prom_n'] }}</span>
+                                        @if ($miss > 0)
+                                            <span class="ml-1 inline-block rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-600" title="{{ $miss }} promising momenten zonder trade — potentie voor nieuwe rules">+{{ $miss }}</span>
+                                        @endif
+                                    @else
+                                        <span class="text-gray-300">—</span>
+                                    @endif
+                                </td>
                             </tr>
                         @endforeach
                         @if ($rows->count() > 1)
+                            @php $mMiss = $mTot['pn'] - $mTot['pt']; @endphp
                             <tr class="bg-gray-50 text-xs">
                                 <td class="px-4 py-2 font-semibold text-gray-700">{{ $mLabel }} · totaal</td>
                                 <td class="px-4 py-2 text-gray-500">—</td>
-                                <td class="px-4 py-2 text-right tabular-nums text-emerald-700 font-semibold">{{ $mTot['g'] }}</td>
-                                <td class="px-4 py-2 text-right tabular-nums text-emerald-700 font-semibold">{{ $pct($mTot['plG']) }}</td>
-                                <td class="px-4 py-2 text-right tabular-nums text-orange-700 font-semibold">{{ $mTot['m'] }}</td>
-                                <td class="px-4 py-2 text-right tabular-nums text-orange-700 font-semibold">{{ $pct($mTot['plM']) }}</td>
-                                <td class="px-4 py-2 text-right tabular-nums text-red-700 font-semibold">{{ $mTot['s'] }}</td>
-                                <td class="px-4 py-2 text-right tabular-nums text-red-700 font-semibold">{{ $pct($mTot['plS']) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-semibold">{!! $clsCell($mTot['g'], $mTot['plG'], 'text-emerald-700') !!}</td>
+                                <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-semibold">{!! $clsCell($mTot['m'], $mTot['plM'], 'text-orange-700') !!}</td>
+                                <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-semibold">{!! $clsCell($mTot['s'], $mTot['plS'], 'text-red-700') !!}</td>
                                 <td class="px-4 py-2 text-right tabular-nums font-bold text-gray-800">{{ $mTot['n'] }}</td>
                                 <td class="px-4 py-2 text-right tabular-nums font-bold {{ $mTot['pl'] >= 0 ? 'text-green-700' : 'text-red-700' }}">{{ $pct($mTot['pl']) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap border-l border-gray-200">
+                                    @if ($mTot['pn'] > 0)
+                                        <span class="font-semibold text-indigo-700">{{ $mTot['pn'] }}</span>
+                                        <span class="text-indigo-700 opacity-60">({{ $pct($mTot['ppl']) }})</span>
+                                    @else — @endif
+                                </td>
+                                <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+                                    @if ($mTot['pn'] > 0)
+                                        <span class="font-semibold text-gray-800">{{ $mTot['pt'] }}</span><span class="text-gray-400">/{{ $mTot['pn'] }}</span>
+                                        @if ($mMiss > 0)<span class="ml-1 inline-block rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-600">+{{ $mMiss }}</span>@endif
+                                    @else — @endif
+                                </td>
                             </tr>
                         @endif
                     @empty
-                        <tr><td colspan="10" class="px-4 py-8 text-center text-gray-500">Geen executed trades voor deze filters.</td></tr>
+                        <tr><td colspan="9" class="px-4 py-8 text-center text-gray-500">Geen trades of promising momenten voor deze filters.</td></tr>
                     @endforelse
                 </tbody>
             </table>
         </div>
+        <p class="text-xs text-gray-400 px-1">
+            <span class="text-indigo-600">Promising</span> = goede koop-stijgingen (max 60 min ≥ 3% & geen vroege dip onder −0,5%), gegroepeerd per hold-window (één positie tegelijk: overlappende momenten — bv. rule 20 dan rule 21 — tellen als één trade, dus geen dubbeltelling); winst = die van het vroegste instapmoment.
+            <span class="font-medium">Verhandeld</span> toont hoeveel kansen een echte trade kregen; de <span class="text-indigo-600">+N</span> is de potentie die nieuwe rules nog kunnen pakken. Het promising-totaal is rule-onafhankelijk; het verhandeld-deel volgt wél de rule-filter.
+        </p>
     @else
     {{-- Table --}}
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

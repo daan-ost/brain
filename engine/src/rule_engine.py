@@ -21,30 +21,36 @@ RULES = (20, 21, 22, 23)
 
 
 class RuleEngine:
-    def __init__(self, symbol, conn=None):
+    def __init__(self, symbol, conn=None, gate_col="brain_volume_found"):
         self.symbol = symbol
         self._own = conn is None
         self.conn = conn or brain()
+        # candidate-gate kolom: brain_volume_found (brain's eigen, switch 2026-06-17) of de legacy-gekopieerde
+        # volume_found (waarmee de huidige live coin_fires zijn gemaakt). Instelbaar voor diagnose/herstel.
+        gate_col = gate_col if gate_col in ("brain_volume_found", "volume_found") else "brain_volume_found"
+        self.gate_col = gate_col
         # all indicator series for this coin, from brain
         self.series = {}
         with self.conn.cursor() as c:
-            # candidate-gate: use brain_volume_found (brain's own computation, identical for all rules
-            # 20-23), not the legacy-copied volume_found which was only set on ticks where legacy ran.
-            # Switched 2026-06-17 — see memory brain-volume-found-switch.
-            c.execute("SELECT indicator, datetime, value, price, brain_volume_found AS volume_found FROM indicators "
+            c.execute(f"SELECT indicator, datetime, value, price, {gate_col} AS volume_found FROM indicators "
                       "WHERE trading_symbol_id=%s AND value IS NOT NULL ORDER BY datetime", (symbol,))
             for r in c.fetchall():
                 s = self.series.setdefault(r["indicator"], {"dt": [], "v": [], "p": [], "vf": []})
                 s["dt"].append(r["datetime"]); s["v"].append(float(r["value"]))
                 s["p"].append(float(r["price"]) if r["price"] is not None else None)
                 s["vf"].append(int(r["volume_found"]))
-            # rules
+            # rules: de bestaande 20-23 (gepoort op brain_volume_found) + ontdekte discovery-rules
+            # (source LIKE 'discovery%'), die ONGEPOORT vuren — buiten de volume-poort om (Epic RD).
             c.execute("SELECT rule_number, sort, indicator, subrulename, def1_value, b_min, b_max, "
-                      "value_condition FROM rules WHERE rule_number IN (20,21,22,23) AND active=1 "
+                      "value_condition, source FROM rules WHERE active=1 AND "
+                      "(rule_number IN (20,21,22,23) OR source LIKE 'discovery%') "
                       "ORDER BY rule_number, sort, id")
             self.rules = {}
+            self.ungated = set()          # rules die NIET op brain_volume_found gepoort worden
             for r in c.fetchall():
                 self.rules.setdefault(r["rule_number"], []).append(r)
+                if r.get("source") and str(r["source"]).startswith("discovery"):
+                    self.ungated.add(r["rule_number"])
             # min_volume per rule
             c.execute("SELECT rule_number, min_volume FROM coin_rule_settings WHERE trading_symbol_id=%s", (symbol,))
             self.minvol = {r["rule_number"]: float(r["min_volume"]) if r["min_volume"] is not None else 1e12
@@ -115,8 +121,9 @@ class RuleEngine:
         if not s:
             return []
         out = []
+        gated = rule not in self.ungated          # discovery-rules vuren ongepoort (geen vf-eis)
         for i, dt in enumerate(s["dt"]):
-            if s["vf"][i] != 1:
+            if gated and s["vf"][i] != 1:
                 continue
             if frm and dt < frm:
                 continue

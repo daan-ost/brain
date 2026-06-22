@@ -13,6 +13,8 @@ import sys
 
 import pymysql
 
+from outlier_guard import null_price_outliers
+
 SYMS = [int(a) for a in sys.argv[1:]] or [2525, 244]
 INDICATORS = ("vzo", "phobos", "obv-x-value", "mfi", "volumeud")
 
@@ -50,4 +52,17 @@ with conn.cursor() as c:
     c.execute("SELECT trading_symbol_id, COUNT(*) n, MIN(datetime) f, MAX(datetime) t FROM indicators GROUP BY trading_symbol_id")
     for r in c.fetchall():
         print(f"  symbol {r[0]}: {r[1]} rows  {r[2]} .. {r[3]}")
+
+# Outlier-guard (LEIDEND): de legacy-feed bevat soms één corrupte schaal-glitch (bv. price=23044
+# waar de echte prijs ~0,02304 is). Die zou downstream absurde winst veroorzaken in de sell-engine.
+# Zet price=NULL voor elke tick die >OUTLIER_FACTOR afwijkt van de mediaan van zijn buren, per
+# (symbol, indicator). Draait NA de INSERT..SELECT zodat een re-import de glitch wel kopieert maar
+# de guard hem meteen weer wegneemt. bot_signals blijft ongemoeid — we corrigeren alleen brain.
+nulled = null_price_outliers(conn, SYMS, INDICATORS)
+if nulled:
+    total = sum(nulled.values())
+    detail = ", ".join(f"{sym}/{ind}={n}" for (sym, ind), n in nulled.items())
+    print(f"outlier-guard: price=NULL gezet voor {total} corrupte tick(s) — {detail}")
+else:
+    print("outlier-guard: geen prijs-outliers gevonden")
 conn.close()
