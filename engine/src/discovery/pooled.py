@@ -186,12 +186,14 @@ def refine_quality(states, base_subrules, n_blocks=5, max_add=15, keep_floor=0.3
 
 def run_pooled(coins, n_blocks=5, recall_floor=0.7, abs_floor=0.10, target_sel=0.001,
                max_sub=45, n_perm=2000, refine=True, prev_subrules=None, rule_label="30",
-               out_name="pooled_rule.json", vol_bases=None, whitespace_rules=None):
+               out_name="pooled_rule.json", vol_bases=None, whitespace_rules=None, min_white_profit=None):
     """vol_bases: optionele {name: vol_base} om de relvol-basislijn per munt te overschrijven
     (gevoeligheids-check; None = laagste min_volume uit coin_rule_settings).
     whitespace_rules: optionele tuple live rule-nummers (bv. (20,21,22,23,30)); zo ja, zoek de nieuwe
     rule op de WITTE promising-groepen = groepen waar nog GEEN live executed trade van die rules op zit
-    (Daans vaste werkwijze: prioriteer de grootste witte vlek; zie docs/methodology/rule-discovery.md)."""
+    (Daans vaste werkwijze: prioriteer de grootste witte vlek; zie docs/methodology/rule-discovery.md).
+    min_white_profit: optioneel; beperk de witte groepen tot die met max GEREALISEERDE profit > deze %
+    (mik op de hoog-winst gemiste kansen i.p.v. alle witte ruimte)."""
     vol_bases = vol_bases or {}
     syms = {nm: sym for sym, nm in coins}
     states = {}
@@ -204,6 +206,11 @@ def run_pooled(coins, n_blocks=5, recall_floor=0.7, abs_floor=0.10, target_sel=0
             keep = set(range(len(dd.groups))) - covered
             print(f"  [{nm}] rule {rule_label}: {len(keep)}/{len(dd.groups)} promising groepen nog WIT "
                   f"(geen live trade van {whitespace_rules})")
+            if min_white_profit is not None:    # mik op de HOOG-WINST gemiste kansen
+                gmax = dd.df[dd.df["group_id"] >= 0].groupby("group_id")["pl"].max()
+                keep = {gi for gi in keep if gi in gmax.index and gmax[gi] > min_white_profit}
+                print(f"  [{nm}] rule {rule_label}: {len(keep)} daarvan met max gerealiseerde profit "
+                      f"> {min_white_profit}% (de gemiste kroonjuwelen)")
         elif prev_subrules:                     # sequential covering: zoek op de NOG ONBEDEKTE groepen
             covered = dd.groups_hit(dd.survivors(prev_subrules))
             keep = set(range(len(dd.groups))) - covered
@@ -310,6 +317,9 @@ def main():
                     help="zoek de volgende rule op de WITTE promising-groepen = geen live trade van een "
                          "ANDERE actieve rule (Daans vaste werkwijze: prioriteer de grootste witte vlek)")
     ap.add_argument("--rule", default="31", help="rule-label voor de output (default 31)")
+    ap.add_argument("--min-profit", type=float, default=None,
+                    help="beperk de witte groepen tot die met max gerealiseerde profit > deze %% "
+                         "(mik op de hoog-winst gemiste kansen, bv. --min-profit 10)")
     args = ap.parse_args()
     coins = [(2525, "DOGEAI"), (244, "NOS")]
     if args.whitespace:
@@ -322,7 +332,7 @@ def main():
             ws = tuple(sorted(r["rule_number"] for r in c.fetchall() if r["rule_number"] != int(args.rule)))
         print(f"  witte-ruimte rules (voorrang): {ws}")
         run_pooled(coins, whitespace_rules=ws, rule_label=args.rule,
-                   out_name=f"pooled_rule_{args.rule}.json")
+                   out_name=f"pooled_rule_{args.rule}.json", min_white_profit=args.min_profit)
     elif args.round2:
         prev = json.load(open(os.path.join(os.path.dirname(__file__), ".cache", "pooled_rule.json")))
         prev_subs = [(c, s, lo, hi) for (c, s, lo, hi) in prev["subrules"]]
