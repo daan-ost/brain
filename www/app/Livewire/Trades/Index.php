@@ -99,14 +99,44 @@ class Index extends Component
     {
         $db = DB::connection(config('database.default'));
 
-        $execDts = []; // symbol_id => set van executed-fire datetimes (respecteert de rule-filter)
-        $db->table('coin_fires')->where('is_executed', true)
+        // Echte trade-posities als hold-windows [buy, sell] per coin (respecteert de rule-filter).
+        // Een kans telt als "verhandeld" zodra een ECHTE positie er (deels) overheen loopt — óók als
+        // die trade in een EERDERE kans startte en met zijn hold-window over deze kans heen loopt
+        // (je kon daar geen nieuwe trade openen, dus het is geen gemiste kans).
+        $tradeWins = []; // symbol_id => [[startTs, endTs], ...]
+        $db->table('coin_fires')->where('is_executed', true)->whereNotNull('selling_datetime')
             ->when($this->coin !== '', fn ($q) => $q->where('trading_symbol_id', (int) $this->coin))
             ->when($this->rule !== '', fn ($q) => $q->where('rule', (int) $this->rule))
-            ->select('trading_symbol_id', 'datetime')->orderBy('datetime')
-            ->get()->each(function ($f) use (&$execDts) {
-                $execDts[$f->trading_symbol_id][(string) $f->datetime] = true;
+            ->select('trading_symbol_id', 'datetime', 'selling_datetime')->orderBy('datetime')
+            ->get()->each(function ($f) use (&$tradeWins) {
+                $tradeWins[$f->trading_symbol_id][] = [strtotime((string) $f->datetime),
+                                                       strtotime((string) $f->selling_datetime)];
             });
+        // merge overlappende windows per coin → niet-overlappende, gesorteerde intervallen (snelle check)
+        foreach ($tradeWins as $sid => $wins) {
+            usort($wins, fn ($a, $b) => $a[0] <=> $b[0]);
+            $merged = [];
+            foreach ($wins as $w) {
+                if ($merged && $w[0] <= $merged[count($merged) - 1][1]) {
+                    $merged[count($merged) - 1][1] = max($merged[count($merged) - 1][1], $w[1]);
+                } else {
+                    $merged[] = $w;
+                }
+            }
+            $tradeWins[$sid] = $merged;
+        }
+        // dekkings-check (binary search): valt tijdstip $ts binnen een echte trade-positie van deze coin?
+        $covered = function ($sid, $ts) use ($tradeWins) {
+            $wins = $tradeWins[$sid] ?? [];
+            $lo = 0; $hi = count($wins) - 1;
+            while ($lo <= $hi) {
+                $mid = intdiv($lo + $hi, 2);
+                if ($ts < $wins[$mid][0]) { $hi = $mid - 1; }
+                elseif ($ts > $wins[$mid][1]) { $lo = $mid + 1; }
+                else { return true; }
+            }
+            return false;
+        };
 
         $moments = $db->table('coin_moment_sells')
             ->select('trading_symbol_id', 'symbol', 'datetime', 'selling_datetime', 'profit_loss')
@@ -123,7 +153,7 @@ class Index extends Component
         foreach ($moments as $m) {
             $startTs = strtotime((string) $m->datetime);
             $sellTs  = $m->selling_datetime ? strtotime((string) $m->selling_datetime) : $startTs;
-            $isFire  = isset($execDts[$m->trading_symbol_id][(string) $m->datetime]);
+            $isCov   = $covered($m->trading_symbol_id, $startTs); // moment binnen een echte trade-positie?
 
             // nieuwe losse kans? alleen als deze ná de verkoop van de vorige kans start.
             if ($m->trading_symbol_id !== $curSym || $startTs >= $curSellTs) {
@@ -134,12 +164,12 @@ class Index extends Component
                 $prom[$key]['prom_n']++;
                 $prom[$key]['prom_pl'] += (float) $m->profit_loss; // vroegste moment = representant
                 $curSym = $m->trading_symbol_id; $curSellTs = $sellTs; $curKey = $key; $curTraded = false;
-                if ($isFire) { $prom[$curKey]['prom_traded']++; $curTraded = true; }
+                if ($isCov) { $prom[$curKey]['prom_traded']++; $curTraded = true; }
             } else {
                 // binnen het hold-window: zelfde positie. Verleng het venster als deze later sluit.
                 if ($sellTs > $curSellTs) $curSellTs = $sellTs;
-                // verhandeld al gemarkeerd? zo niet en dit moment is een fire → tel de kans als verhandeld.
-                if (! $curTraded && $isFire) { $prom[$curKey]['prom_traded']++; $curTraded = true; }
+                // nog niet gedekt en dit moment valt binnen een echte positie (start óf overloop) → verhandeld.
+                if (! $curTraded && $isCov) { $prom[$curKey]['prom_traded']++; $curTraded = true; }
             }
         }
 
