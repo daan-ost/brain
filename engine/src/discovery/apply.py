@@ -157,13 +157,24 @@ def _price_at(A, t):
     return A.vpx[i - 1] if i > 0 else None
 
 
-def _occupied(conn, sym):
-    """Bestaande 20-23 executed-trades als bezette vensters [buy, sell] (de bot heeft voorrang)."""
+def _occupied(conn, sym, priority_rules=(20, 21, 22, 23)):
+    """Executed-trades van de VOORRANG-rules als bezette vensters [buy, sell]. De bot (20-23) heeft altijd
+    voorrang; bij het activeren van rule N krijgen ook reeds-actieve discovery-rules < N voorrang, zodat
+    rule N enkel de NOG witte gaten vult (geen dubbele posities op hetzelfde moment)."""
+    ph = ",".join(["%s"] * len(priority_rules))
     with conn.cursor() as c:
-        c.execute("SELECT datetime, selling_datetime FROM coin_fires WHERE trading_symbol_id=%s "
-                  "AND rule IN (20,21,22,23) AND is_executed=1 AND selling_datetime IS NOT NULL "
-                  "ORDER BY datetime", (sym,))
+        c.execute(f"SELECT datetime, selling_datetime FROM coin_fires WHERE trading_symbol_id=%s "
+                  f"AND rule IN ({ph}) AND is_executed=1 AND selling_datetime IS NOT NULL "
+                  f"ORDER BY datetime", (sym, *priority_rules))
         return [(r["datetime"], r["selling_datetime"]) for r in c.fetchall()]
+
+
+def _priority_rules(conn):
+    """20-23 + reeds-actieve discovery-rules met een LAGER nummer dan de rule die we activeren."""
+    with conn.cursor() as c:
+        c.execute("SELECT DISTINCT rule_number FROM rules WHERE active=1 AND source LIKE %s "
+                  "AND rule_number < %s", ("discovery%", DISCOVERY_RULE))
+        return (20, 21, 22, 23) + tuple(r["rule_number"] for r in c.fetchall())
 
 
 def activate(write=False):
@@ -183,13 +194,15 @@ def activate(write=False):
     from discovery.data import min_volume
 
     conn = _brain()
+    prio = _priority_rules(conn)             # 20-23 + actieve discovery-rules < deze rule (voorrang)
+    print(f"  voorrang-rules (bezetten de vensters): {prio}")
     for nm, blob in data["coins"].items():
         sym = blob["symbol"]
         A = AsOf(sym)
         vb = min_volume(sym)                 # relvol-basislijn (zelfde als de discovery-engine)
         eng = SellEngine(sym)
         prom = PromisingEngine(sym, "asc")
-        occ = _occupied(conn, sym)
+        occ = _occupied(conn, sym, prio)
         occ_buys = [b for b, _s in occ]
 
         def in_occupied(t):
@@ -233,7 +246,7 @@ def activate(write=False):
         sig = sum(pls)
         slecht = sum(1 for p in pls if p < 0)
         print(f"\n  --- {nm} (sym {sym}) ---")
-        print(f"      rule 30: {n_exec} trades in de idle-gaten ({n_shadow} shadows tijdens 20-23/30-posities)")
+        print(f"      rule {DISCOVERY_RULE}: {n_exec} trades in de idle-gaten ({n_shadow} shadows tijdens voorrang-posities)")
         print(f"      Σ {sig:+.0f}% | slecht {slecht}/{len(pls)} ({100*slecht//max(len(pls),1)}%) | "
               f"in promising {n_good}")
         if write:
@@ -246,9 +259,9 @@ def activate(write=False):
                         "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())",
                         (sym, nm, t, DISCOVERY_RULE, good, ex, buy, sp, sd, pl, bu))
             conn.commit()
-            print(f"      [geschreven] rule 30 coin_fires voor {nm} (20-23 onaangeroerd)")
+            print(f"      [geschreven] rule {DISCOVERY_RULE} coin_fires voor {nm} (voorrang-rules onaangeroerd)")
     if write:
-        # sell-instellingen rule 30 = kopie van rule 20 (globaal + per munt) + rule actief
+        # sell-instellingen rule N = kopie van rule 20 (globaal + per munt) + rule actief
         with conn.cursor() as c:
             c.execute("DELETE FROM strategies WHERE rule_number=%s", (DISCOVERY_RULE,))
             c.execute("INSERT INTO strategies (rule_number, sl_settings, created_at, updated_at) "
@@ -260,9 +273,10 @@ def activate(write=False):
             c.execute("UPDATE rules SET active=1 WHERE rule_number=%s AND source=%s", (DISCOVERY_RULE, SOURCE))
         conn.commit()
         print(f"\n  >>> Rule {DISCOVERY_RULE} GEACTIVEERD (active=1), sell-instellingen = kopie rule 20, "
-              f"trades in de idle-gaten geschreven. 20-23 ONAANGEROERD. Terug: DELETE coin_fires WHERE rule=30 + active=0.")
+              f"trades in de idle-gaten geschreven. Voorrang-rules ONAANGEROERD. "
+              f"Terug: DELETE coin_fires WHERE rule={DISCOVERY_RULE} + UPDATE rules SET active=0.")
     else:
-        print("\n  >>> DRY-RUN — niets geschreven. Draai met --activate --write om rule 30 te activeren.")
+        print(f"\n  >>> DRY-RUN — niets geschreven. Draai met --activate --write om rule {DISCOVERY_RULE} te activeren.")
     conn.close()
 
 
