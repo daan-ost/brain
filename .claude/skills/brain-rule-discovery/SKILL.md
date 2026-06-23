@@ -18,9 +18,15 @@ skill is de snelle kaart. Zie ook [[brain-engine]], [[brain-promising-labeler]],
 
 ## De methode in 5 stappen
 
+0. **Begin bij de sterke scheiders** — raadpleeg `brain.feature_quality` ([[feature-quality-database]])
+   vóór je zoekt: welke berekeningen scheiden winnaars/verliezers het best (cross-coin `separation`)?
+   Beperk de zoekruimte daartoe → minder doorzoeken = minder vastpinnen op toeval. Bevinding: de
+   **prijs-amplitude**-berekeningen scheiden, de oscillator-niveaus nauwelijks.
 1. **Groepjes** verzamelen (rises uit yes-marks), eerste-3-triple.
-2. **Gemene deler per groepje**: ~30 `window_metrics` × lookbacks × 5 indicatoren (obv-x-value, vzo,
-   mfi, phobos, volumeud + prijs).
+2. **Gemene deler per groepje**: de **31 `window_metrics` + 13 nieuwe `extra_calcs` + 4 cross-kanaal
+   `cross_calcs`** (research 2026-06-23, [[feature-quality-database]]) × lookbacks × indicatoren
+   (obv-x-value, vzo, mfi, phobos, volumeud + prijs + volprice). De nieuwe berekeningen kunnen LIVE
+   vuren (via `calc.subrule_value`) — geen cache-herbouw nodig om ze als subregel toe te passen.
 3. **Clusteren in regimes = MEERDERE rules.** Groepjes delen geen één band (centers beslaan het hele
    bereik) → splits in 2-3 regimes (zoals 20-23 op lage/hoge phobos). Elk regime → eigen rule. Regimes
    kunnen per munt tegengesteld zijn (DOGEAI oversold, NOS momentum).

@@ -12,6 +12,9 @@ Windows are newest-first (index 0 = most recent value at/before T), matching leg
 import numpy as np
 from scipy import stats
 
+from extra_calcs import EXTRA_CALCS
+from cross_calcs import CROSS_CALCS
+
 
 def calc_percentage(frm, to):
     """Legacy calc_percentage: signed % change from `frm` to `to` (negative if frm>to)."""
@@ -241,5 +244,16 @@ def subrule_value(subrulename, value_condition, vals, prices):
     if subrulename in WINDOW_METRIC_KEYS:
         v = window_metrics(vals).get(subrulename)
         return round(float(v), 5) if v is not None else None
+
+    # NEW research berekeningen (extra_calcs = univariate; cross_calcs = volume x prijs, alleen
+    # zinvol met indicator='volumeud' zodat vals=volume + prices=prijs). Apart van WINDOW_METRIC_KEYS
+    # gehouden zodat de indicator_metrics-cache (de 31) onaangeroerd blijft; de engine KAN er wel op
+    # vuren zodra een rule zo'n subregel krijgt. Zie feature_quality / docs/findings/feature-*.
+    if subrulename in EXTRA_CALCS:
+        v = EXTRA_CALCS[subrulename](vals)
+        return round(float(v), 6) if v is not None else None
+    if subrulename in CROSS_CALCS:
+        v = CROSS_CALCS[subrulename](vals, prices)
+        return round(float(v), 6) if v is not None else None
 
     return None  # missingdata, volume_check — handled by the caller via volume.py

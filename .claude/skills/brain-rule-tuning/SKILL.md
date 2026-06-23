@@ -20,6 +20,24 @@ verouderd.)
 gem ≥+0,7%/trade, slecht ≤~45%, holdout + 2e munt). Het oude `#goed≥2×#slecht`-criterium op best_upside
 (memory `rule-success-criterion`) is hiermee vervangen.
 
+## Principle 0 — begin bij de sterke scheiders (`feature_quality`), zoek NIET blind
+
+Vóór je subregels gaat zoeken: raadpleeg eerst **`brain.feature_quality`** (gevuld door
+`feature_quality.py`, zie [[feature-quality-database]]) — het meet per berekening (indicator × metric ×
+lookback) hoe goed hij winnaars van verliezers scheidt (`separation`, cross-coin) op de brede
+promising-bron. Beperk de zoekruimte tot de **bewezen scheiders**, scan niet alle ~850 kandidaten blind.
+
+Twee redenen: (1) **minder doorzoeken = minder vastpinnen op toeval** — de toeval-toets/Šidák-correctie
+([[rule-discovery-statistical-discipline]]) is veel milder als je 20 voorgeselecteerde berekeningen test
+i.p.v. 850, dus een echte vondst overleeft eerder; (2) de meeste berekeningen scheiden zwak (de
+indicator-metrics phobos/vzo/mfi/obv: sep < 0,13), dus blind zoeken verspilt budget. Bevinding 2026-06-23:
+de **prijs-amplitude**-berekeningen scheiden het best (sum_average_positive_percentage, range_percentage,
+volatility, gini_coefficient — kant b_min = "weinig beweging → verliezer"), niet de richting/trend-maten.
+
+Query bv.: `SELECT indicator,metric,lookback,separation,best_side FROM feature_quality WHERE
+source='promising' ORDER BY separation DESC`. Herhaal de meting (`feature_quality.py promising`) na elke
+coin-uitbreiding zodat de voorselectie meegroeit. Pas dán Principle 1/2 toe op de gekozen berekeningen.
+
 ## Principle 1 — as FEW subrules per main rule as possible
 
 Every subrule is an AND. The more conditions, the more **potential good trades you lose** because
