@@ -111,6 +111,14 @@ De volgorde waarin je dit doet bepaalt of je jezelf voor de gek houdt. Geleerd, 
    - **Beste praktijk: pre-register.** Neem een feature die **over meerdere methodes terugkeert**, leg
      hem vast met een drempel **uit de labels** (niet uit het optimaliseren van de winst), en
      permutatie-test díé ene hypothese — **zonder scan**. (Zo: scan-versie p=0,07 → pre-registered p=0,001.)
+   - **Voorfilter met `feature_quality` (Daans regel, 2026-06-23).** Bepaal vóór de scan welke
+     berekeningen überhaupt scheiden — raadpleeg `brain.feature_quality` (per berekening de cross-coin
+     `separation` op de brede promising-bron, `feature_quality.py`, [[feature-quality-database]]). Beperk
+     de zoekruimte tot die bewezen scheiders: minder kandidaten = lagere ruis-vloer = de permutatie/Šidák
+     is milder = een echte vondst overleeft eerder. Bevinding: **prijs-amplitude** scheidt (range/volatility/
+     sum_avg_positive/gini, kant "weinig beweging → verliezer"), de oscillator-niveaus nauwelijks. De
+     berekeningen-set is uitgebreid: 31 `window_metrics` + 13 `extra_calcs` + 4 cross-kanaal `cross_calcs`,
+     allemaal live-vuurbaar via `calc.subrule_value` (geen cache-herbouw nodig).
 4. **Holdout = echte tijd-split** (vroege → late dagen, ≥30 dagen gap), niet binnen dezelfde markt-episode.
 5. **Cross-coin.** Test op een 2e munt; coin-specifiek mag, maar **markeer het** (geen coin-agnostische
    claim zonder bewijs op een munt waar je 'm niet vond).
@@ -121,13 +129,15 @@ De volgorde waarin je dit doet bepaalt of je jezelf voor de gek houdt. Geleerd, 
 
 > **Ook de live aanscherper valt onder dit protocol (juni 2026).** De rule-precisie routine
 > (`auto_apply.apply_safe`) past sinds deze sessie pas een rq1-kandidaat toe nadat die de **toeval-toets**
-> heeft doorstaan (`opt_lib.permutation_pvalue` op de apart-gehouden testperiode), **Šidák-gecorrigeerd
-> over de hele SAFE-familie** die rq1 opleverde (`opt_lib.sidak`). rq1's `good_keep≥0.98` bewijst alleen
-> dat de góede trades de splits overleven — niet dat de slecht-scheiding meer is dan een uit honderden
-> kandidaten geviste edge. Het aantal schudbeurten schaalt mee met de familiegrootte; is de familie te
-> groot voor 2 munten om te certificeren, dan past de poort **niets** toe (eerlijk signaal: meer munten,
-> geen ruis live). Gemeten 2026-06-23: de 2 sterkste "SAFE"-kandidaten (r21 rauw p=0,016, r22 p=0,069)
-> vielen beide af na Šidák×124 — precies de valkuil uit punt 3, nu live afgevangen.
+> heeft doorstaan (`opt_lib.permutation_pvalue` op de apart-gehouden testperiode, op **dezelfde bad-edge
+> drempel die rq1 deploy't** — niet good.min/max), **Šidák-gecorrigeerd over de SAFE-familie** die rq1
+> opleverde (`opt_lib.sidak`, n_hyp = aantal SAFE-kandidaten; een conservatieve onder-grens van de werkelijk
+> doorzochte sweep-ruimte). rq1's `good_keep≥0.98` bewijst alleen dat de góede trades de splits overleven —
+> niet dat de slecht-scheiding meer is dan een uit honderden kandidaten geviste edge. Het aantal
+> schudbeurten schaalt mee met de familiegrootte; is de familie te groot voor 2 munten om te certificeren,
+> dan past de poort **niets** toe (eerlijk signaal: meer munten, geen ruis live). Gemeten 2026-06-23: de 2
+> sterkste "SAFE"-kandidaten (r21 rauw p=0,011, r22 p=0,031 — beide "significant" ogend) vielen beide af na
+> Šidák×124 — precies de valkuil uit punt 3, nu live afgevangen.
 
 ## 5. Rapportagevorm + succescriterium
 

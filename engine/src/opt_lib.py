@@ -289,13 +289,17 @@ def permutation_pvalue(long, rule, ind, lb, calc, bound, n_perm=400, seed=42,
         return None
 
     def _edge(vals, cls):
-        good = vals[cls == "goed"]
-        if good.size == 0:
+        # DEZELFDE bad-edge die rq1 deploy't (bad_edge_conditions), NIET good.min/max — anders toetst
+        # de toeval-toets een andere drempel dan de gate toepast. Nodig: zowel goede als slechte waarden.
+        good = vals[cls == "goed"]; bad = vals[cls == "slecht"]
+        if good.size == 0 or bad.size == 0:
             return None
-        return float(good.min()) if bound == "lower" else float(good.max())
+        conds = {c["bound"]: c for c in bad_edge_conditions(good, bad)}
+        return conds[bound]["threshold"] if bound in conds else None
 
     def _drop(thr, vals, cls):
-        # bad-edge keeps all good by construction; count test-bad outside the band + any good lost.
+        # band houdt value binnen (>= thr lower / <= thr upper, buffer-bad op de rand blijft); telt
+        # de test-bad die BUITEN de band valt (de winst) + eventueel verloren goede. Spiegelt oos_metrics.
         out = (vals < thr - 1e-9) if bound == "lower" else (vals > thr + 1e-9)
         return int(((cls == "slecht") & out).sum()), int(((cls == "goed") & out).sum())
 
@@ -303,8 +307,8 @@ def permutation_pvalue(long, rule, ind, lb, calc, bound, n_perm=400, seed=42,
     if thr is None:
         return None
     obs_drop, obs_gl = _drop(thr, te_vals, te_cls)
-    if obs_gl != 0:
-        return None                          # observed candidate isn't even clean OOS -> not testable
+    if obs_gl != 0 or obs_drop <= 0:
+        return None                          # geen schone OOS-scheiding of geen test-drop -> niet toetsbaar
 
     rng = np.random.default_rng(seed)
     all_cls = np.concatenate([tr_cls, te_cls])
@@ -314,7 +318,7 @@ def permutation_pvalue(long, rule, ind, lb, calc, bound, n_perm=400, seed=42,
         sh = all_cls.copy(); rng.shuffle(sh)
         t = _edge(tr_vals, sh[:n_tr])
         if t is None:
-            ge += 1; continue                # a shuffle with no train-good can't be beaten -> conservative
+            continue                         # shuffle vormt geen bad-edge -> drop 0 -> verslaat obs (>=1) niet
         bd, gl = _drop(t, te_vals, sh[n_tr:])
         if gl == 0 and bd >= obs_drop:
             ge += 1

@@ -39,11 +39,11 @@ def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
     instelknoppen (strategies + coin_strategies), the manual trade-overrides (manual_set_at) and the
     coin count also bump it, so a knob-edit, a manual hard-sell/klasse, or a new coin re-triggers the
     tuning. For RULE-PRECISION (with_fires) the executed coin_fires DRIFT is added: count + goed/slecht
-    split + afgeronde Σprofit_loss. coin_fires zijn afgeleid, MAAR een upstream-codewijziging (de
+    split (= het ratio-relevante deel). coin_fires zijn afgeleid, MAAR een upstream-codewijziging (de
     futureprice-koopbevestiging van 17-6, een sell-knop) verandert de trade-set/het sell-resultaat
     ZONDER dat indicators of rules veranderen — dan miste de gate de drift en bleven de ratio's stil
     verschuiven. De handtekening is invariant onder de idempotente DELETE+INSERT-refire (timestamps/IDs
-    tellen niet mee, alleen count + deterministische profit_loss), dus stabiel bij convergentie."""
+    tellen niet mee, alleen count + deterministische goed/slecht-classificatie), dus stabiel bij convergentie."""
     conn = brain()
     with conn.cursor() as c:
         c.execute("SELECT trading_symbol_id s, COUNT(*) n, MAX(datetime) mx FROM indicators GROUP BY trading_symbol_id ORDER BY s")
@@ -67,11 +67,12 @@ def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
             sell = (f"#strat:{st['n']}:{st['mx']}#cstrat:{cst['n']}:{cst['mx']}"
                     f"#mov:{mov['n']}:{mov['mx']}#coins:{co['n']}")
         if with_fires:
-            # alleen count + goed/slecht + afgeronde Σpl — NIET MAX(updated_at) (dat verandert door de
-            # DELETE+INSERT elke refire en zou de gate nooit meer laten skippen).
-            c.execute("SELECT COUNT(*) n, COALESCE(SUM(profit_loss>=3),0) g, COALESCE(SUM(profit_loss<0),0) s, "
-                      "ROUND(COALESCE(SUM(profit_loss),0),1) pl FROM coin_fires "
-                      "WHERE is_executed=1 AND profit_loss IS NOT NULL")
+            # count + goed/slecht-split — dat is precies het ratio-relevante drift-signaal: de ratio is
+            # g/s, dus alleen een verandering in count of de goed/slecht-classificatie hertriggert. NIET
+            # MAX(updated_at) (verandert door de DELETE+INSERT elke refire → nooit meer skippen) en NIET
+            # Σprofit_loss (verschuift binnen een klasse zonder dat de ratio wijzigt → nutteloze re-runs).
+            c.execute("SELECT COUNT(*) n, COALESCE(SUM(profit_loss>=3),0) g, COALESCE(SUM(profit_loss<0),0) s "
+                      "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL")
             fires = c.fetchone()
     conn.close()
     sig = "|".join(f"{r['s']}:{r['n']}:{r['mx']}" for r in ind) + f"#rules:{rules['n']}:{rules['mx']}"
@@ -80,7 +81,7 @@ def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
     if sell:
         sig += sell
     if fires:
-        sig += f"#fires:{fires['n']}:{fires['g']}:{fires['s']}:{fires['pl']}"
+        sig += f"#fires:{fires['n']}:{fires['g']}:{fires['s']}"
     return hashlib.md5(sig.encode()).hexdigest()
 
 

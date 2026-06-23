@@ -34,17 +34,24 @@ PERM_MAX = 4000           # cap on shuffles per candidate (resolution vs cost)
 
 def _toeval_filter(strongest, n_hyp, emit):
     """Keep only candidates whose bad-drop survives the toeval-toets after a Šidák correction over the
-    whole SAFE family rq1 produced (n_hyp). Family-size-aware: n_perm scales so the resolution floor
-    beats the corrected threshold; if even PERM_MAX shuffles can't resolve it (too many candidates for
-    2 coins), NOTHING certifies — that is the honest signal that the lever is data-bound (more coins),
-    not a filter to relax. emit(message, level, rule, data)."""
+    SAFE family rq1 produced (n_hyp = len(SAFE-kandidaten)). Dat is bewust de SAFE-familie, niet het
+    aantal werkelijk-getoetste finalisten (zou de selection-bias van de sweep negeren) en niet de volle
+    sweep-grootte (niet beschikbaar zonder rq1 aan te passen) — een conservatieve ONDER-grens van de
+    echte zoekruimte, dus een PASS is sterk bewijs, een FAIL deels familiegrootte. Family-size-aware:
+    n_perm scales so the resolution floor beats the corrected threshold; if even PERM_MAX shuffles can't
+    resolve it (too many candidates for 2 coins), NOTHING certifies — the honest signal that the lever is
+    data-bound (more coins), not a filter to relax. emit(message, level, rule, data)."""
+    if not strongest:
+        return {}
     p_req = o.required_raw_p(n_hyp, PERM_ALPHA)
+    # n_perm zo gekozen dat de resolutie-vloer 1/(n_perm+1) ~4x onder p_req ligt (kop-ruimte om p_req
+    # te kunnen halen), met een ondergrens van 400 en het PERM_MAX-plafond tegen runaway kosten.
     n_perm = PERM_MAX if p_req <= 0 else min(PERM_MAX, max(400, int(4.0 / p_req)))
     floor = 1.0 / (n_perm + 1)
     long = o.load_long()
     kept = {}
     for rule in sorted(strongest):
-        c = strongest[rule]
+        c = dict(strongest[rule])           # kopie: NOOIT de gedeelde new_safe_candidates-dict muteren
         label = f"{c['indicator']}/{c['calc']}/lb{c['lookback']}"
         if floor > p_req:
             emit(f"rule {rule}: toeval-toets kan {label} niet certificeren — {n_hyp} SAFE-kandidaten op "
