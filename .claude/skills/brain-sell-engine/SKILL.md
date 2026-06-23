@@ -161,17 +161,23 @@ Een dagelijkse routine die de instelknoppen **per munt** beter afstelt op nieuwe
 - **Opslag**: `coin_strategies` (dunne override-laag, zie tabel boven). Leeg = nul gedragsverandering.
 - **Meten** (`sell_tuning.py`): per (coin,rule) een kleine grid rond de huidige waarde
   (`hp6/hp7/min_sl1/minimal_profit`; `hp_setting8` is dood, uitgesloten). Meetlat = **netto Σprofit**
-  (won−lost), **holdout leidend** (oude helft afstellen, nieuwe helft bevestigen). `ZWAK` = knop raakt
-  0 holdout-trades → geen bewijs, telt niet als SAFE.
-- **Toepassen** (`sell_apply.py`): schrijf override → `persist_to_brain` herrekent → houden iff Σprofit
-  niet omlaag ÉN verliezers niet omhoog (Daan's "gebalanceerd"), anders terugdraaien. **Oracle-gate
-  bewust weggelaten**: die meet trouw-aan-legacy, terwijl tunen beter-dan-legacy wil.
+  (won−lost), **holdout leidend**. De holdout-split is **per regel** (pure `split_per_rule()` op de eigen
+  mediaan — niet één globale knip, anders krijgt een laat-begonnen regel een lege/scheve testperiode), met
+  `MIN_SPLIT=4` per helft (anders `GEEN_HOLDOUT`). `ZWAK` = knop raakt 0 holdout-trades → geen bewijs.
+- **Toepassen** (`sell_apply.py`): apply-stack = **toeval-toets → echte refire → GATE 3**. Eerst
+  `_toeval_filter` (sign-flip `opt_lib.signflip_pvalue` op de per-trade verschillen, Šidák over de
+  SAFE-familie; te weinig geraakte trades = "kan niet certificeren") — alleen wat dóórkomt gaat naar de
+  dure refire. Dan `persist_to_brain` herrekent → houden iff Σprofit niet omlaag ÉN verliezers niet omhoog,
+  **op de munt ÉN op de eigen regel** (dedup kan schade naar een andere regel verschuiven), anders
+  terugdraaien. **Oracle-gate bewust weggelaten**: die meet trouw-aan-legacy, terwijl tunen beter wil.
 - **Routine** (`routines.py` set `sell-tuning`): `routine_sell_tuning` meet → auto-apply (achter `--apply`)
-  → journalt naar `/routines`. Eigen fingerprint (`input_fingerprint(with_sell=True)`): trades +
-  `strategies`/`coin_strategies.updated_at` + `manual_set_at` + coins-count. Dagelijks via een Claude
-  Code CLI-routine: `routines.py --set sell-tuning --trigger routine --apply`.
-- **Tests**: `test_sell_tuning.py` (plat assert-script) — faithful-merge, override-isolatie, `metrics`,
-  de holdout-poort `verdict`, override-respect.
+  → journalt naar `/routines`. Eigen fingerprint (`with_sell` + **`with_fires`**): trades + `coin_fires`-
+  drift + `strategies`/`coin_strategies.updated_at` + `manual_set_at` + coins-count — zo hertriggert ook
+  een trade-set-drift door een code-deploy/refire. Dagelijks via een Claude Code CLI-routine:
+  `routines.py --set sell-tuning --trigger routine --apply`.
+- **Tests**: `test_sell_tuning.py` (15 asserts) — faithful-merge, override-isolatie, `metrics`, de
+  holdout-poort `verdict` + `MIN_SPLIT`, `split_per_rule`, de sign-flip toets + `_toeval_filter`,
+  override-respect (+ `opt_lib` selftest voor `signflip_pvalue`).
 - **Resultaat (2026-06-17, live)**: NOS Σ+352,8→+373,9% (274→266 verlies), DOGEAI Σ+379,9→+401,2%
   (359→339 verlies). Sterkste lever overal: `minimal_profit`.
 - **v2 (nog niet gebouwd)**: nieuwe **rule-101 verkoopregels ontdekken** (uit `coin_sell_ticks`) +
