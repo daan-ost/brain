@@ -113,7 +113,14 @@ def main():
     ratios, new = res["ratios"], res["new"]
 
     log += ["", "## Ratio per rule (executed, profit_loss-klasse: goed>=3% / slecht<0%)", "",
+            "Het **portfolio-totaal** is het primaire cijfer (dedup-schoon: elke trade hoort onder "
+            "single-position-dedup bij één rule). De per-rule ratio is dedup-gevoelig — een aanscherping "
+            "kan een slechte trade naar een andere rule verschuiven — dus detail, geen kopcijfer.", "",
             "| rule | goed | slecht | ratio |", "|---|---|---|---|"]
+    g_tot = sum(g for g, _ in ratios.values())
+    s_tot = sum(s for _, s in ratios.values())
+    log.append(f"| **totaal** | **{g_tot}** | **{s_tot}** | **{g_tot/s_tot:.2f}** |" if s_tot
+               else f"| **totaal** | **{g_tot}** | **0** | **—** |")
     for rule in sorted(ratios):
         g, s = ratios[rule]
         log.append(f"| {rule} | {g} | {s} | {g/s:.2f} |" if s else f"| {rule} | {g} | 0 | — |")

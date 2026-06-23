@@ -30,7 +30,7 @@ TRIGGER = sys.argv[sys.argv.index("--trigger") + 1] if "--trigger" in sys.argv e
 SET_ARG = sys.argv[sys.argv.index("--set") + 1] if "--set" in sys.argv else "rule-precision"
 
 
-def input_fingerprint(with_labels=False, with_sell=False):
+def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
     """Signature of everything that determines the analysis outcome: the raw `indicators` per coin
     (count + latest datetime) AND the active `rules` (count + latest change). New data OR a rule
     change (auto-applied last run, or a manual edit) bumps it; a converged run with no new data
@@ -38,14 +38,19 @@ def input_fingerprint(with_labels=False, with_sell=False):
     so new promising labels re-trigger the triage. For the SELL-TUNING set (with_sell) the sell
     instelknoppen (strategies + coin_strategies), the manual trade-overrides (manual_set_at) and the
     coin count also bump it, so a knob-edit, a manual hard-sell/klasse, or a new coin re-triggers the
-    tuning. coin_periods/coin_fires are derived, so not needed."""
+    tuning. For RULE-PRECISION (with_fires) the executed coin_fires DRIFT is added: count + goed/slecht
+    split + afgeronde Σprofit_loss. coin_fires zijn afgeleid, MAAR een upstream-codewijziging (de
+    futureprice-koopbevestiging van 17-6, een sell-knop) verandert de trade-set/het sell-resultaat
+    ZONDER dat indicators of rules veranderen — dan miste de gate de drift en bleven de ratio's stil
+    verschuiven. De handtekening is invariant onder de idempotente DELETE+INSERT-refire (timestamps/IDs
+    tellen niet mee, alleen count + deterministische profit_loss), dus stabiel bij convergentie."""
     conn = brain()
     with conn.cursor() as c:
         c.execute("SELECT trading_symbol_id s, COUNT(*) n, MAX(datetime) mx FROM indicators GROUP BY trading_symbol_id ORDER BY s")
         ind = c.fetchall()
         c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM rules WHERE active=1")
         rules = c.fetchone()
-        lab = sell = None
+        lab = sell = fires = None
         if with_labels:
             c.execute("SELECT COUNT(*) n, MAX(updated_at) mx FROM coin_moment_labels WHERE decision='yes'")
             lab = c.fetchone()
@@ -61,12 +66,21 @@ def input_fingerprint(with_labels=False, with_sell=False):
             co = c.fetchone()
             sell = (f"#strat:{st['n']}:{st['mx']}#cstrat:{cst['n']}:{cst['mx']}"
                     f"#mov:{mov['n']}:{mov['mx']}#coins:{co['n']}")
+        if with_fires:
+            # alleen count + goed/slecht + afgeronde Σpl — NIET MAX(updated_at) (dat verandert door de
+            # DELETE+INSERT elke refire en zou de gate nooit meer laten skippen).
+            c.execute("SELECT COUNT(*) n, COALESCE(SUM(profit_loss>=3),0) g, COALESCE(SUM(profit_loss<0),0) s, "
+                      "ROUND(COALESCE(SUM(profit_loss),0),1) pl FROM coin_fires "
+                      "WHERE is_executed=1 AND profit_loss IS NOT NULL")
+            fires = c.fetchone()
     conn.close()
     sig = "|".join(f"{r['s']}:{r['n']}:{r['mx']}" for r in ind) + f"#rules:{rules['n']}:{rules['mx']}"
     if lab:
         sig += f"#labels:{lab['n']}:{lab['mx']}"
     if sell:
         sig += sell
+    if fires:
+        sig += f"#fires:{fires['n']}:{fires['g']}:{fires['s']}:{fires['pl']}"
     return hashlib.md5(sig.encode()).hexdigest()
 
 
@@ -86,16 +100,25 @@ def routine_rule_optimization(j):
     res = opt.run_optimization(rebuild=not NO_REBUILD)
     ratios, new = res["ratios"], res["new"]
 
+    # PORTFOLIO-TOTAAL is het primaire succescijfer: één trade hoort onder single-position-dedup bij
+    # precies één rule, dus de som over rules telt elke trade één keer (dedup-schoon). De per-rule
+    # ratio is wél dedup-gevoelig — een aanscherping kan een slechte trade naar een andere rule
+    # verschuiven i.p.v. 'm te elimineren — dus die staat erbij als detail, niet als kopcijfer.
+    g_tot = sum(g for g, _ in ratios.values())
+    s_tot = sum(s for _, s in ratios.values())
+    tot = f"{g_tot/s_tot:.2f} ({g_tot}/{s_tot})" if s_tot else f"{g_tot}/0"
     parts = []
     for rule in sorted(ratios):
         g, s = ratios[rule]
         parts.append(f"r{rule} {g/s:.2f} ({g}/{s})" if s else f"r{rule} {g}/0")
-    j.add("Ratio per rule (executed): " + ", ".join(parts), level="result",
+    j.add(f"Portfolio-totaal (executed, dedup-schoon): {tot}", level="result",
+          data={"total": [g_tot, s_tot], "ratios": {str(k): v for k, v in ratios.items()}})
+    j.add("Per rule (dedup-gevoelig, detail): " + ", ".join(parts), level="result",
           data={"ratios": {str(k): v for k, v in ratios.items()}})
 
     if not new:
         j.add("Geen nieuwe veilige aanscherpingen — rules stabiel.", level="finding")
-        return f"stabiel · {', '.join(parts)}"
+        return f"stabiel · totaal {tot} · {', '.join(parts)}"
 
     by_rule = {}
     for c in new:
@@ -109,7 +132,7 @@ def routine_rule_optimization(j):
               f"— dropt ~{top['drop_insample']} slecht (in-sample), out-of-sample SAFE. "
               f"VOORSTEL — niet toegepast.", level="finding", rule=rule,
               data={"candidates": cs[:10]})
-    return f"{len(new)} nieuwe kandidaten · {', '.join(parts)}"
+    return f"{len(new)} nieuwe kandidaten · totaal {tot} · {', '.join(parts)}"
 
 
 def routine_auto_apply(j):
@@ -435,7 +458,8 @@ def main():
     set_name, registry, gated = SETS[set_key]
 
     fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY),   # recall fires on new ok-labels too
-                           with_sell=(set_key in (SELL_SET_KEY, BUY_SET_KEY, SELL_DISC_SET_KEY)))  # sell/buy/discovery fire on knob/rule/trade changes
+                           with_sell=(set_key in (SELL_SET_KEY, BUY_SET_KEY, SELL_DISC_SET_KEY)),  # sell/buy/discovery fire on knob/rule/trade changes
+                           with_fires=(set_key == SET_KEY))  # rule-precision fires on coin_fires-drift (upstream trade-set/sell change)
     prev = _state(conn, set_key)            # huidige opgeslagen fingerprint (nodig voor de retry-na-fail logica)
     if gated:
         # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.
