@@ -20,12 +20,57 @@ import sys
 
 from db import brain
 import daily_optimization as opt
+import opt_lib as o
 import rules_history
 
 COINS = opt.COINS
 PY = sys.executable
 HERE = opt.HERE
 # principle 1: add at most ONE subrule per rule per run (gradual, reviewable) — the strongest one.
+
+PERM_ALPHA = 0.05         # family-wise significance the toeval-toets must clear (Šidák-corrected)
+PERM_MAX = 4000           # cap on shuffles per candidate (resolution vs cost)
+
+
+def _toeval_filter(strongest, n_hyp, emit):
+    """Keep only candidates whose bad-drop survives the toeval-toets after a Šidák correction over the
+    whole SAFE family rq1 produced (n_hyp). Family-size-aware: n_perm scales so the resolution floor
+    beats the corrected threshold; if even PERM_MAX shuffles can't resolve it (too many candidates for
+    2 coins), NOTHING certifies — that is the honest signal that the lever is data-bound (more coins),
+    not a filter to relax. emit(message, level, rule, data)."""
+    p_req = o.required_raw_p(n_hyp, PERM_ALPHA)
+    n_perm = PERM_MAX if p_req <= 0 else min(PERM_MAX, max(400, int(4.0 / p_req)))
+    floor = 1.0 / (n_perm + 1)
+    long = o.load_long()
+    kept = {}
+    for rule in sorted(strongest):
+        c = strongest[rule]
+        label = f"{c['indicator']}/{c['calc']}/lb{c['lookback']}"
+        if floor > p_req:
+            emit(f"rule {rule}: toeval-toets kan {label} niet certificeren — {n_hyp} SAFE-kandidaten op "
+                 f"2 munten vragen p<{p_req:.5f}, maar {n_perm} schudbeurten halen maar p>={floor:.5f}. "
+                 f"Niet toegepast (meer munten/data nodig, geen ruis live).", "info", rule, {"candidate": c})
+            continue
+        pr = o.permutation_pvalue(long, rule, c["indicator"], int(c["lookback"]), c["calc"], c["bound"],
+                                  n_perm=n_perm)
+        if pr is None:
+            emit(f"rule {rule}: te weinig apart-gehouden testdata voor de toeval-toets ({label}) — "
+                 f"niet toegepast (conservatief).", "info", rule, {"candidate": c})
+            continue
+        p_corr = o.sidak(pr["p"], n_hyp)
+        c["perm_p"], c["perm_p_corr"], c["perm_n_hyp"] = pr["p"], p_corr, n_hyp
+        if p_corr < PERM_ALPHA:
+            emit(f"rule {rule}: toeval-toets DOORSTAAN ({label}) — p={pr['p']:.4f} "
+                 f"(Šidák×{n_hyp}={p_corr:.3f}<0.05), slecht-drop {pr['obs_drop']} op de testperiode "
+                 f"({pr['n_te_bad']} slecht/{pr['n_te_good']} goed).", "info", rule,
+                 {"candidate": c, "p": pr["p"], "p_corr": p_corr, "n_hyp": n_hyp})
+            kept[rule] = c
+        else:
+            emit(f"rule {rule}: kandidaat {label} AFGEWEZEN door toeval-toets — p={pr['p']:.4f} "
+                 f"(Šidák×{n_hyp}={p_corr:.3f}>=0.05): de slecht-scheiding is niet te onderscheiden van "
+                 f"toeval. Niet toegepast.", "info", rule,
+                 {"candidate": c, "p": pr["p"], "p_corr": p_corr, "n_hyp": n_hyp})
+    return kept
 
 
 def _refire():
@@ -89,6 +134,15 @@ def apply_safe(emit):
         if c["rule"] not in strongest or c["drop_insample"] > strongest[c["rule"]]["drop_insample"]:
             strongest[c["rule"]] = c
 
+    # TOEVAL-TOETS pre-filter: rq1's SAFE verdict only proves GOOD survives out-of-sample; it never
+    # tests whether the bad-drop itself beats chance. Sweeping all (indicator×calc×lookback) and
+    # picking winners is exactly "scan tovert edges uit ruis" — so before we mutate any rule, each
+    # strongest candidate must pass a permutation test, Šidák-corrected over the whole SAFE family.
+    strongest = _toeval_filter(strongest, len(cands), emit)
+    if not strongest:
+        emit("Geen kandidaat doorstond de toeval-toets — niets toegepast.", "info", None, None)
+        return "0 toegepast (toeval-toets)"
+
     base_good, base_slecht, base_per = _totals()
     applied, rejected = [], 0
     for rule in sorted(strongest):
@@ -106,9 +160,14 @@ def apply_safe(emit):
             try:
                 _refire()
             except SystemExit as _e2:
-                emit(f"KRITIEK: ook revert-refire mislukte ({_e2}). Subrule verwijderd uit DB "
-                     f"maar coin_fires mogelijk inconsistent. Handmatig: persist_to_brain.py.",
+                # De staat is nu niet meer te vertrouwen: subrule weg uit de rules-tabel maar de
+                # coin_fires-refire is mislukt. Doorgaan zou volgende kandidaten tegen een verouderde
+                # nullijn over een kapotte trade-set meten en subrules op die staat stapelen. Afbreken.
+                emit(f"KRITIEK: ook revert-refire mislukte ({_e2}). Subrule verwijderd uit DB maar "
+                     f"coin_fires inconsistent — run AFGEBROKEN (geen verdere kandidaten op een "
+                     f"onbetrouwbare staat). Handmatig herstel: persist_to_brain.py.",
                      "error", rule, {"candidate": cand})
+                raise SystemExit("auto-apply afgebroken: revert-refire mislukt na insert; coin_fires inconsistent")
             rejected += 1
             continue
 
@@ -129,9 +188,13 @@ def apply_safe(emit):
             try:
                 _refire()
             except SystemExit as _e:
+                # Afwijzing-revert mislukt → coin_fires onbetrouwbaar. Niet doorgaan met de lus
+                # (zie de insert-revert-tak hierboven): afbreken zodat geen subrules op een kapotte
+                # staat worden gestapeld.
                 emit(f"KRITIEK: revert-refire mislukte ({_e}). Subrule verwijderd uit DB maar "
-                     f"coin_fires mogelijk inconsistent. Handmatig: persist_to_brain.py.",
+                     f"coin_fires inconsistent — run AFGEBROKEN. Handmatig: persist_to_brain.py.",
                      "error", rule, {"candidate": cand})
+                raise SystemExit("auto-apply afgebroken: revert-refire mislukt na afwijzing; coin_fires inconsistent")
             reason = (f"zou {base_good - now_good} goede trade(s) verliezen" if now_good < base_good
                       else "totaal slechte trades daalt niet (dedup verschuift evenveel bad)")
             emit(f"rule {rule}: kandidaat {label} AFGEWEZEN door engine-refire — {reason}. Teruggedraaid.",

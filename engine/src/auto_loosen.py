@@ -5,8 +5,9 @@ half of the ratio; mirror of auto_apply which tightens). A loosening ADDS fires 
 datetimes, so it can introduce new slecht — the report proved the cheap per-coin in-sample "0 new bad"
 is misleading (3/11 candidates failed the full re-fire). So the gate is two-stage and conservative:
 
-  (1) DiagEngine full-HISTORY re-fire on BOTH coins: reject if ANY new slecht fire appears (cheap, no
-      DB writes). A loosening that adds a single slecht fire on either coin is out.
+  (1) Full-HISTORY re-fire on BOTH coins, then classify each NEW fire on the REALIZED sell-engine
+      profit_loss (slecht = pl<0, goed = pl>=3) — NOT best_upside, mirroring the tighten path and what
+      Daan steers on. Reject if ANY new realized loser appears on either coin.
   (2) persist portfolio confirm: UPDATE the band, re-fire both coins, KEEP only if total executed GOOD
       strictly RISES and total executed SLECHT does NOT rise; else revert the band.
 
@@ -26,6 +27,7 @@ import auto_apply as ap                      # reuse _totals(), _refire()
 import rules_history
 from db import brain
 from opt_diag import DiagEngine
+from sell_engine import SellEngine
 
 PY = sys.executable
 HERE = o.HERE
@@ -64,7 +66,11 @@ def _find_index(eng, rule, ind, name, lb):
 
 
 def diag_new_fires(rule, ind, name, lb, bound, thr):
-    """Full-history re-fire on BOTH coins with the loosened band; return (new_slecht, new_good)."""
+    """Full-history re-fire on BOTH coins with the loosened band; classify each NEW fire on the
+    REALIZED sell-engine profit_loss (slecht = pl<0, goed = pl>=3) — mirrors the tighten path
+    (opt_lib._cls_pl) and what Daan steers on, NOT the theoretical 60-min best_upside. A new fire
+    sits on a non-trade datetime so it has no stored profit_loss; we simulate the sell from the
+    candidate's buy price to get the realized result. Return (new_slecht, new_good)."""
     ns = ng = 0
     for sym in (o.DOGEAI, o.NOS):
         eng = DiagEngine(sym)
@@ -75,12 +81,20 @@ def diag_new_fires(rule, ind, name, lb, bound, thr):
         nmax = thr if bound == "upper" else s["b_max"]
         base = set(eng.fires_override(rule, {}))
         loos = set(eng.fires_override(rule, {i: (nmin, nmax)}))
-        for dt in (loos - base):
-            bu = eng.best_upside(dt)
-            if bu is None:
-                continue
-            ns += bu < o.BAD_UPSIDE
-            ng += bu >= o.GOOD_UPSIDE
+        new_dts = loos - base
+        if new_dts:
+            seng = SellEngine(sym)
+            for dt in new_dts:
+                buy = eng.price_at(dt)
+                if not buy:
+                    continue
+                res = seng.sell(dt, buy, rule)
+                if res is None:                  # geen ticks vooruit → niet te klasseren, sla over
+                    continue
+                pl = res["profit_loss"]
+                ns += pl < o.BAD_PL
+                ng += pl >= o.GOOD_PL
+            seng.close()
         eng.close()
     return ns, ng
 
@@ -120,7 +134,7 @@ def loosen_safe(emit):
         for cand in cands[:6]:                       # try a few strongest; first to pass both gates wins
             ind, name, lb, (bound, thr) = _parse(cand)
             ns, ng = diag_new_fires(rule, ind, name, lb, bound, thr)
-            if ns == 0 and ng >= 1:                  # gate 1: 0 new slecht (both coins, full history)
+            if ns == 0 and ng >= 1:                  # gate 1: 0 nieuwe gerealiseerde verliezer + >=1 winnaar
                 chosen = (cand, ind, name, lb, bound, thr, ng); break
         if not chosen:
             emit(f"rule {rule}: geen veilige loosening (alle kandidaten brengen nieuw slecht of geen goed).",

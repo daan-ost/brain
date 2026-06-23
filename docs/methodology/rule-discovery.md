@@ -119,6 +119,16 @@ De volgorde waarin je dit doet bepaalt of je jezelf voor de gek houdt. Geleerd, 
    bindende beperking is de hoeveelheid **diverse data (munten)**, niet het aantal features.
 7. **Echte deploybaarheid = incrementele refire** bovenop 20-23 (één-positie-schaduw), niet standalone.
 
+> **Ook de live aanscherper valt onder dit protocol (juni 2026).** De rule-precisie routine
+> (`auto_apply.apply_safe`) past sinds deze sessie pas een rq1-kandidaat toe nadat die de **toeval-toets**
+> heeft doorstaan (`opt_lib.permutation_pvalue` op de apart-gehouden testperiode), **Šidák-gecorrigeerd
+> over de hele SAFE-familie** die rq1 opleverde (`opt_lib.sidak`). rq1's `good_keep≥0.98` bewijst alleen
+> dat de góede trades de splits overleven — niet dat de slecht-scheiding meer is dan een uit honderden
+> kandidaten geviste edge. Het aantal schudbeurten schaalt mee met de familiegrootte; is de familie te
+> groot voor 2 munten om te certificeren, dan past de poort **niets** toe (eerlijk signaal: meer munten,
+> geen ruis live). Gemeten 2026-06-23: de 2 sterkste "SAFE"-kandidaten (r21 rauw p=0,016, r22 p=0,069)
+> vielen beide af na Šidák×124 — precies de valkuil uit punt 3, nu live afgevangen.
+
 ## 5. Rapportagevorm + succescriterium
 
 Rapporteer een gevonden rule **altijd KORT, per munt** ([[feedback-compact-result-format]]):

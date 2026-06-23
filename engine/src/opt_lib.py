@@ -247,6 +247,81 @@ def full_validation(long, rule, ind, lb, calc, bound):
     return res
 
 
+# ---------------------------------------------------------------------------
+# TOEVAL-TOETS (permutation test) on the bad-drop of a candidate — the guard the OOS good_keep gate
+# does NOT give. full_validation only checks that GOOD survives out-of-sample; it never asks whether
+# the BAD-separation itself is more than the sweep dredging an edge from noise. This does: derive the
+# bad-edge threshold on the held-out TRAIN split, measure the TEST-bad it drops at 0 TEST-good lost
+# (observed), then SHUFFLE the good/slecht labels, re-derive on the shuffled train and re-measure on
+# test. p = fraction of shuffles whose drop >= observed (at 0 good lost). Low p = the separation is
+# unlikely from chance. Mirrors subrule_power.perm_p_test, but on the cache long-table the candidate
+# was actually derived from. See docs/methodology/rule-discovery.md §4b and CLAUDE.md.
+# ---------------------------------------------------------------------------
+def sidak(p, n_hyp):
+    """Šidák family-wise correction for n_hyp simultaneous tests: 1-(1-p)^n_hyp, clamped to [0,1]."""
+    if p is None:
+        return None
+    n_hyp = max(1, int(n_hyp))
+    return float(min(1.0, 1.0 - (1.0 - p) ** n_hyp))
+
+
+def required_raw_p(n_hyp, alpha=0.05):
+    """The raw per-test p needed so the Šidák-corrected p stays < alpha across n_hyp tests."""
+    n_hyp = max(1, int(n_hyp))
+    return 1.0 - (1.0 - alpha) ** (1.0 / n_hyp)
+
+
+def permutation_pvalue(long, rule, ind, lb, calc, bound, n_perm=400, seed=42,
+                       min_te_good=3, min_te_bad=3):
+    """Toeval-toets for ONE single-condition candidate, on the held-out TEST split (the per-coin
+    70/30 split already in `long.split`), pooled over both coins. Returns
+    {p, obs_drop, n_te_good, n_te_bad, n_perm} or None when there is too little held-out data to
+    test (caller must treat None as "kan niet certificeren")."""
+    g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
+             (long["lookback"] == lb) & (long["calc"] == calc)]
+    tr_vals = g[g["split"] == "train"]["value"].to_numpy(dtype=float)
+    tr_cls = g[g["split"] == "train"]["cls"].to_numpy(dtype=object)
+    te_vals = g[g["split"] == "test"]["value"].to_numpy(dtype=float)
+    te_cls = g[g["split"] == "test"]["cls"].to_numpy(dtype=object)
+    n_te_good = int((te_cls == "goed").sum()); n_te_bad = int((te_cls == "slecht").sum())
+    n_tr_good = int((tr_cls == "goed").sum()); n_tr_bad = int((tr_cls == "slecht").sum())
+    if n_te_good < min_te_good or n_te_bad < min_te_bad or n_tr_good < 2 or n_tr_bad < 2:
+        return None
+
+    def _edge(vals, cls):
+        good = vals[cls == "goed"]
+        if good.size == 0:
+            return None
+        return float(good.min()) if bound == "lower" else float(good.max())
+
+    def _drop(thr, vals, cls):
+        # bad-edge keeps all good by construction; count test-bad outside the band + any good lost.
+        out = (vals < thr - 1e-9) if bound == "lower" else (vals > thr + 1e-9)
+        return int(((cls == "slecht") & out).sum()), int(((cls == "goed") & out).sum())
+
+    thr = _edge(tr_vals, tr_cls)
+    if thr is None:
+        return None
+    obs_drop, obs_gl = _drop(thr, te_vals, te_cls)
+    if obs_gl != 0:
+        return None                          # observed candidate isn't even clean OOS -> not testable
+
+    rng = np.random.default_rng(seed)
+    all_cls = np.concatenate([tr_cls, te_cls])
+    n_tr = tr_vals.shape[0]
+    ge = 0
+    for _ in range(n_perm):
+        sh = all_cls.copy(); rng.shuffle(sh)
+        t = _edge(tr_vals, sh[:n_tr])
+        if t is None:
+            ge += 1; continue                # a shuffle with no train-good can't be beaten -> conservative
+        bd, gl = _drop(t, te_vals, sh[n_tr:])
+        if gl == 0 and bd >= obs_drop:
+            ge += 1
+    return {"p": (ge + 1) / (n_perm + 1), "obs_drop": obs_drop,
+            "n_te_good": n_te_good, "n_te_bad": n_te_bad, "n_perm": n_perm}
+
+
 def load_all_fires():
     """ALL fires (executed AND shadow), both coins, with rule + best_upside class. Shadows matter
     for redundancy: single-position dedup means only one rule executes at a time, so executed-only
@@ -322,6 +397,32 @@ if __name__ == "__main__":
     assert not scale_unsafe("volumeud", "diff_percentage_prev_max")  # accepted rule-21 primary
     assert not scale_unsafe("vzo", "median_value")             # vzo is not normalised -> safe
     print("unit-test scale_unsafe: PASS")
+
+    # 1c) unit-test the Šidák math + the toeval-toets: a CLEAN separation must score a low p, pure
+    #     NOISE a high p, and the family correction must inflate a borderline single p above 0.05.
+    assert abs(sidak(0.05, 1) - 0.05) < 1e-9 and sidak(0.0, 9) == 0.0
+    assert abs(required_raw_p(1) - 0.05) < 1e-9 and required_raw_p(124) < 0.0005
+    assert sidak(0.02, 50) > 0.05            # a "significant-looking" single p is noise across 50 tests
+
+    def _synth(values_by_cls):
+        rows = []
+        for cls, vals in values_by_cls.items():
+            for i, v in enumerate(vals):
+                rows.append({"rule": 1, "indicator": "x", "lookback": 1, "calc": "c",
+                             "split": "train" if i % 10 < 7 else "test", "cls": cls, "value": float(v)})
+        return pd.DataFrame(rows)
+    rng = np.random.default_rng(0)
+    # CLEAN: good clustered high, bad clustered low -> upper bad-edge separates them out-of-sample.
+    clean = _synth({"goed": list(rng.normal(10, 0.5, 60)), "slecht": list(rng.normal(0, 0.5, 60))})
+    pr = permutation_pvalue(clean, 1, "x", 1, "c", "lower", n_perm=400, seed=1)
+    assert pr and pr["p"] < 0.05, pr
+    # NOISE: good and bad from the SAME distribution -> no real separation. The test must NOT certify
+    # it: either it isn't even clean out-of-sample (None) or its p is high. Both = "geen echte edge".
+    noise = _synth({"goed": list(rng.normal(5, 1, 60)), "slecht": list(rng.normal(5, 1, 60))})
+    pn = permutation_pvalue(noise, 1, "x", 1, "c", "lower", n_perm=400, seed=1)
+    assert pn is None or pn["p"] > 0.10, pn
+    noise_p = "None" if pn is None else f"{pn['p']:.4f}"
+    print(f"unit-test permutation_pvalue: PASS (clean p={pr['p']:.4f} < noise p={noise_p})")
 
     # 2) smoke-test the cache join + sweep on real data
     long = load_long()
