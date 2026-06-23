@@ -85,6 +85,21 @@ De methodiek is geconsolideerd tot één engine. **Draaien vanuit `engine/src`:*
 | `validate.py` | CPCV+herfit+embargo, toeval-toets+Šidák, schone nullijn, incrementele bijdrage op 20-23 (uit `coin_fires`) |
 | `report.py` | compacte rapportage + oordeel tegen de 20-23-lat | 
 | `run.py` | CLI-orkestratie (per munt + cross-coin), één munt tegelijk in geheugen |
+| `pooled.py` | **coin-agnostische** rule (gedeelde banden): `--whitespace --rule N` zoekt op de witte ruimte; `--round2` = sequential covering op rule-30-subregels |
+| `whitespace.py` | rangschikt de pysubgroup-segmenten op **witte dekking** (#promising-groepen zonder live 20-30-trade) + Σ gerealiseerde pl per witte groep |
+| `apply.py` | legt een gevonden rule INACTIEF vast in `brain.rules` (`--rule N`, getrouwheid + refire-cijfers + rules_history); `--activate --write` zet 'm live in de idle-gaten |
+
+## Vaste werkwijze voor de VOLGENDE rule (31, 32, …): witte ruimte eerst (Daans regel)
+
+1. **`python -m discovery.whitespace`** — zie per munt welk segment de meeste promising-groepen dekt
+   **waar nog geen live trade (20-30) op zit**. Dat is de grootste recall-kans. **Nooit op best_upside/
+   potentieel sturen** — alleen gerealiseerde dekking (afspraak "alleen harde sell-cijfers").
+2. **`python -m discovery.pooled --whitespace --rule 31`** — zoek de coin-agnostische rule op die witte
+   ruimte (de funnel beperkt zich tot de nog-witte groepen per munt).
+3. **`python -m discovery.apply --rule 31 --write`** — leg 'm **inactief** vast met alle toets-cijfers.
+4. **Portfolio-denken:** vind zoveel mogelijk rules, allemaal inactief + getoetst (toeval-toets p<0,05
+   Šidák + apart-gehouden testperiode); beslis per munt aan/uit bij live traden (`coin_strategies`). De rem
+   tegen ruis = de toets; de echte hefboom blijft **meer munten**.
 
 LET OP: `os.environ["NUMBA_DISABLE_JIT"]="1"` vóór `import pysubgroup` (numba SIGBUST op Apple Silicon).
 
@@ -103,12 +118,21 @@ trade, élk tijdblok positief) en **significant ná Šidák-correctie** (p≤0,0
 De bindende beperking is nu de **trade-kwaliteitsmix**, niet overfit/generalisatie. 2-munten-plafond
 verdiend met het juiste gereedschap → hefboom = **meer munten** (Epic 07).
 
-**COIN-AGNOSTISCH + VASTGELEGD (juni 2026).** `pooled.py` draait nu coin-agnostisch: één rule met
-**gedeelde banden** voor alle munten (schaal-invariante features + gepoolde drempels — `scale_invariant_cols`),
-NIET per-munt. `apply.py` legt 'm vast als **rule 30** (55 gedeelde subregels, `active=0`, source
-`discovery-RD-pooled`, `rules_history` v16, getrouwheid lean-vs-live 100%). Cijfers: NOS bijna KEEPER
-(0,13% ticks, +1,14%/trade, 47% slecht, CPCV +2,9%), DOGEAI zwakker (0,24%, +0,64%, 65% slecht); netto
-winstgevend + p=0,000 op beide, geen strikte KEEPER. **INACTIEF** — vuurt niets tot activatie: RuleEngine
-moet rule 30 laden (nu hardcoded 20-23) + **ongepoort** laten vuren (buiten `brain_volume_found`) +
-`coin_strategies` (sell) per munt + `active=1`. Daarna tunen de routines de slecht% omlaag ([[brain-rule-tuning]]).
-Cijfers/details: [[docs/methodology/rule-discovery.md]] §12, memory [[parent-gate-gemene-deler]].
+**COIN-AGNOSTISCH (juni 2026).** `pooled.py` draait coin-agnostisch: één rule met **gedeelde banden**
+voor alle munten (schaal-invariante features + gepoolde drempels — `scale_invariant_cols`), NIET per-munt.
+De **relvol-feature** (`volumeud / min_volume(coin)`, in `data.py`) maakt de bewezen volume-grootte
+coin-agnostisch bruikbaar als gedeelde band (`SCALE_INVARIANT_INDS = {"relvol"}`); `rule_engine.py` heeft
+`relvol_base` + ongepoorte discovery-rules + instelbare gate-kolom.
+
+**STAND (juni 2026):**
+- **Rule 30 — LIVE** (`active=1`, `apply.py --activate --write`): vuurt **ongepoort** in de idle-gaten van
+  20-23 (20-23 onaangeroerd, hebben voorrang). Beide munten: 386 trades, Σ +267%. relvol-versie verbeterde
+  DOGEAI fors (+0,64 → +0,79%/trade).
+- **Rule 31 — INACTIEF** (`active=0`, vastgelegd via `--whitespace`): DOGEAI 245 trades +0,79%/trade Σ+192%
+  (p=0,000, CPCV +1,59%); NOS 229 +1,07%/trade Σ+244% (p=0,000, CPCV +2,33%). Geen keeper (slecht 48-54%,
+  goed 9-15%) maar netto winstgevend + hard significant → **portfolio-rule**. Eerste gedeelde subregel =
+  `relvol|L10|standard_deviation`.
+
+Het patroon herhaalt zich: elke gevonden rule is netto winstgevend + significant maar loser-zwaar (de
+trade-kwaliteitsmix is de bindende grens, identiek op beide munten) → **2-munten-plafond**, hefboom = meer
+munten. Cijfers/details: [[docs/methodology/rule-discovery.md]] §12-13, memory [[parent-gate-gemene-deler]].

@@ -367,3 +367,38 @@ netto winstgevend + significant op beide, OOS-trefkans loopt op beide mee, maar 
 gedeelde banden vast (active=0, getrouwheid lean-vs-live 100%, rules_history-audit). **Modus is nu
 coin-agnostisch by design** (`pooled.py`: `scale_invariant_cols` + gedeelde percentiel-drempels) — geen
 per-munt-rules meer.
+
+## 13. Vaste werkwijze: zoek de volgende rule op de WITTE PROMISING-RUIMTE (juni 2026, Daans regel)
+
+**De vaste eerste stap voor elke nieuwe rule (31, 32, …):** prioriteer de **grootste witte vlek** — de
+promising-groepen (handmatig gemarkeerde goede instap-momenten) waar **nog geen enkele live trade op zit**.
+"Bedekt" = er valt al minstens één live executed trade (rule 20-30) in het groep-venster; "wit" = nog door
+geen enkele rule gepakt. Zo richten we de zoektocht op échte recall-winst (gemiste goede momenten), niet op
+momenten die de bot al pakt. **Dit gaat over GEREALISEERDE dekking, nooit over best_upside/potentieel** —
+zie de afspraak "alleen harde sell-cijfers": een hoge potentiële stijging die niet gerealiseerd werd is een
+sell-engine-kwestie (wanneer verkoop je), géén reden voor een nieuwe koop-rule.
+
+**Gereedschap:**
+- `python -m discovery.whitespace` — rangschikt de ~30 pysubgroup-segmenten per munt op **witte dekking**
+  (#promising-groepen zonder live 20-30-trade), met precisie, selectiviteit en de Σ gerealiseerde pl van de
+  beste tick per witte groep. Read-only; toont waar de grootste winst-kans zit.
+- `python -m discovery.pooled --whitespace --rule 31` — zoekt de coin-agnostische rule (gedeelde banden)
+  op de witte ruimte: `whitespace_rules=(20,21,22,23,30)` beperkt de funnel tot de nog-witte groepen per munt.
+- `python -m discovery.apply --rule 31 [--write]` — legt de gevonden rule **inactief** (active=0) vast in
+  `brain.rules` met getrouwheids- en refire-cijfers + rules_history-audit. `--rule N` parametriseert het
+  rule-nummer (bron-json `.cache/pooled_rule_N.json`).
+
+**Portfolio-filosofie (Daan).** We vinden zoveel mogelijk rules en leggen ze **inactief** vast met hun
+volledige toets-cijfers (toeval-toets p, CPCV-OOS, slecht%, goed%, ΔΣ bovenop 20-23). Straks bij live traden
+besluiten we per munt welke aan/uit gaan (`coin_strategies`-override bestaat). **De rem:** een rule telt pas
+mee als hij door de **toeval-toets (p<0,05, Šidák-gecorrigeerd) én de apart-gehouden testperiode** komt —
+anders vul je het portfolio met ruis. Op 2 munten lijken alle gevonden rules op elkaar (netto positief,
+loser-zwaar) → de echte hefboom blijft **meer munten**, niet meer rules op dezelfde twee.
+
+**Stand (juni 2026):**
+- **Rule 30** — LIVE (active=1), vult de idle-gaten van 20-23. Beide munten samen: 386 trades, Σ +267%.
+- **Rule 31** — vastgelegd INACTIEF (active=0), gevonden op de witte ruimte (141/159 DOGEAI, 133/143 NOS
+  nog wit). DOGEAI 245 trades +0,79%/trade Σ+192% (p=0,000, CPCV +1,59%); NOS 229 trades +1,07%/trade
+  Σ+244% (p=0,000, CPCV +2,33%). Geen keeper (slecht 48-54%, goed 9-15%) maar netto winstgevend + hard
+  significant → portfolio-rule, klaar om aan te zetten bij live traden. Eerste gedeelde subregel =
+  `relvol|L10|standard_deviation` (de coin-agnostisch gemaakte volume-grootte).

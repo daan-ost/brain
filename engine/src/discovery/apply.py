@@ -38,6 +38,13 @@ SOURCE = "discovery-RD-pooled"
 RULE_PATH = os.path.join(os.path.dirname(__file__), ".cache", "pooled_rule.json")
 
 
+def _set_rule(rule_number, path):
+    """Parametriseer het doel-rule-nummer + bron-json (rule 30, 31, … volgen dezelfde vorm)."""
+    global DISCOVERY_RULE, RULE_PATH
+    DISCOVERY_RULE = rule_number
+    RULE_PATH = path or os.path.join(os.path.dirname(__file__), ".cache", f"pooled_rule_{rule_number}.json")
+
+
 def parse_col(col):
     ind, lb, metric = col.split("|")
     return ind, int(lb[1:]), metric
@@ -263,8 +270,11 @@ def main():
     ap = argparse.ArgumentParser(description="Vastleggen/activeren van de coin-agnostische rule")
     ap.add_argument("--write", action="store_true", help="schrijf naar brain (anders dry-run)")
     ap.add_argument("--activate", action="store_true",
-                    help="activeer rule 30 (vult idle-gaten van 20-23, ongepoort); --write om te committen")
+                    help="activeer de rule (vult idle-gaten van 20-23, ongepoort); --write om te committen")
+    ap.add_argument("--rule", type=int, default=30, help="rule-nummer (30, 31, …; default 30)")
+    ap.add_argument("--path", default=None, help="bron-json (default .cache/pooled_rule_<rule>.json; rule 30 = pooled_rule.json)")
     args = ap.parse_args()
+    _set_rule(args.rule, args.path if args.path else (RULE_PATH if args.rule == 30 else None))
     if args.activate:
         activate(write=args.write)
     else:

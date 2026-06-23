@@ -186,16 +186,25 @@ def refine_quality(states, base_subrules, n_blocks=5, max_add=15, keep_floor=0.3
 
 def run_pooled(coins, n_blocks=5, recall_floor=0.7, abs_floor=0.10, target_sel=0.001,
                max_sub=45, n_perm=2000, refine=True, prev_subrules=None, rule_label="30",
-               out_name="pooled_rule.json", vol_bases=None):
+               out_name="pooled_rule.json", vol_bases=None, whitespace_rules=None):
     """vol_bases: optionele {name: vol_base} om de relvol-basislijn per munt te overschrijven
-    (gevoeligheids-check; None = laagste min_volume uit coin_rule_settings)."""
+    (gevoeligheids-check; None = laagste min_volume uit coin_rule_settings).
+    whitespace_rules: optionele tuple live rule-nummers (bv. (20,21,22,23,30)); zo ja, zoek de nieuwe
+    rule op de WITTE promising-groepen = groepen waar nog GEEN live executed trade van die rules op zit
+    (Daans vaste werkwijze: prioriteer de grootste witte vlek; zie docs/methodology/rule-discovery.md)."""
     vol_bases = vol_bases or {}
     syms = {nm: sym for sym, nm in coins}
     states = {}
     for sym, nm in coins:
         dd = build_matrix(sym, nm, vol_base=vol_bases.get(nm))
         keep = None
-        if prev_subrules:                       # sequential covering: zoek op de NOG ONBEDEKTE groepen
+        if whitespace_rules:                    # witte ruimte: groepen zonder live trade (20-30)
+            from discovery.whitespace import live_trade_times
+            covered = dd.groups_hit(live_trade_times(sym, whitespace_rules))
+            keep = set(range(len(dd.groups))) - covered
+            print(f"  [{nm}] rule {rule_label}: {len(keep)}/{len(dd.groups)} promising groepen nog WIT "
+                  f"(geen live trade van {whitespace_rules})")
+        elif prev_subrules:                     # sequential covering: zoek op de NOG ONBEDEKTE groepen
             covered = dd.groups_hit(dd.survivors(prev_subrules))
             keep = set(range(len(dd.groups))) - covered
             print(f"  [{nm}] rule {rule_label}: {len(keep)}/{len(dd.groups)} promising groepen nog onbedekt "
@@ -297,9 +306,16 @@ def main():
     ap = argparse.ArgumentParser(description="Coin-agnostische rule-ontdekking (gedeelde banden)")
     ap.add_argument("--round2", action="store_true",
                     help="zoek de VOLGENDE rule (31) op de groepen die rule 30 nog niet dekt (sequential covering)")
+    ap.add_argument("--whitespace", action="store_true",
+                    help="zoek de volgende rule (31) op de WITTE promising-groepen = geen live trade van "
+                         "20-30 (Daans vaste werkwijze: prioriteer de grootste witte vlek)")
+    ap.add_argument("--rule", default="31", help="rule-label voor de output (default 31)")
     args = ap.parse_args()
     coins = [(2525, "DOGEAI"), (244, "NOS")]
-    if args.round2:
+    if args.whitespace:
+        run_pooled(coins, whitespace_rules=(20, 21, 22, 23, 30), rule_label=args.rule,
+                   out_name=f"pooled_rule_{args.rule}.json")
+    elif args.round2:
         prev = json.load(open(os.path.join(os.path.dirname(__file__), ".cache", "pooled_rule.json")))
         prev_subs = [(c, s, lo, hi) for (c, s, lo, hi) in prev["subrules"]]
         run_pooled(coins, prev_subrules=prev_subs, rule_label="31", out_name="pooled_rule_31.json")
