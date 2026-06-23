@@ -14,6 +14,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
 from calc import window_metrics, calc_percentage, _consecutive, _count_reversals
+from extra_calcs import gini_coefficient as _gini, iqr_normalized as _iqr
 from parent_crossgroup import AsOf, OSC
 from parent_fullperiod import rises
 from parent_regimes import asof_arrays, project_and
@@ -24,7 +25,10 @@ LB1 = (5, 10, 20)
 METRICS1 = ("skewness", "range_percentage", "volatility", "standard_deviation",
             "consecutive_increases", "consecutive_decreases", "reversal_count",
             "diff_previous_value", "sum_average_positive_percentage",
-            "sideways_upper", "sideways_lower", "diff_lowest_value_period")
+            "sideways_upper", "sideways_lower", "diff_lowest_value_period",
+            # nieuwe bewezen scheiders (feature_quality 2026-06-23): identiek aan de engine-evaluatie
+            # (extra_calcs) -> een gevonden drempel vuurt live; alleen deze 2 van de 13 scheidden echt.
+            "gini_coefficient", "iqr_normalized")
 INDS1 = ("volumeud", "phobos", "obv-x-value", "vzo", "mfi")
 
 
@@ -60,6 +64,9 @@ def lean_metrics(w):
         "diff_lowest_value_period": first - lo,
         "sum_average_positive_percentage": round(sp / (n - 1), 2),
         "sideways_upper": su, "sideways_lower": sl,
+        # zelfde functies die de engine via calc.subrule_value gebruikt (newest-first w) -> geen mismatch
+        "gini_coefficient": (lambda g: g if g is not None else np.nan)(_gini(list(w))),
+        "iqr_normalized": (lambda q: q if q is not None else np.nan)(_iqr(list(w))),
     }
 
 
