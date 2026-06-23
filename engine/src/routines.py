@@ -460,7 +460,11 @@ def main():
 
     fp = input_fingerprint(with_labels=(set_key == RECALL_SET_KEY),   # recall fires on new ok-labels too
                            with_sell=(set_key in (SELL_SET_KEY, BUY_SET_KEY, SELL_DISC_SET_KEY)),  # sell/buy/discovery fire on knob/rule/trade changes
-                           with_fires=(set_key == SET_KEY))  # rule-precision fires on coin_fires-drift (upstream trade-set/sell change)
+                           # rule-precision EN sell/buy/discovery meten direct op de trade-P&L → coin_fires-drift
+                           # moet hen óók hertriggeren. Anders mist de gate een upstream trade-set-wijziging die
+                           # niet via data/regel/knop kwam (code-deploy + handmatige refire, bv. de futureprice-fix):
+                           # vingerafdruk blijft gelijk → set overgeslagen → rapport-JSON niet ververst (stale scherm).
+                           with_fires=(set_key in (SET_KEY, SELL_SET_KEY, BUY_SET_KEY, SELL_DISC_SET_KEY)))
     prev = _state(conn, set_key)            # huidige opgeslagen fingerprint (nodig voor de retry-na-fail logica)
     if gated:
         # DATA-CHANGED GATE: skip the (expensive) chain if nothing that affects the outcome changed.

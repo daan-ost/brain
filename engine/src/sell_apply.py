@@ -31,11 +31,13 @@ import sys
 
 from db import brain
 from sell_engine import merge_sl
+import opt_lib as ol
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
 COINS = [2525, 244]
 APPLY = "--apply" in sys.argv
+PERM_ALPHA = 0.05         # familiebrede drempel die de toeval-toets (Šidák-gecorrigeerd) moet halen
 
 # JSON-sleutel (in het rapport) → parsed knob-naam (zoals merge_sl/parse_sl ze teruggeeft).
 REV_KNOB = {"hp_setting6": "hp6", "hp_setting7": "hp7", "min_sl1": "min_sl1", "minimal_profit": "minimal_profit"}
@@ -135,16 +137,61 @@ def best_safe_per_coin_rule(report):
     return best
 
 
+def _toeval_filter(best, n_hyp, emit):
+    """Bug 4 — houd alleen de SAFE-voorstellen waarvan de netto-winst de sign-flip toeval-toets doorstaat,
+    na een Šidák-correctie over de familie (n_hyp = aantal SAFE-voorstellen in het rapport; conservatieve
+    ONDER-grens van de echte zoekruimte, dus een PASS is sterk bewijs). De per-voorstel p, het aantal
+    geraakte trades (perm_n) en de floor zijn al in sell_tuning berekend. floor > vereiste-p = te weinig
+    geraakte trades om te KUNNEN certificeren → niet toepassen (eerlijk: meer data/munten nodig, geen
+    filter om te relaxen). Mirror van auto_apply._toeval_filter, maar op de sell-meetlat (netto Σprofit).
+    emit(message, level, rule, data). Geeft de overlevers (zelfde dict-vorm als best)."""
+    if not best:
+        return {}
+    p_req = ol.required_raw_p(n_hyp, PERM_ALPHA)
+    kept = {}
+    for (sym, rule), p in sorted(best.items()):
+        label = f"{p['coin_name']} r{rule}: {p['knob']} {p['from']}→{p['to']}"
+        perm_p, perm_floor, perm_n = p.get("perm_p"), p.get("perm_floor"), p.get("perm_n")
+        if perm_p is None or perm_floor is None:
+            emit(f"{label} → OVERGESLAGEN: geen toeval-toets in het rapport (verouderd rapport — "
+                 "draai sell_tuning opnieuw).", "info", rule, {"proposal": p})
+            continue
+        if perm_floor > p_req:
+            emit(f"{label} → KAN NIET CERTIFICEREN: maar {perm_n} geraakte trades; de toeval-toets haalt "
+                 f"p≥{perm_floor:.4f}, maar {n_hyp} SAFE-voorstellen vragen p<{p_req:.4f}. Niet toegepast "
+                 f"(meer data/munten nodig, geen ruis live).", "info", rule, {"proposal": p})
+            continue
+        p_corr = ol.sidak(perm_p, n_hyp)
+        if p_corr < PERM_ALPHA:
+            emit(f"{label} → toeval-toets DOORSTAAN: p={perm_p:.4f} (Šidák×{n_hyp}={p_corr:.3f}<0.05, "
+                 f"{perm_n} trades).", "info", rule, {"proposal": p, "perm_p": perm_p, "perm_p_corr": p_corr})
+            kept[(sym, rule)] = p
+        else:
+            emit(f"{label} → AFGEWEZEN door toeval-toets: p={perm_p:.4f} (Šidák×{n_hyp}={p_corr:.3f}≥0.05) — "
+                 f"netto-winst niet te onderscheiden van toeval. Niet toegepast.", "info", rule,
+                 {"proposal": p, "perm_p": perm_p, "perm_p_corr": p_corr})
+    return kept
+
+
 def apply_safe(emit, apply=False, report=None, conn=None):
     """Pas de beste SAFE-voorstellen toe achter de gate-keten. emit(message, level, rule, data) —
     zelfde signatuur als auto_apply. apply=False = propose-only (journalt de voorstellen, muteert niets).
     Wordt door de sell-tuning-routine aangeroepen én door de CLI. Geeft een one-line samenvatting terug."""
     if report is None:
         report, _ = latest_report()
-    best = best_safe_per_coin_rule(report)
-    if not best:
+    best_all = best_safe_per_coin_rule(report)
+    if not best_all:
         emit("Geen veilige sell-instellingen om toe te passen.", "info", None, None)
         return "niets toe te passen"
+
+    # TOEVAL-TOETS (bug 4) vóór de dure refire: certificeer dat de netto-winst geen toeval is. n_hyp =
+    # aantal SAFE-voorstellen = familiegrootte voor de Šidák-correctie.
+    n_hyp = sum(1 for pr in report["proposals"] if pr["verdict"] == "SAFE")
+    best = _toeval_filter(best_all, n_hyp, emit)
+    n_toeval_rejected = len(best_all) - len(best)
+    if not best:
+        emit("Geen voorstel doorstaat de toeval-toets — niets toegepast.", "info", None, None)
+        return f"0 toegepast ({n_toeval_rejected} door de toeval-toets afgewezen)"
 
     own = conn is None
     conn = conn or brain()
@@ -171,7 +218,7 @@ def apply_safe(emit, apply=False, report=None, conn=None):
             rejected.append((sym, rule, p))
             continue
 
-        base_sig, base_verlies, _ = coin_totals(conn, sym)
+        base_sig, base_verlies, base_per = coin_totals(conn, sym)
         prev = read_override(conn, sym, rule)
         write_override(conn, sym, rule, p["knob"], p["to"])
         try:
@@ -187,18 +234,31 @@ def apply_safe(emit, apply=False, report=None, conn=None):
             raise
         if manual_count(conn, sym) != man0[sym]:
             raise SystemExit("FATALE FOUT: aantal handmatige overrides veranderde door de refire — afgebroken.")
-        new_sig, new_verlies, _ = coin_totals(conn, sym)
+        new_sig, new_verlies, new_per = coin_totals(conn, sym)
 
-        # GATE 3 (gebalanceerd): Σprofit niet omlaag EN verliezers niet omhoog (op gerealiseerde trades).
-        if new_sig >= base_sig - 1e-6 and new_verlies <= base_verlies:
+        # GATE 3 (gebalanceerd): Σprofit niet omlaag EN verliezers niet omhoog — op de MUNT (portfolio-
+        # totaal, Daans hoofdmaat) ÉN op de afgestelde regel zelf. Alleen de munt-poort mist een knop die
+        # zijn eigen regel schaadt maar de schade via single-position-dedup naar een andere regel verschuift
+        # (munt blijft dan vlak). De per-regel split komt al uit coin_totals (was eerder weggegooid).
+        bs, bv, _ = base_per.get(rule, (0.0, 0, 0))
+        ns, nv, _ = new_per.get(rule, (0.0, 0, 0))
+        coin_ok = new_sig >= base_sig - 1e-6 and new_verlies <= base_verlies
+        rule_ok = ns >= bs - 1e-6 and nv <= bv
+        if coin_ok and rule_ok:
             emit(f"{head} → TOEGEPAST. Σprofit {base_sig:+.1f}%→{new_sig:+.1f}%, "
-                 f"verliezers {base_verlies}→{new_verlies}.", "change", rule,
-                 {"proposal": p, "sigma": [base_sig, new_sig], "verliezers": [base_verlies, new_verlies]})
+                 f"verliezers {base_verlies}→{new_verlies} (regel {rule}: Σ{bs:+.1f}→{ns:+.1f}%, "
+                 f"verlies {bv}→{nv}).", "change", rule,
+                 {"proposal": p, "sigma": [base_sig, new_sig], "verliezers": [base_verlies, new_verlies],
+                  "rule_sigma": [bs, ns], "rule_verliezers": [bv, nv]})
             applied.append((sym, rule, p, base_sig, new_sig, base_verlies, new_verlies))
         else:
             restore_override(conn, sym, rule, prev)
             refire(sym, f"{reason}-revert")
-            why = "Σprofit zou dalen" if new_sig < base_sig - 1e-6 else "verliezers zouden stijgen"
+            if not coin_ok:
+                why = "Σprofit munt zou dalen" if new_sig < base_sig - 1e-6 else "verliezers munt zouden stijgen"
+            else:
+                why = (f"regel {rule} zelf zou verslechteren (Σ{bs:+.1f}→{ns:+.1f}%, verlies {bv}→{nv}) "
+                       f"ondanks vlak munt-totaal — dedup verschuift de schade naar een andere regel")
             emit(f"{head} → AFGEWEZEN op echte herreken-poort ({why}): Σprofit {base_sig:+.1f}%→{new_sig:+.1f}%, "
                  f"verliezers {base_verlies}→{new_verlies}. Teruggedraaid.", "info", rule, {"proposal": p})
             rejected.append((sym, rule, p))
@@ -206,8 +266,9 @@ def apply_safe(emit, apply=False, report=None, conn=None):
     if own:
         conn.close()
     if not apply:
-        return f"{len(best)} voorstellen (propose-only)"
-    return f"{len(applied)} toegepast, {len(rejected)} teruggedraaid"
+        return f"{len(best)} voorstellen na toeval-toets (propose-only), {n_toeval_rejected} afgewezen"
+    return (f"{len(applied)} toegepast, {len(rejected)} teruggedraaid, "
+            f"{n_toeval_rejected} door toeval-toets afgewezen")
 
 
 def run():

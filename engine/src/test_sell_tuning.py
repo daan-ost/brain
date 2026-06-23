@@ -15,8 +15,9 @@ import json
 
 from sell_engine import merge_sl
 from sell_lock import parse_sl
-from sell_tuning import metrics, verdict
+from sell_tuning import metrics, verdict, split_per_rule, MIN_SPLIT
 import sell_apply
+import opt_lib as ol
 from db import brain
 
 
@@ -90,6 +91,51 @@ def test_verdict_unsafe_flip():
 def test_verdict_unsafe_extra_verliezers():
     """Holdout maakt extra verliezers (losers_tuned > losers_base) → nooit SAFE."""
     assert verdict(_m(3, 5), _m(1, 4, lb=3, lt=5)) == "UNSAFE"
+
+
+def test_verdict_geen_holdout_klein():
+    """Een helft kleiner dan MIN_SPLIT = geen geldige apart-gehouden testperiode → GEEN_HOLDOUT (nooit
+    SAFE). Vangt de scheve mini-holdout die anders een vals SAFE-stempel kreeg."""
+    assert verdict(_m(3, 5, n=MIN_SPLIT), _m(1, 4, n=MIN_SPLIT - 1)) == "GEEN_HOLDOUT"
+    assert verdict(_m(3, 5, n=MIN_SPLIT - 1), _m(1, 4, n=MIN_SPLIT)) == "GEEN_HOLDOUT"
+    assert verdict(_m(3, 5, n=MIN_SPLIT), _m(1, 4, n=MIN_SPLIT)) == "SAFE"     # precies op de grens = OK
+
+
+def test_split_per_rule():
+    """Per-regel mediaan-split: een regel die pas laat begint krijgt zijn EIGEN oudste/nieuwste helft,
+    i.p.v. (bij de oude globale knip) volledig in de holdout te belanden met een lege train."""
+    # rule 20 vroeg (t=1..4), rule 21 laat (t=5..8) — chronologisch gesorteerd zoals load_trades levert.
+    rows = [{"datetime": t, "rule": (20 if t <= 4 else 21)} for t in range(1, 9)]
+    splits, med = split_per_rule(rows)
+    assert [splits[i] for i in (0, 1, 2, 3)] == ["train", "train", "holdout", "holdout"]   # rule 20
+    assert [splits[i] for i in (4, 5, 6, 7)] == ["train", "train", "holdout", "holdout"]   # rule 21: NIET alles holdout
+    assert med[20] == 3 and med[21] == 7        # eerste holdout-tick per regel
+
+
+def test_signflip_pvalue():
+    """De sign-flip toeval-toets (bug 4): consistente netto-winst = lage p, gemengde ruis = hoge p, te
+    weinig geraakte trades = floor > 0.05 (kan niet certificeren), netto-negatief = p 1.0."""
+    assert ol.signflip_pvalue([1.5] * 12)["p"] < 0.01                       # 12× positief = sterk
+    assert ol.signflip_pvalue([2.0, -1.8, 1.9, -2.1, 1.7, -1.9])["p"] > 0.05  # gemengd = ruis
+    thin = ol.signflip_pvalue([1.0, 1.0, 1.0, 1.0])                          # 4 trades → floor 1/16
+    assert thin["floor"] > 0.05 and thin["n"] == 4
+    assert ol.signflip_pvalue([0.0, 0.0]) is None                            # geen effect = niet toetsbaar
+
+
+def test_toeval_filter():
+    """_toeval_filter (bug 4) houdt alleen het Šidák-overlevende voorstel: ruis-p afgewezen, te dun (hoge
+    floor) = kan niet certificeren, sterk = behouden. Pure dict-logica, geen DB."""
+    emit = lambda m, level="info", rule=None, data=None: None
+    best = {
+        (2525, 20): {"coin_name": "DOGEAI", "rule": 20, "knob": "hp_setting6", "from": 4.0, "to": 6.0,
+                     "perm_p": 0.0005, "perm_floor": 0.001, "perm_n": 30},    # sterk → KEEP
+        (2525, 21): {"coin_name": "DOGEAI", "rule": 21, "knob": "hp_setting6", "from": 4.0, "to": 3.0,
+                     "perm_p": 0.30, "perm_floor": 0.001, "perm_n": 25},       # ruis → afgewezen
+        (244, 23): {"coin_name": "NOS", "rule": 23, "knob": "hp_setting6", "from": 4.0, "to": 3.0,
+                    "perm_p": 0.0625, "perm_floor": 0.0625, "perm_n": 4},      # te dun → kan niet certificeren
+    }
+    kept = sell_apply._toeval_filter(best, 3, emit)
+    assert set(kept) == {(2525, 20)}
 
 
 def test_override_respect_and_cleanup():

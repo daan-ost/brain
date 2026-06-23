@@ -24,10 +24,23 @@ import datetime
 from collections import defaultdict
 
 import sell_engine
+import opt_lib as ol
 from db import brain
 
 COINS = [int(a) for a in sys.argv[1:] if a.isdigit()] or [2525, 244]
 RULES = [20, 21, 22, 23]
+
+# Minimum-omvang per helft (train én holdout) om een voorstel te mógen beoordelen. Eronder is er geen
+# geldige apart-gehouden testperiode → GEEN_HOLDOUT (nooit SAFE). Vangt de scheve mini-holdout (2-3
+# trades die toevallig niet verslechteren) die anders een vals SAFE-stempel kreeg. Mild gekozen voor de
+# dunne executed-set; de echte oplossing voor dunne data is de bredere promising-bron (apart traject).
+MIN_SPLIT = 4
+
+# Toeval-toets (bug 4): aantal schudbeurten + seed voor de sign-flip toets per SAFE-kandidaat. De Šidák-
+# correctie over de familie + de floor-check (kan-niet-certificeren bij te weinig geraakte trades) doet
+# sell_apply, want pas dáár is de familiegrootte bekend.
+PERM_N = 4000
+PERM_SEED = 42
 
 # Kandidaat-grid: per instelknop een kleine vaste reeks rond de huidige waarde. Eén knop tegelijk
 # (schone attributie). Volgorde = de prioriteit uit het plan: hp6/hp7 (de NOS-lever) eerst.
@@ -46,21 +59,38 @@ def klasse(pl):
     return "slecht" if pl < 0 else ("middel" if pl < 3 else "goed")
 
 
+def split_per_rule(rows):
+    """Wijs elke (chronologisch gesorteerde) rij 'train' (oudste helft) of 'holdout' (nieuwste helft) toe
+    PER REGEL, op de eigen mediaan-positie. Niet één globale knip over alle regels samen: regels zijn niet
+    gelijk over de tijd verdeeld, dus een globale mediaan zou een regel die laat begon volledig in de
+    holdout duwen (train leeg) of een scheve mini-holdout geven die niets bewijst. Pure functie (geen DB)
+    zodat los testbaar; verwacht rows al gesorteerd op datetime. Geeft (splits in rij-volgorde,
+    {rule: mediaan-datetime})."""
+    by_rule = defaultdict(list)
+    for idx, r in enumerate(rows):
+        by_rule[int(r["rule"])].append(idx)
+    splits = [None] * len(rows)
+    med_by_rule = {}
+    for ru, idxs in by_rule.items():
+        mid_r = len(idxs) // 2
+        for rank, idx in enumerate(idxs):
+            splits[idx] = "train" if rank < mid_r else "holdout"
+        med_by_rule[ru] = rows[idxs[mid_r]]["datetime"]      # eerste holdout-tick van deze regel
+    return splits, med_by_rule
+
+
 def load_trades(conn, sym):
-    """Executed trades, chronologisch. Splitst op de mediaan-positie: oude helft=train, nieuwe=holdout."""
+    """Executed trades, chronologisch. Splitst PER REGEL op de eigen mediaan (zie split_per_rule).
+    Geeft (trades, naam, {rule: mediaan-datetime})."""
     with conn.cursor() as c:
         c.execute("SELECT datetime, buy_price, rule, symbol FROM coin_fires WHERE trading_symbol_id=%s "
                   "AND is_executed=1 AND buy_price IS NOT NULL ORDER BY datetime", (sym,))
         rows = c.fetchall()
-    n = len(rows)
-    mid = n // 2
-    trades = []
-    for i, r in enumerate(rows):
-        trades.append({"dt": r["datetime"], "buy": float(r["buy_price"]), "rule": int(r["rule"]),
-                       "symbol": r["symbol"], "split": "train" if i < mid else "holdout"})
+    splits, med_by_rule = split_per_rule(rows)
+    trades = [{"dt": r["datetime"], "buy": float(r["buy_price"]), "rule": int(r["rule"]),
+               "symbol": r["symbol"], "split": splits[i]} for i, r in enumerate(rows)]
     name = rows[0]["symbol"] if rows else str(sym)
-    med_dt = rows[mid]["datetime"] if n else None
-    return trades, name, med_dt
+    return trades, name, med_by_rule
 
 
 def metrics(pairs):
@@ -82,8 +112,9 @@ def metrics(pairs):
 def verdict(train, holdout):
     """SAFE = wint op train ÉN holdout zonder winnaars te breken of verliezers toe te voegen.
     OVERFIT = wint op train maar zakt op holdout. ZWAK = de knop raakt geen holdout-trade (geen
-    bewijs op ongeziene data — telt NIET als bevestigd). INERT = raakt nergens iets. Anders UNSAFE."""
-    if train["n"] == 0 or holdout["n"] == 0:
+    bewijs op ongeziene data — telt NIET als bevestigd). INERT = raakt nergens iets. GEEN_HOLDOUT = een
+    van beide helften is te klein (< MIN_SPLIT) voor een geldige toets. Anders UNSAFE."""
+    if train["n"] < MIN_SPLIT or holdout["n"] < MIN_SPLIT:
         return "GEEN_HOLDOUT"
     if train["affected"] == 0 and holdout["affected"] == 0:
         return "INERT"
@@ -115,9 +146,10 @@ def measure(coins=None, conn=None, write_json=True, verbose=True):
 
     for sym in coins:
         eng = sell_engine.SellEngine(sym, conn=conn)
-        trades, name, med_dt = load_trades(conn, sym)
+        trades, name, med_by_rule = load_trades(conn, sym)
         report["coins"][sym] = name
-        report["median_split"][sym] = med_dt.isoformat() if med_dt else None
+        report["median_split"][sym] = {ru: (d.isoformat() if hasattr(d, "isoformat") else d)
+                                       for ru, d in med_by_rule.items()}
         # baseline pl per trade (huidige instellingen)
         base_pl = []
         for t in trades:
@@ -128,7 +160,7 @@ def measure(coins=None, conn=None, write_json=True, verbose=True):
         for idx, t in enumerate(trades):
             by_rule[t["rule"]].append(idx)
 
-        p(f"\n### {name} ({sym}) — {len(trades)} trades, split op {med_dt}")
+        p(f"\n### {name} ({sym}) — {len(trades)} trades, mediaan-split per regel (min {MIN_SPLIT}/helft)")
         for rule in RULES:
             idxs = by_rule.get(rule, [])
             if not idxs:
@@ -158,6 +190,15 @@ def measure(coins=None, conn=None, write_json=True, verbose=True):
                             "from": cur[knob], "to": val, "verdict": vd,
                             "netto_train": mt["netto"], "netto_holdout": mh["netto"], "netto_totaal": netto_tot,
                             "train": mt, "holdout": mh}
+                    # Toeval-toets (bug 4): alleen voor SAFE-kandidaten (de enige die toegepast kunnen
+                    # worden). Sign-flip op de per-trade verschillen, train+holdout gepoold — de knop is een
+                    # vaste grid-waarde, er wordt niets op de train gefit, dus poolen is leak-vrij en geeft
+                    # de meeste kracht. Šidák + floor-check volgen in sell_apply (familiegrootte-afhankelijk).
+                    if vd == "SAFE":
+                        deltas = [t - b for b, t in spl["train"]] + [t - b for b, t in spl["holdout"]]
+                        sf = ol.signflip_pvalue(deltas, n_perm=PERM_N, seed=PERM_SEED)
+                        if sf:
+                            prop["perm_p"], prop["perm_n"], prop["perm_floor"] = sf["p"], sf["n"], sf["floor"]
                     report["proposals"].append(prop)
                     if vd == "SAFE" and (best is None or netto_tot > best["netto_totaal"]):
                         best = prop

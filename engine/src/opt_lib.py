@@ -326,6 +326,33 @@ def permutation_pvalue(long, rule, ind, lb, calc, bound, n_perm=400, seed=42,
             "n_te_good": n_te_good, "n_te_bad": n_te_bad, "n_perm": n_perm}
 
 
+def signflip_pvalue(deltas, n_perm=4000, seed=42):
+    """Gepaarde sign-flip toeval-toets voor een NETTO verbetering (gebruikt door de sell-tuning: deltas =
+    per-trade (tuned_pl − base_pl) van de trades die een instelknop ECHT raakt). H0: de knop heeft geen
+    systematisch netto-effect — de per-trade verschillen zijn symmetrisch rond 0 (evenveel kans + als −).
+    Statistiek = Σ deltas (de netto Σprofit-ruil). p = aandeel willekeurige teken-toewijzingen waarvan de
+    som ≥ de waargenomen som (met de standaard +1-demping). Anders dan permutation_pvalue (die aan de
+    goed/slecht-edge hangt) toetst dit een netto-grootheid — exact de sell-meetlat.
+
+    Geeft {p, n, floor, obs} of None als geen enkele delta ≠ 0. floor = de kleinste p die de toets KAN
+    halen = max(1/2^n, 1/(n_perm+1)); de aanroeper behandelt floor > vereiste-p als 'kan niet
+    certificeren' (te weinig geraakte trades — meer data nodig, niet relaxen). obs ≤ 0 → p = 1.0 (geen
+    netto-winst om te certificeren)."""
+    d = np.asarray([float(x) for x in deltas if abs(float(x)) > 1e-9], dtype=float)
+    n = int(d.shape[0])
+    if n == 0:
+        return None
+    floor = max((1.0 / (2 ** n)) if n < 30 else 0.0, 1.0 / (n_perm + 1))
+    obs = float(d.sum())
+    if obs <= 1e-12:
+        return {"p": 1.0, "n": n, "floor": floor, "obs": obs}
+    rng = np.random.default_rng(seed)
+    signs = rng.choice(np.array([-1.0, 1.0]), size=(n_perm, n))   # willekeurige ± per trade per schudbeurt
+    perm_sums = signs @ d                                          # Σ per schudbeurt (gevectoriseerd)
+    ge = int((perm_sums >= obs - 1e-9).sum())
+    return {"p": (ge + 1) / (n_perm + 1), "n": n, "floor": floor, "obs": obs}
+
+
 def load_all_fires():
     """ALL fires (executed AND shadow), both coins, with rule + best_upside class. Shadows matter
     for redundancy: single-position dedup means only one rule executes at a time, so executed-only
@@ -407,6 +434,19 @@ if __name__ == "__main__":
     assert abs(sidak(0.05, 1) - 0.05) < 1e-9 and sidak(0.0, 9) == 0.0
     assert abs(required_raw_p(1) - 0.05) < 1e-9 and required_raw_p(124) < 0.0005
     assert sidak(0.02, 50) > 0.05            # a "significant-looking" single p is noise across 50 tests
+
+    # 1d) unit-test de sign-flip toeval-toets (sell-tuning): een consistente netto-winst over genoeg
+    #     trades scoort laag, pure ruis hoog, en te weinig geraakte trades geeft een floor die niet
+    #     onder 0.05 kan komen (kan-niet-certificeren).
+    assert signflip_pvalue([0.0, 0.0]) is None                      # geen effect → niet toetsbaar
+    sf_clean = signflip_pvalue([2.0] * 12)                          # 12× duidelijk positief
+    assert sf_clean["p"] < 0.01 and sf_clean["n"] == 12
+    sf_noise = signflip_pvalue([3.0, -2.8, 2.5, -3.1, 2.9, -2.6])   # gemengd, som ~0
+    assert sf_noise["p"] > 0.05
+    sf_thin = signflip_pvalue([1.0, 1.0, 1.0, 1.0])                 # 4 trades: floor 1/16 = 0.0625
+    assert abs(sf_thin["floor"] - 0.0625) < 1e-9 and sf_thin["floor"] > 0.05
+    assert signflip_pvalue([-1.0, -2.0, 0.5])["p"] == 1.0           # netto negatief → p=1 (niets te certificeren)
+    print("unit-test signflip_pvalue: PASS")
 
     def _synth(values_by_cls):
         rows = []
