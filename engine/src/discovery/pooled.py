@@ -35,9 +35,20 @@ SCALE_INVARIANT = {"skewness", "range_percentage", "volatility", "consecutive_in
                    "consecutive_decreases", "reversal_count", "diff_previous_value",
                    "sum_average_positive_percentage", "sideways_upper", "sideways_lower"}
 
+# indicatoren die AL per munt genormaliseerd zijn (relvol = volumeud / min_volume) → ook hun
+# GROOTTE-metrics (standard_deviation, diff_lowest_value_period) mogen als gedeelde band mee.
+# Dit brengt het enige bewezen signaal (volume-grootte) coin-agnostisch terug.
+SCALE_INVARIANT_INDS = {"relvol"}
+
 
 def scale_invariant_cols(features):
-    return [c for c in features if c.split("|")[2] in SCALE_INVARIANT]
+    out = []
+    for c in features:
+        parts = c.split("|")
+        ind, m = parts[0], parts[2]
+        if ind in SCALE_INVARIANT_INDS or m in SCALE_INVARIANT:
+            out.append(c)
+    return out
 
 
 def _pct(vals, side):
@@ -53,14 +64,16 @@ def structure_to_subrules(structure):
 
 
 class CoinState:
-    def __init__(self, dd, n_blocks):
+    def __init__(self, dd, n_blocks, keep_groups=None):
         self.dd = dd
+        keep = set(range(len(dd.groups))) if keep_groups is None else set(keep_groups)
+        self.keep_groups = keep
         blocks = dd.blocks(n_blocks)
         d2b = {d: b for b, ds in enumerate(blocks) for d in ds}
         gb = np.array([d2b.get(g[0].date(), -1) for g in dd.groups])
-        bg = {b: [gi for gi in range(len(dd.groups)) if gb[gi] == b] for b in range(len(blocks))}
+        bg = {b: [gi for gi in range(len(dd.groups)) if gb[gi] == b and gi in keep] for b in range(len(blocks))}
         self.block_groups = {b: gs for b, gs in bg.items() if gs}
-        prom = dd.df[(dd.df["is_promising"]) & (dd.df["group_id"] >= 0)]
+        prom = dd.df[(dd.df["is_promising"]) & (dd.df["group_id"] >= 0) & (dd.df["group_id"].isin(keep))]
         self.pvals = {c: prom[c].to_numpy(dtype=float) for c in dd.features}
         self.finite = {c: np.isfinite(dd.col_arrays[c]) for c in dd.features}
         self.cur_mask = np.ones(dd.tot, dtype=bool)
@@ -172,11 +185,22 @@ def refine_quality(states, base_subrules, n_blocks=5, max_add=15, keep_floor=0.3
 
 
 def run_pooled(coins, n_blocks=5, recall_floor=0.7, abs_floor=0.10, target_sel=0.001,
-               max_sub=45, n_perm=2000, refine=True):
+               max_sub=45, n_perm=2000, refine=True, prev_subrules=None, rule_label="30",
+               out_name="pooled_rule.json", vol_bases=None):
+    """vol_bases: optionele {name: vol_base} om de relvol-basislijn per munt te overschrijven
+    (gevoeligheids-check; None = laagste min_volume uit coin_rule_settings)."""
+    vol_bases = vol_bases or {}
     syms = {nm: sym for sym, nm in coins}
     states = {}
     for sym, nm in coins:
-        states[nm] = CoinState(build_matrix(sym, nm), n_blocks)
+        dd = build_matrix(sym, nm, vol_base=vol_bases.get(nm))
+        keep = None
+        if prev_subrules:                       # sequential covering: zoek op de NOG ONBEDEKTE groepen
+            covered = dd.groups_hit(dd.survivors(prev_subrules))
+            keep = set(range(len(dd.groups))) - covered
+            print(f"  [{nm}] rule {rule_label}: {len(keep)}/{len(dd.groups)} promising groepen nog onbedekt "
+                  f"door de vorige rule(s)")
+        states[nm] = CoinState(dd, n_blocks, keep_groups=keep)
     names = list(states)
     cols = scale_invariant_cols(states[names[0]].dd.features)
     pooled_pvals = {c: np.concatenate([states[nm].pvals[c] for nm in names]) for c in cols}
@@ -262,17 +286,25 @@ def run_pooled(coins, n_blocks=5, recall_floor=0.7, abs_floor=0.10, target_sel=0
                      for nm in names}}
     cache_dir = os.path.join(os.path.dirname(__file__), ".cache")
     os.makedirs(cache_dir, exist_ok=True)
-    with open(os.path.join(cache_dir, "pooled_rule.json"), "w") as f:
+    with open(os.path.join(cache_dir, out_name), "w") as f:
         json.dump(out, f, indent=2)
-    print(f"\n  [opgeslagen] {os.path.join(cache_dir, 'pooled_rule.json')} — apply.py legt dit als ÉÉN rule vast")
+    print(f"\n  [opgeslagen] {os.path.join(cache_dir, out_name)} (rule {rule_label})")
     return structure, results, keepers, shared_subrules
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser(description="Coin-agnostische rule-ontdekking (gedeelde banden)")
+    ap.add_argument("--round2", action="store_true",
+                    help="zoek de VOLGENDE rule (31) op de groepen die rule 30 nog niet dekt (sequential covering)")
+    args = ap.parse_args()
     coins = [(2525, "DOGEAI"), (244, "NOS")]
-    if len(sys.argv) > 2:
-        coins = [(int(sys.argv[i]), sys.argv[i + 1]) for i in range(1, len(sys.argv), 2)]
-    run_pooled(coins)
+    if args.round2:
+        prev = json.load(open(os.path.join(os.path.dirname(__file__), ".cache", "pooled_rule.json")))
+        prev_subs = [(c, s, lo, hi) for (c, s, lo, hi) in prev["subrules"]]
+        run_pooled(coins, prev_subrules=prev_subs, rule_label="31", out_name="pooled_rule_31.json")
+    else:
+        run_pooled(coins)
 
 
 if __name__ == "__main__":

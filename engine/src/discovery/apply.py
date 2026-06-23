@@ -30,6 +30,7 @@ from db import brain
 from parent_crossgroup import AsOf
 from parent_spoor1 import lshape
 from calc import subrule_value
+from discovery.data import min_volume
 import rules_history
 
 DISCOVERY_RULE = 30                       # ÉÉN rule_number, gedeelde banden voor alle munten
@@ -62,16 +63,19 @@ def _passes(v, lo, hi):
     return True
 
 
-def _verdict(A, subrules, t, lean):
+def _verdict(A, subrules, t, lean, vol_base=1.0):
     for (col, side, lo, hi) in subrules:
         ind, lb, metric = parse_col(col)
+        base_ind = "volumeud" if ind == "relvol" else ind   # relvol = volumeud-metric / per-munt basislijn
         if lean:
-            v = lshape(A, ind, lb, metric, t)
+            v = lshape(A, base_ind, lb, metric, t)
         else:
-            s = A.series[ind]
+            s = A.series[base_ind]
             k = bisect.bisect_right(s["dt"], t)
             w = s["v"][max(0, k - lb):k][::-1]
             v = subrule_value(metric, {}, w, [])
+        if ind == "relvol" and v is not None:
+            v = v / vol_base
         if _passes(v, lo, hi) is False:
             return False
     return True
@@ -79,13 +83,14 @@ def _verdict(A, subrules, t, lean):
 
 def fidelity(symbol, subrules, n=4000, seed=1):
     A = AsOf(symbol)
+    vb = min_volume(symbol)
     rng = np.random.default_rng(seed)
     idxs = rng.choice(len(A.vdt), size=min(n, len(A.vdt)), replace=False)
     agree = fl = fw = 0
     for i in idxs:
         t = A.vdt[i]
-        vl = _verdict(A, subrules, t, True)
-        vw = _verdict(A, subrules, t, False)
+        vl = _verdict(A, subrules, t, True, vb)
+        vw = _verdict(A, subrules, t, False, vb)
         agree += (vl == vw)
         fl += vl
         fw += vw
@@ -168,11 +173,13 @@ def activate(write=False):
     from sell_engine import SellEngine
     from promising import PromisingEngine
     from db import brain as _brain
+    from discovery.data import min_volume
 
     conn = _brain()
     for nm, blob in data["coins"].items():
         sym = blob["symbol"]
         A = AsOf(sym)
+        vb = min_volume(sym)                 # relvol-basislijn (zelfde als de discovery-engine)
         eng = SellEngine(sym)
         prom = PromisingEngine(sym, "asc")
         occ = _occupied(conn, sym)
@@ -189,7 +196,7 @@ def activate(write=False):
             return occ_buys[j] if j < len(occ_buys) else None
 
         # rule 30 fires = ongepoorte verdict over alle ticks (eigen evaluatie, geen vf nodig)
-        fires = [t for t in A.vdt if _verdict(A, subrules, t, True)]
+        fires = [t for t in A.vdt if _verdict(A, subrules, t, True, vb)]
         rows, open_until, n_exec, n_shadow, n_good = [], None, 0, 0, 0
         for t in fires:
             buy = _price_at(A, t)

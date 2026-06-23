@@ -55,6 +55,9 @@ class RuleEngine:
             c.execute("SELECT rule_number, min_volume FROM coin_rule_settings WHERE trading_symbol_id=%s", (symbol,))
             self.minvol = {r["rule_number"]: float(r["min_volume"]) if r["min_volume"] is not None else 1e12
                            for r in c.fetchall()}
+            # relvol-basislijn = laagste min_volume (zelfde als discovery/data.min_volume): relvol =
+            # volumeud / relvol_base, zodat discovery-rules met relvol-subregels correct vuren via deze engine
+            self.relvol_base = min([v for v in self.minvol.values() if 0 < v < 1e11] or [1.0])
 
     def close(self):
         if self._own:
@@ -65,6 +68,9 @@ class RuleEngine:
         return (s, bisect.bisect_right(s["dt"], T)) if s else (None, 0)
 
     def _vals(self, ind, n, T):
+        if ind == "relvol":                       # relvol = volumeud-waarden / per-munt basislijn
+            v, p = self._vals("volumeud", n, T)
+            return [x / self.relvol_base for x in v], p
         s, i = self._idx(ind, T)
         if not s:
             return [], []

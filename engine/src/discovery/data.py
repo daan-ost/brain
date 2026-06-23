@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from calc import calc_percentage
+from db import brain
 from parent_crossgroup import AsOf
 from parent_fullperiod import rises
 from parent_spoor1 import lean_metrics, arrays1, LB1, METRICS1, INDS1
@@ -38,9 +39,34 @@ PRICE_KINDS = ("change", "mindip", "maxrise")
 GROUP_PAD = dt.timedelta(minutes=2)   # tolerantie rond een groep-venster (zoals parent_eval.evaluate)
 GOOD_PL = 3.0                         # goed-trade = gerealiseerde pl >= 3% (zoals cls_pl)
 
+# relvol = volumeud / min_volume (per munt). Het enige statistisch bevestigde signaal was volume-
+# GROOTTE (volumeud|standard_deviation, p=0,001), maar die is schaal-afhankelijk → onbruikbaar als
+# gedeelde band over munten. Door op de per-munt basislijn (min_volume, zoals feature_store.py:
+# value / min_volume) te delen wordt diezelfde grootte coin-vergelijkbaar. De schaal-VRIJE metrics
+# (skewness, volatility, range_percentage, ...) zijn al aanwezig als volumeud-kolom en identiek aan
+# hun relvol-variant (delen door een constante verandert ze niet); alleen deze GROOTTE-metrics
+# worden relatief opgenomen — exact afgeleid uit de al-berekende volumeud-arrays (geen herberekening).
+RELVOL_METRICS = ("standard_deviation", "diff_lowest_value_period")
+
+
+def min_volume(symbol):
+    """Laagste min_volume uit coin_rule_settings — de per-munt volume-basislijn (zoals
+    build_indicator_metrics.py: ORDER BY min_volume LIMIT 1). Dit getal is zelf een gemiddeld-
+    volume-schatting over tijd; voor coin-agnostische werking telt vooral de VERHOUDING tussen de
+    basislijnen van de munten, dus build_matrix laat 'm overschrijven (gevoeligheids-check)."""
+    with brain().cursor() as c:
+        c.execute("SELECT min_volume FROM coin_rule_settings WHERE trading_symbol_id=%s "
+                  "AND min_volume IS NOT NULL ORDER BY min_volume LIMIT 1", (symbol,))
+        r = c.fetchone()
+    return float(r["min_volume"]) if r and r.get("min_volume") else 1.0
+
 
 def indicator_cols():
     return [f"{ind}|L{lb}|{m}" for ind in INDS1 for lb in LB1 for m in METRICS1]
+
+
+def relvol_cols():
+    return [f"relvol|L{lb}|{m}" for lb in LB1 for m in RELVOL_METRICS]
 
 
 def price_cols():
@@ -48,7 +74,7 @@ def price_cols():
 
 
 def feature_cols():
-    return indicator_cols() + price_cols()
+    return indicator_cols() + relvol_cols() + price_cols()
 
 
 def _pwin(vpx, i, lb):
@@ -69,7 +95,7 @@ def _price_feat(pr, kind):
     return np.nan
 
 
-def feat_at(A, t):
+def feat_at(A, t, vol_base=1.0):
     """lean-featureset + prijs-features op moment t (as-of), zelfde formules als de all-vdt-cache."""
     row = {}
     for ind in INDS1:
@@ -81,6 +107,11 @@ def feat_at(A, t):
             for m in METRICS1:
                 v = mm.get(m, np.nan)
                 row[f"{ind}|L{lb}|{m}"] = float(v) if v is not None and np.isfinite(v) else np.nan
+    # relatieve volume-grootte = volumeud-grootte / per-munt basislijn (exact afgeleid)
+    for lb in LB1:
+        for m in RELVOL_METRICS:
+            base = row.get(f"volumeud|L{lb}|{m}", np.nan)
+            row[f"relvol|L{lb}|{m}"] = base / vol_base if np.isfinite(base) else np.nan
     i = bisect.bisect_right(A.vdt, t)
     for lb in PRICE_LBS:
         pr = _pwin(A.vpx, i, lb)
@@ -89,8 +120,8 @@ def feat_at(A, t):
     return row
 
 
-def _all_tick_arrays(A):
-    """{colname: np.array(len(vdt))} voor ALLE vdt-ticks — indicator-lean (via arrays1) + prijs."""
+def _all_tick_arrays(A, vol_base=1.0):
+    """{colname: np.array(len(vdt))} voor ALLE vdt-ticks — indicator-lean (via arrays1) + relvol + prijs."""
     cache = arrays1(A)                     # cache[(ind,lb)][metric] = np.array(len(vdt))
     cols = {}
     for ind in INDS1:
@@ -98,6 +129,10 @@ def _all_tick_arrays(A):
             cm = cache[(ind, lb)]
             for m in METRICS1:
                 cols[f"{ind}|L{lb}|{m}"] = cm[m]
+    # relatieve volume-grootte = volumeud-grootte / per-munt basislijn (exact, geen herberekening)
+    for lb in LB1:
+        for m in RELVOL_METRICS:
+            cols[f"relvol|L{lb}|{m}"] = cols[f"volumeud|L{lb}|{m}"] / vol_base
     n = len(A.vdt)
     for lb in PRICE_LBS:
         arrs = {k: np.full(n, np.nan) for k in PRICE_KINDS}
@@ -113,19 +148,21 @@ def _all_tick_arrays(A):
 _CACHE_DIR = os.path.join(os.path.dirname(__file__), ".cache")
 
 
-def _all_tick_arrays_cached(A, symbol):
-    """Schijf-cache (dev) voor de dure all-vdt-arrays. Sleutel = symbol + signatuur van de vdt-reeks
-    (lengte + eerste/laatste tick) zodat verse data de cache automatisch ongeldig maakt. Dit is GEEN
-    Parquet feature-store (die is bewust uitgesteld) — alleen een herhaal-versneller binnen een sessie."""
-    sig = f"{len(A.vdt)}_{A.vdt[0]:%Y%m%d%H%M}_{A.vdt[-1]:%Y%m%d%H%M}"
+def _all_tick_arrays_cached(A, symbol, vol_base=1.0):
+    """Schijf-cache (dev) voor de dure all-vdt-arrays. Sleutel = symbol + vol_base + signatuur van de
+    vdt-reeks (lengte + eerste/laatste tick) zodat verse data OF een andere basislijn de cache
+    automatisch ongeldig maakt. Dit is GEEN Parquet feature-store (die is bewust uitgesteld) — alleen
+    een herhaal-versneller binnen een sessie."""
+    sig = f"{len(A.vdt)}_{A.vdt[0]:%Y%m%d%H%M}_{A.vdt[-1]:%Y%m%d%H%M}_v{vol_base:g}"
     path = os.path.join(_CACHE_DIR, f"cols_{symbol}_{sig}.npz")
     cols = feature_cols()
     if os.path.exists(path):
         z = np.load(path, allow_pickle=False)
         names = list(z["names"])
-        if names == cols and z["data"].shape == (len(cols), len(A.vdt)):
-            return {c: z["data"][i].astype(np.float32, copy=False) for i, c in enumerate(names)}
-    arr = _all_tick_arrays(A)
+        data = z["data"]                       # ÉÉN keer inladen! z["data"][i] in een loop her-
+        if names == cols and data.shape == (len(cols), len(A.vdt)):   # decomprimeert de npz per kolom → 12GB+
+            return {c: data[i].astype(np.float32, copy=False) for i, c in enumerate(names)}
+    arr = _all_tick_arrays(A, vol_base)
     os.makedirs(_CACHE_DIR, exist_ok=True)
     np.savez_compressed(path, names=np.array(cols), data=np.stack([arr[c] for c in cols]))
     return arr
@@ -219,19 +256,22 @@ class DiscoveryData:
         return [gi for gi, g in enumerate(self.groups) if g[0].date() in day_set]
 
 
-def build_matrix(symbol, name, bg_n=6000, seed=1, verbose=True):
-    """Bouw de feature-tabel + DiscoveryData voor één munt."""
+def build_matrix(symbol, name, bg_n=6000, seed=1, verbose=True, vol_base=None):
+    """Bouw de feature-tabel + DiscoveryData voor één munt. vol_base=None → laagste min_volume uit
+    coin_rule_settings; expliciet meegeven om de relvol-basislijn te variëren (gevoeligheids-check)."""
     random.seed(seed)
+    if vol_base is None:
+        vol_base = min_volume(symbol)
     A = AsOf(symbol)
     eng = SellEngine(symbol)
     groups, _bad = rises(symbol)
     groups.sort(key=lambda g: g[0])
-    col_arrays = _all_tick_arrays_cached(A, symbol)
+    col_arrays = _all_tick_arrays_cached(A, symbol, vol_base)
     tot = len(A.vdt)
     gwin = [(g[0] - GROUP_PAD, g[-1] + GROUP_PAD) for g in groups]
 
-    # dev-cache van de tabel (de ~6000 sell-simulaties): sleutel = symbol+bg_n+seed+data-signatuur
-    sig = f"{tot}_{A.vdt[0]:%Y%m%d%H%M}_{A.vdt[-1]:%Y%m%d%H%M}_{len(groups)}g"
+    # dev-cache van de tabel (de ~6000 sell-simulaties): sleutel = symbol+bg_n+seed+vol_base+data-sig
+    sig = f"{tot}_{A.vdt[0]:%Y%m%d%H%M}_{A.vdt[-1]:%Y%m%d%H%M}_{len(groups)}g_v{vol_base:g}"
     dfpath = os.path.join(_CACHE_DIR, f"df_{symbol}_bg{bg_n}_s{seed}_{sig}.pkl")
     if os.path.exists(dfpath):
         df = pd.read_pickle(dfpath)
@@ -256,7 +296,7 @@ def build_matrix(symbol, name, bg_n=6000, seed=1, verbose=True):
             feats = {c: col_arrays[c][idx_in_vdt] for c in feature_cols()}
             buy = A.vpx[idx_in_vdt]
         else:
-            feats = feat_at(A, t)
+            feats = feat_at(A, t, vol_base)
             i = bisect.bisect_right(A.vdt, t)
             buy = A.vpx[i - 1] if i > 0 else None
         # doel: gerealiseerde pl via de echte sell-engine (niet gededupliceerd)
