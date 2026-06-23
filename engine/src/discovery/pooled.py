@@ -307,13 +307,21 @@ def main():
     ap.add_argument("--round2", action="store_true",
                     help="zoek de VOLGENDE rule (31) op de groepen die rule 30 nog niet dekt (sequential covering)")
     ap.add_argument("--whitespace", action="store_true",
-                    help="zoek de volgende rule (31) op de WITTE promising-groepen = geen live trade van "
-                         "20-30 (Daans vaste werkwijze: prioriteer de grootste witte vlek)")
+                    help="zoek de volgende rule op de WITTE promising-groepen = geen live trade van een "
+                         "ANDERE actieve rule (Daans vaste werkwijze: prioriteer de grootste witte vlek)")
     ap.add_argument("--rule", default="31", help="rule-label voor de output (default 31)")
     args = ap.parse_args()
     coins = [(2525, "DOGEAI"), (244, "NOS")]
     if args.whitespace:
-        run_pooled(coins, whitespace_rules=(20, 21, 22, 23, 30), rule_label=args.rule,
+        # witte ruimte = groepen zonder live trade van een ANDERE actieve rule (alle live 20-23 +
+        # actieve discovery-rules, behalve de rule die we nu zoeken) → sequential covering generaliseert
+        from db import brain as _brain
+        with _brain().cursor() as c:
+            c.execute("SELECT DISTINCT rule_number FROM rules WHERE active=1 AND "
+                      "(rule_number IN (20,21,22,23) OR source LIKE %s)", ("discovery%",))
+            ws = tuple(sorted(r["rule_number"] for r in c.fetchall() if r["rule_number"] != int(args.rule)))
+        print(f"  witte-ruimte rules (voorrang): {ws}")
+        run_pooled(coins, whitespace_rules=ws, rule_label=args.rule,
                    out_name=f"pooled_rule_{args.rule}.json")
     elif args.round2:
         prev = json.load(open(os.path.join(os.path.dirname(__file__), ".cache", "pooled_rule.json")))
