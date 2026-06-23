@@ -487,7 +487,11 @@ def main():
         lock_acquired = bool(c.fetchone()["got"])
     if not lock_acquired:
         outcome = f"overgeslagen — andere {set_key}-run actief (lock)"
-        _save_state(conn, set_key, prev["fingerprint"] if prev else fp, now, None, outcome)
+        # Bewaar de VORIGE fingerprint (de actieve run schrijft zo zijn eigen eind-staat). Is er nog
+        # geen state (allereerste run die de lock-race verliest), schrijf dan de retry-sentinel i.p.v.
+        # de huidige fp — anders zou de volgende run de nog-nooit-gedraaide data als "verwerkt" zien
+        # en 'm voorgoed overslaan tot de data verandert.
+        _save_state(conn, set_key, prev["fingerprint"] if prev else "retry-after-fail", now, None, outcome)
         conn.close()
         print(f"[{run_date}] andere {set_key}-run actief (lock) — overgeslagen.")
         return

@@ -127,7 +127,7 @@ def restore_band(sid, old_min, old_max):
 def loosen_safe(emit):
     """Try the strongest rq2 loosening per rule behind the two-stage gate. emit(message, level, rule, data)."""
     base_good, base_slecht, _ = ap._totals()
-    applied = rejected = 0
+    applied, rejected = {}, 0            # {rule: toelichting} → rules_history (niet leeg, per critical-eye)
     for rule in RULES:
         cands = gen_candidates(rule)
         chosen = None
@@ -152,8 +152,9 @@ def loosen_safe(emit):
                  f"(+{now_good - base_good}), totaal slecht {base_slecht}→{now_slecht} (geen stijging). "
                  f"~{ng} extra goede full-history.", "change", rule,
                  {"candidate": cand, "good_total": [base_good, now_good], "slecht_total": [base_slecht, now_slecht]})
+            applied[rule] = (f"Auto-versoepeld: {label}, goede {base_good}→{now_good} (+{now_good - base_good}), "
+                             f"totaal slecht {base_slecht}→{now_slecht} (geen stijging).")
             base_good, base_slecht = now_good, now_slecht
-            applied += 1
         else:
             restore_band(sid, old_min, old_max)
             ap._refire()
@@ -166,8 +167,8 @@ def loosen_safe(emit):
     if applied:
         subprocess.run([PY, os.path.join(HERE, "build_indicator_metrics.py")], cwd=HERE,
                        capture_output=True, text=True)
-        rules_history.record({}, source="auto-loosened", author="routine")
-    return f"{applied} versoepeld, {rejected} afgewezen"
+        rules_history.record(applied, source="auto-loosened", author="routine")
+    return f"{len(applied)} versoepeld, {rejected} afgewezen"
 
 
 if __name__ == "__main__":
