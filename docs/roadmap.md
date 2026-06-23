@@ -1,7 +1,32 @@
 # Roadmap — nobrainersbot trading system
 
-**Date:** 2026-06-13
-**Status:** Planning. Supersedes nothing; builds on `docs/analysis/legacy-analyse-en-rewrite-plan.md`.
+**Bijgewerkt:** 2026-06-23 (oorspronkelijk 2026-06-13)
+**Status:** In uitvoering. Supersedes nothing; builds on `docs/analysis/legacy-analyse-en-rewrite-plan.md`.
+
+---
+
+## Huidige stand (2026-06-23)
+
+| Component | Status |
+|---|---|
+| Rules 20–23 herbouwt + gevalideerd | ✅ (99,6–99,96%) |
+| Sell-engine live (winst-lock aan) | ✅ 608→548 verliezers, +488→+579% Σprofit |
+| Per-munt sell-tuning routine | ✅ Dagelijks 15:05 |
+| Koop-bevestiging (futureprice fix) | ✅ ~380 spooktrades weg |
+| Feature store (29 berekeningen × 20 lookbacks) | ✅ |
+| Rule-discovery engine (bottom-up) | ✅ Epic RD gebouwd |
+| Rules 30 + 31 live, rule 32 inactief | ✅ |
+| Feature-kwaliteit database (gini/iqr) | ✅ |
+| MEXC-marktscan scherm | ✅ |
+| Coin-rotatie kansrijkheid-ranking | ✅ |
+
+**Binding constraint:** 2 munten (DOGEAI + NOS) is het plafond voor nieuwe rules. Alle feature/recall-trajecten zijn verkend en gestrand. **Echte hefboom = meer munten (Epic M/E07).**
+
+**Volgende stap:** MEXC-scan → nieuwe volatiele munten activeren → discovery opnieuw draaien met ~10 munten.
+
+**Tijdlijnen per engine:** [sell-engine-history.md](sell-engine.md) · [buy-engine-history.md](buy-engine-history.md)
+
+---
 **Hard constraint:** the `bot_signals` database is a **read-only source**. We never write to it. All new work lives in a separate database/slice and in the new codebase.
 
 ---
