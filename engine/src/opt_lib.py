@@ -34,6 +34,13 @@ GOOD_UPSIDE = 3.0
 BAD_UPSIDE = 0.5
 from coins import active_coin_ids
 
+# Back-compat: een paar onderzoek-tools (rq1/rq2/split_2b/new_feat_discover) gebruiken nog `o.DOGEAI`/
+# `o.NOS` als constanten. Die tools zijn 2-coin-only by design (vroege analyses op DOGEAI/NOS); shim
+# vermijdt een AttributeError-crash zonder ze allemaal te hoeven herschrijven. Nieuwe hoofd-keten-code
+# moet active_coin_ids() / crosscoin_splits() gebruiken (schaalt naar N coins).
+DOGEAI = 2525
+NOS = 244
+
 # Cross-coin validatie: voorheen hardgecodeerd ((DOGEAI,NOS),(NOS,DOGEAI)). Nu LEAVE-ONE-OUT over alle
 # coins met indicator-data (coins.active_coin_ids) — voor elke coin: train = alle anderen samengevoegd,
 # test = deze coin. Schaalt automatisch naar N munten zonder code-edit zodra een coin wordt ingeladen.

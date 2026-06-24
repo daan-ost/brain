@@ -28,7 +28,8 @@ from db import brain
 HERE = o.HERE
 OUT = os.path.join(HERE, "..", "out", "opt")
 REPORT_DIR = os.path.join(HERE, "..", "..", "docs", "optimization", "daily")
-COINS = [2525, 244]
+from coins import active_coin_ids
+COINS = active_coin_ids()                     # alle coins met indicator-data; schaalt automatisch (zie coins.py)
 PY = sys.executable                       # the venv python running this script
 NO_REBUILD = "--no-rebuild" in sys.argv
 RUN_DATE = (sys.argv[sys.argv.index("--date") + 1] if "--date" in sys.argv else None)

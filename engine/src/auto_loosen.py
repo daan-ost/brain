@@ -71,8 +71,9 @@ def diag_new_fires(rule, ind, name, lb, bound, thr):
     (opt_lib._cls_pl) and what Daan steers on, NOT the theoretical 60-min best_upside. A new fire
     sits on a non-trade datetime so it has no stored profit_loss; we simulate the sell from the
     candidate's buy price to get the realized result. Return (new_slecht, new_good)."""
+    from coins import active_coin_ids
     ns = ng = 0
-    for sym in (o.DOGEAI, o.NOS):
+    for sym in active_coin_ids():            # alle coins, schaalt automatisch (was hardgecodeerd 2)
         eng = DiagEngine(sym)
         i, s = _find_index(eng, rule, ind, name, lb)
         if i is None:
