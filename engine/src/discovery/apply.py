@@ -177,9 +177,10 @@ def _priority_rules(conn):
         return (20, 21, 22, 23) + tuple(r["rule_number"] for r in c.fetchall())
 
 
-def activate(write=False):
-    """Activeer rule 30 ONAFHANKELIJK van de volume-poort: rule 30 vult de gaten waar 20-23 niet in een
-    positie zitten (20-23 onaangeroerd). Geen volledige refire. Idempotent op rule=30. Terug te draaien."""
+def activate(write=False, only_coins=None):
+    """Activeer rule N ONAFHANKELIJK van de volume-poort: vult de gaten waar de voorrang-rules niet in een
+    positie zitten (20-23 + lagere discovery-rules onaangeroerd). Coin-agnostisch: dezelfde subregels op
+    ALLE munten (data.COINS); `only_coins` (set van ids) beperkt tot een subset. Idempotent per rule+coin."""
     if not os.path.exists(RULE_PATH):
         print(f"GEEN rule gevonden ({RULE_PATH}). Draai eerst: python -m discovery.pooled")
         return
@@ -191,13 +192,13 @@ def activate(write=False):
     from sell_engine import SellEngine
     from promising import PromisingEngine
     from db import brain as _brain
-    from discovery.data import min_volume
+    from discovery.data import min_volume, COINS
 
+    coins = [(s, n) for (s, n) in COINS if only_coins is None or s in only_coins]
     conn = _brain()
     prio = _priority_rules(conn)             # 20-23 + actieve discovery-rules < deze rule (voorrang)
-    print(f"  voorrang-rules (bezetten de vensters): {prio}")
-    for nm, blob in data["coins"].items():
-        sym = blob["symbol"]
+    print(f"  voorrang-rules (bezetten de vensters): {prio} | coins: {[n for _s, n in coins]}")
+    for sym, nm in coins:
         A = AsOf(sym)
         vb = min_volume(sym)                 # relvol-basislijn (zelfde als de discovery-engine)
         eng = SellEngine(sym)
@@ -287,10 +288,12 @@ def main():
                     help="activeer de rule (vult idle-gaten van 20-23, ongepoort); --write om te committen")
     ap.add_argument("--rule", type=int, default=30, help="rule-nummer (30, 31, …; default 30)")
     ap.add_argument("--path", default=None, help="bron-json (default .cache/pooled_rule_<rule>.json; rule 30 = pooled_rule.json)")
+    ap.add_argument("--coins", default=None, help="komma-lijst van trading_symbol_ids om op te activeren (default alle data.COINS)")
     args = ap.parse_args()
     _set_rule(args.rule, args.path if args.path else (RULE_PATH if args.rule == 30 else None))
+    only = {int(x) for x in args.coins.split(",")} if args.coins else None
     if args.activate:
-        activate(write=args.write)
+        activate(write=args.write, only_coins=only)
     else:
         report_and_write(write=args.write)
 

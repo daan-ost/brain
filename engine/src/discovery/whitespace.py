@@ -27,7 +27,7 @@ import sys
 import numpy as np
 
 from db import brain
-from discovery.data import build_matrix
+from discovery.data import build_matrix, COINS
 from discovery.segment import discover, fmt_subrules
 
 
@@ -85,7 +85,7 @@ def analyse(symbol, name):
 
 
 def main():
-    syms = [(2525, "DOGEAI"), (244, "NOS")]
+    syms = COINS
     if len(sys.argv) > 1:
         syms = [(int(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else sys.argv[1])]
     for sym, nm in syms:

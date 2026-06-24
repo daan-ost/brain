@@ -25,7 +25,7 @@ import sys
 
 import numpy as np
 
-from discovery.data import build_matrix
+from discovery.data import build_matrix, COINS
 from discovery.validate import validate
 from discovery.report import print_report, compact_line
 from parent_eval import faithful_trades
@@ -321,7 +321,7 @@ def main():
                     help="beperk de witte groepen tot die met max gerealiseerde profit > deze %% "
                          "(mik op de hoog-winst gemiste kansen, bv. --min-profit 10)")
     args = ap.parse_args()
-    coins = [(2525, "DOGEAI"), (244, "NOS")]
+    coins = COINS
     if args.whitespace:
         # witte ruimte = groepen zonder live trade van een ANDERE actieve rule (alle live 20-23 +
         # actieve discovery-rules, behalve de rule die we nu zoeken) → sequential covering generaliseert

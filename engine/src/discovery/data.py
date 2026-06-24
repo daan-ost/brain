@@ -39,6 +39,10 @@ PRICE_KINDS = ("change", "mindip", "maxrise")
 GROUP_PAD = dt.timedelta(minutes=2)   # tolerantie rond een groep-venster (zoals parent_eval.evaluate)
 GOOD_PL = 3.0                         # goed-trade = gerealiseerde pl >= 3% (zoals cls_pl)
 
+# Het muntenuniverse — één centrale lijst voor de hele discovery-engine + apply (juni 2026: 2 -> 4 coins).
+# Zie memory coins-universe-4. Volgorde = chronologische onboarding.
+COINS = [(2525, "DOGEAI"), (244, "NOS"), (8427, "FARTCOIN"), (2735, "MUMU")]
+
 # relvol = volumeud / min_volume (per munt). Het enige statistisch bevestigde signaal was volume-
 # GROOTTE (volumeud|standard_deviation, p=0,001), maar die is schaal-afhankelijk → onbruikbaar als
 # gedeelde band over munten. Door op de per-munt basislijn (min_volume, zoals feature_store.py:
@@ -342,7 +346,7 @@ def build_matrix(symbol, name, bg_n=6000, seed=1, verbose=True, vol_base=None):
 
 if __name__ == "__main__":
     import sys
-    syms = [(2525, "DOGEAI"), (244, "NOS")]
+    syms = COINS
     if len(sys.argv) > 1:
         syms = [(int(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else sys.argv[1])]
     for sym, nm in syms:
