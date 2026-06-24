@@ -35,7 +35,8 @@ import opt_lib as ol
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
-COINS = [2525, 244]
+from coins import active_coin_ids
+COINS = active_coin_ids()                     # alle coins met indicator-data, automatisch (zie coins.py)
 APPLY = "--apply" in sys.argv
 PERM_ALPHA = 0.05         # familiebrede drempel die de toeval-toets (Šidák-gecorrigeerd) moet halen
 

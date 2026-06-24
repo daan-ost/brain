@@ -32,8 +32,14 @@ GOOD_PL = 3.0
 BAD_PL = 0.0
 GOOD_UPSIDE = 3.0
 BAD_UPSIDE = 0.5
-DOGEAI = 2525
-NOS = 244
+from coins import active_coin_ids
+
+# Cross-coin validatie: voorheen hardgecodeerd ((DOGEAI,NOS),(NOS,DOGEAI)). Nu LEAVE-ONE-OUT over alle
+# coins met indicator-data (coins.active_coin_ids) — voor elke coin: train = alle anderen samengevoegd,
+# test = deze coin. Schaalt automatisch naar N munten zonder code-edit zodra een coin wordt ingeladen.
+def crosscoin_splits():
+    cs = active_coin_ids()
+    return [(tuple(x for x in cs if x != te), te) for te in cs] if len(cs) >= 2 else []
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 METRICS_GLOB = os.path.join(HERE, "..", "data", "metrics", "indicator_metrics_*.parquet")
@@ -91,6 +97,11 @@ def load_trades():
                   "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL")
         df = pd.DataFrame(c.fetchall())
     conn.close()
+    # MySQL DECIMAL columns arrive as Python Decimal objects; cast to float so DuckDB registers
+    # them as DOUBLE. Otherwise DuckDB infers a narrow DECIMAL type from the first value and an
+    # outlier (e.g. best_upside 174.452 / profit_loss 159.45) overflows it in load_long().
+    df["best_upside"] = pd.to_numeric(df["best_upside"], errors="coerce")
+    df["profit_loss"] = pd.to_numeric(df["profit_loss"], errors="coerce")
     df["cls"] = df["profit_loss"].apply(_cls_pl)
     # per-coin time split: first 70% train, last 30% test
     df["split"] = "train"
@@ -211,14 +222,17 @@ def validate_timesplit(long, rule, ind, lb, calc, bound,
     return {"split": "time", "threshold": thr, "train_drop": conds[bound]["drop_insample"], **m}
 
 
-def validate_crosscoin(long, rule, ind, lb, calc, bound, train_sym, test_sym,
+def validate_crosscoin(long, rule, ind, lb, calc, bound, train_syms, test_sym,
                        min_tr_good=5, min_tr_bad=5, min_te_good=3, min_te_bad=3):
-    """CROSS-COIN split: derive the bad-edge threshold on ALL of train_sym, score on ALL of
-    test_sym. The strongest robustness test — does a band fit on DOGEAI hold on NOS (and back)?"""
+    """CROSS-COIN split: leid de bad-edge-drempel af op de samengevoegde TRAIN-coins (een lijst of een
+    enkele id), evalueer op test_sym. Robuustheidstoets: houdt een band die op N-1 munten ontstond
+    stand op de overgebleven munt? Schaalt naar N coins (LOO via crosscoin_splits())."""
+    if isinstance(train_syms, int):
+        train_syms = (train_syms,)
     g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
              (long["lookback"] == lb) & (long["calc"] == calc)]
-    tr_good = g[(g["sym"] == train_sym) & (g["cls"] == "goed")]["value"]
-    tr_bad = g[(g["sym"] == train_sym) & (g["cls"] == "slecht")]["value"]
+    tr_good = g[(g["sym"].isin(train_syms)) & (g["cls"] == "goed")]["value"]
+    tr_bad = g[(g["sym"].isin(train_syms)) & (g["cls"] == "slecht")]["value"]
     te_good = g[(g["sym"] == test_sym) & (g["cls"] == "goed")]["value"]
     te_bad = g[(g["sym"] == test_sym) & (g["cls"] == "slecht")]["value"]
     if (len(tr_good) < min_tr_good or len(tr_bad) < min_tr_bad
@@ -229,21 +243,23 @@ def validate_crosscoin(long, rule, ind, lb, calc, bound, train_sym, test_sym,
         return None
     thr = conds[bound]["threshold"]
     m = oos_metrics(tr_good, tr_bad, te_good, te_bad, bound, thr)
-    return {"split": f"{train_sym}->{test_sym}", "threshold": thr,
+    tr_label = "+".join(str(x) for x in train_syms)
+    return {"split": f"{tr_label}->{test_sym}", "threshold": thr,
             "train_drop": conds[bound]["drop_insample"], **m}
 
 
 def full_validation(long, rule, ind, lb, calc, bound):
-    """Run ALL out-of-sample splits for one candidate: time split + both cross-coin directions.
-    A candidate is SAFE only if good_keep ~ 1.0 on every split that has enough data."""
+    """Out-of-sample splits voor één kandidaat: tijd-split + LEAVE-ONE-OUT cross-coin (per coin: train op
+    alle anderen, test op deze). Een kandidaat is SAFE iff good_keep ~ 1.0 op ÉLKE split met genoeg data.
+    Schaalt automatisch naar N coins (crosscoin_splits() uit brain.coins via coins.py)."""
     res = {}
     t = validate_timesplit(long, rule, ind, lb, calc, bound)
     if t:
         res["time"] = t
-    for tr, te in ((DOGEAI, NOS), (NOS, DOGEAI)):
+    for tr, te in crosscoin_splits():
         cc = validate_crosscoin(long, rule, ind, lb, calc, bound, tr, te)
         if cc:
-            res[f"{tr}->{te}"] = cc
+            res[cc["split"]] = cc
     return res
 
 

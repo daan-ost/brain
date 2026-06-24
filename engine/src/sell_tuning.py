@@ -26,8 +26,11 @@ from collections import defaultdict
 import sell_engine
 import opt_lib as ol
 from db import brain
+from coins import active_coin_ids
 
-COINS = [int(a) for a in sys.argv[1:] if a.isdigit()] or [2525, 244]
+# CLI-args overrulen, anders alle coins met indicator-data (zie coins.py) — schaalt automatisch naar
+# nieuwe munten zodra ze via import_indicators.py zijn ingeladen.
+COINS = [int(a) for a in sys.argv[1:] if a.isdigit()] or active_coin_ids()
 RULES = [20, 21, 22, 23]
 
 # Minimum-omvang per helft (train én holdout) om een voorstel te mógen beoordelen. Eronder is er geen
