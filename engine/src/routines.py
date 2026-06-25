@@ -83,11 +83,19 @@ def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
             sell = (f"#strat:{st['n']}:{st['mx']}#cstrat:{cst['n']}:{cst['mx']}"
                     f"#mov:{mov['n']}:{mov['mx']}#coins:{co['n']}")
         if with_fires:
-            # count + goed/slecht-split — dat is precies het ratio-relevante drift-signaal: de ratio is
-            # g/s, dus alleen een verandering in count of de goed/slecht-classificatie hertriggert. NIET
-            # MAX(updated_at) (verandert door de DELETE+INSERT elke refire → nooit meer skippen) en NIET
-            # Σprofit_loss (verschuift binnen een klasse zonder dat de ratio wijzigt → nutteloze re-runs).
-            c.execute("SELECT COUNT(*) n, COALESCE(SUM(profit_loss>=3),0) g, COALESCE(SUM(profit_loss<0),0) s "
+            # count + goed/slecht-split + een CLASSIFICATIE-checksum (Fase 0). De ratio is g/s, dus count
+            # en de g/s-split hertriggeren. NIET MAX(updated_at) (verandert door de DELETE+INSERT elke
+            # refire → nooit meer skippen) en NIET Σprofit_loss (verschuift binnen een klasse zonder dat de
+            # ratio wijzigt → nutteloze re-runs). De cls_xor sluit de resterende blindspot: een sell-override
+            # of code-wijziging kan trades RUILEN (A goed→slecht, B slecht→goed) bij GELIJKE counts — dan
+            # verandert bad_edge_conditions (die van de per-trade-classificatie afhangt) wél, maar count+g+s
+            # niet. SUM(CRC32(coin+datetime+rule+cls)) is orde-onafhankelijk, vangt elke ruil/set-wijziging,
+            # en is invariant onder magnitude-drift binnen een klasse (de cls-code blijft gelijk). NB: SUM,
+            # niet BIT_XOR — CRC32 is lineair over XOR, dus een goed↔slecht-ruil tussen twee trades van
+            # gelijke string-lengte cancelt onder XOR (door test_opt_lib gevangen); integer-SUM cancelt niet.
+            c.execute("SELECT COUNT(*) n, COALESCE(SUM(profit_loss>=3),0) g, COALESCE(SUM(profit_loss<0),0) s, "
+                      "COALESCE(SUM(CRC32(CONCAT(trading_symbol_id,'|',datetime,'|',rule,'|',"
+                      "CASE WHEN profit_loss>=3 THEN 'g' WHEN profit_loss<0 THEN 'b' ELSE 'm' END))),0) cx "
                       "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL")
             fires = c.fetchone()
     conn.close()
@@ -97,7 +105,7 @@ def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
     if sell:
         sig += sell
     if fires:
-        sig += f"#fires:{fires['n']}:{fires['g']}:{fires['s']}"
+        sig += f"#fires:{fires['n']}:{fires['g']}:{fires['s']}:{fires['cx']}"
     return hashlib.md5(sig.encode()).hexdigest()
 
 

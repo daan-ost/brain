@@ -18,7 +18,10 @@ import pandas as pd
 from db import brain
 from calc import window_metrics, WINDOW_METRIC_KEYS
 
-SYMS = [int(a) for a in sys.argv[1:]] or [2525, 244]
+import hashlib
+
+FORCE = "--force" in sys.argv                          # overrule skip-on-unchanged (Fase 1)
+SYMS = [int(a) for a in sys.argv[1:] if not a.startswith("--")] or [2525, 244]
 INDICATORS = ["vzo", "phobos", "obv-x-value", "mfi", "volumeud"]
 MAX_LB = 20
 COLS = ["trading_symbol_id", "symbol", "datetime", "indicator", "lookback", *WINDOW_METRIC_KEYS]
@@ -34,9 +37,50 @@ def q(sql, args=()):
         c.execute(sql, args); return c.fetchall()
 
 
+# Fase 1 (schaalplan, docs/findings/optimize-scaling-plan-2026-06-25.md): skip-on-unchanged. De cache
+# is rule/uitkomst-ONAFHANKELIJK — alleen de SCOPE-drivers bepalen welke (datetime,indicator,lookback)
+# berekend worden: de indicators-reeks (regel 46-50), de coin_fires-datetimes (58), de coin_periods-
+# vensters (59-61), de ok-label-momenten (62-65) en min_volume (49, herschaalt volumeud). Plus een
+# code-versie-hash zodat een wijziging in INDICATORS/MAX_LB/WINDOW_METRIC_KEYS herbouw triggert. Gelijke
+# fingerprint + bestaand parquet + geen --force → skip (geen window_metrics, geen DELETE/INSERT).
+q("CREATE TABLE IF NOT EXISTS indicator_metrics_state ("
+  "trading_symbol_id INT UNSIGNED NOT NULL PRIMARY KEY, fingerprint VARCHAR(64) NOT NULL, "
+  "row_count INT UNSIGNED NULL, built_at DATETIME NOT NULL, "
+  "created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP, "
+  "updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)")
+_CODE_VER = hashlib.md5((",".join(INDICATORS) + f"|{MAX_LB}|" + ",".join(WINDOW_METRIC_KEYS)).encode()).hexdigest()[:10]
+
+
+def _metrics_fingerprint(SYM):
+    p = []
+    r = q("SELECT COUNT(*) n, COALESCE(MAX(datetime),'') mx FROM indicators WHERE trading_symbol_id=%s", (SYM,))[0]
+    p.append(f"ind:{r['n']}:{r['mx']}")
+    # coin_fires-SCOPE = de set datetimes (incl. shadows; geen is_executed-filter op regel 58). SUM(CRC32)
+    # vangt een gewijzigde datetime-set; profit_loss telt NIET mee (de metrics zijn uitkomst-onafhankelijk).
+    r = q("SELECT COUNT(*) n, COALESCE(SUM(CRC32(datetime)),0) cx FROM coin_fires WHERE trading_symbol_id=%s", (SYM,))[0]
+    p.append(f"fires:{r['n']}:{r['cx']}")
+    r = q("SELECT COUNT(*) n, COALESCE(MIN(period_from),'') pf, COALESCE(MAX(period_to),'') pt FROM coin_periods WHERE trading_symbol_id=%s", (SYM,))[0]
+    p.append(f"per:{r['n']}:{r['pf']}:{r['pt']}")
+    r = q("SELECT COUNT(*) n, COALESCE(MAX(datetime),'') mx FROM coin_moment_labels WHERE trading_symbol_id=%s AND decision='yes'", (SYM,))[0]
+    p.append(f"lbl:{r['n']}:{r['mx']}")
+    r = q("SELECT COALESCE(MIN(min_volume),'') mv FROM coin_rule_settings WHERE trading_symbol_id=%s AND min_volume IS NOT NULL", (SYM,))[0]
+    p.append(f"mv:{r['mv']}")
+    p.append(f"code:{_CODE_VER}")
+    return hashlib.md5("|".join(p).encode()).hexdigest()
+
+
 for SYM in SYMS:
     row = q("SELECT symbol FROM coins WHERE id=%s", (SYM,))
     SYMBOL = row[0]["symbol"] if row else str(SYM)
+
+    # Fase 1: skip als niets in de scope is gewijzigd én het parquet er nog is.
+    fp_now = _metrics_fingerprint(SYM)
+    fpath = os.path.join(OUT, f"indicator_metrics_{SYM}.parquet")
+    prev = q("SELECT fingerprint FROM indicator_metrics_state WHERE trading_symbol_id=%s", (SYM,))
+    if not FORCE and prev and prev[0]["fingerprint"] == fp_now and os.path.exists(fpath):
+        print(f"{SYMBOL} ({SYM}): scope ongewijzigd ({fp_now[:10]}…) — cache overgeslagen. Forceer met --force.")
+        continue
+
     mv = q("SELECT min_volume FROM coin_rule_settings WHERE trading_symbol_id=%s AND min_volume IS NOT NULL "
            "ORDER BY min_volume LIMIT 1", (SYM,))
     VOL_BASE = float(mv[0]["min_volume"]) if mv else 1.0
@@ -93,8 +137,13 @@ for SYM in SYMS:
         c.executemany(ins, rows)
     conn.commit()
     # write Parquet mirror
-    fpath = os.path.join(OUT, f"indicator_metrics_{SYM}.parquet")
     duckdb.sql("COPY df TO '%s' (FORMAT PARQUET)" % fpath)
+    # Fase 1: leg de scope-fingerprint vast — de volgende run skipt als niets in de scope wijzigt.
+    q("INSERT INTO indicator_metrics_state (trading_symbol_id, fingerprint, row_count, built_at) "
+      "VALUES (%s,%s,%s,NOW()) ON DUPLICATE KEY UPDATE "
+      "fingerprint=VALUES(fingerprint), row_count=VALUES(row_count), built_at=VALUES(built_at)",
+      (SYM, fp_now, len(rows)))
+    conn.commit()
     print(f"{SYMBOL} ({SYM}): {len(dts)} datetimes -> {len(rows):,} rows (brain + {os.path.relpath(fpath, HERE)})")
 
 conn.close()
