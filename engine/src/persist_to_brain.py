@@ -29,10 +29,13 @@ from buy_confirm import confirm_buy, params_by_rule
 # Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
 HORIZONS = [5, 10, 15, 30, 45, 60]
 
-SYM = int(sys.argv[1]) if len(sys.argv) > 1 else 2525
-FROM = sys.argv[2] if len(sys.argv) > 2 else None
-TO = sys.argv[3] if len(sys.argv) > 3 else None
-GAP = int(sys.argv[4]) if len(sys.argv) > 4 else CLUSTER_GAP_MINUTES
+FORCE = "--force" in sys.argv                     # overrule skip-on-unchanged (A1)
+# Positionele args: alles wat geen --flag is (zodat persist_to_brain.py 244 --force niet --force als FROM ziet)
+_pos = [a for a in sys.argv[1:] if not a.startswith("--")]
+SYM = int(_pos[0]) if len(_pos) > 0 else 2525
+FROM = _pos[1] if len(_pos) > 1 else None
+TO = _pos[2] if len(_pos) > 2 else None
+GAP = int(_pos[3]) if len(_pos) > 3 else CLUSTER_GAP_MINUTES
 # Changelog-reden voor klasse-overgangen door deze refire. Default = gewone heranalyse; de sell-tuning
 # routine zet CHANGELOG_REASON='tuning-routine-<rule>-<knob>' zodat de wijziging te herleiden is.
 CHANGELOG_REASON = (os.environ.get("CHANGELOG_REASON") or "sell-engine-rerun")[:80]
@@ -41,6 +44,44 @@ FROM_dt, TO_dt = _pf(FROM), _pf(TO)
 
 dst = brain()
 dst.autocommit(False)
+
+
+# A1: per-coin refire-fingerprint — sla over als geen enkele input voor deze coin is gewijzigd sinds
+# de vorige refire. Versnelt routines die alle coins langslopen waar er typisch maar 1 muteert
+# (DOGEAI/NOS hebben statische historie; refire van ongewijzigde data is pure verspilling).
+# Inputs in de hash: indicators-staat, rules (banden + active), per-coin settings, handmatige labels,
+# sell-strategies + de CHANGELOG_REASON (zodat een tuning-knob-wijziging WEL nieuwe refire trigger't).
+def _coin_fingerprint(sym):
+    import hashlib
+    parts = []
+    with brain().cursor() as c:
+        c.execute("SELECT COUNT(*) n, COALESCE(MAX(datetime),'') mx FROM indicators WHERE trading_symbol_id=%s", (sym,))
+        r = c.fetchone(); parts.append(f"ind:{r['n']}:{r['mx']}")
+        c.execute("SELECT COUNT(*) n, COALESCE(MAX(updated_at),'') mx FROM rules WHERE active=1")
+        r = c.fetchone(); parts.append(f"rul:{r['n']}:{r['mx']}")
+        c.execute("SELECT COUNT(*) n, COALESCE(MAX(updated_at),'') mx FROM coin_rule_settings WHERE trading_symbol_id=%s", (sym,))
+        r = c.fetchone(); parts.append(f"crs:{r['n']}:{r['mx']}")
+        c.execute("SELECT COUNT(*) n, COALESCE(MAX(updated_at),'') mx FROM coin_strategies WHERE trading_symbol_id=%s", (sym,))
+        r = c.fetchone(); parts.append(f"cstr:{r['n']}:{r['mx']}")
+        c.execute("SELECT COUNT(*) n, COALESCE(MAX(updated_at),'') mx FROM coin_moment_labels WHERE trading_symbol_id=%s", (sym,))
+        r = c.fetchone(); parts.append(f"lbl:{r['n']}:{r['mx']}")
+        c.execute("SELECT COALESCE(MAX(updated_at),'') mx FROM strategies")
+        r = c.fetchone(); parts.append(f"str:{r['mx']}")
+    parts.append(f"reason:{CHANGELOG_REASON}")
+    parts.append(f"window:{FROM}:{TO}:{GAP}")
+    return hashlib.md5("|".join(parts).encode()).hexdigest()
+
+
+fp_now = _coin_fingerprint(SYM)
+with dst.cursor() as c:
+    c.execute("SELECT fingerprint FROM coin_refire_state WHERE trading_symbol_id=%s", (SYM,))
+    r = c.fetchone()
+    fp_prev = r["fingerprint"] if r else None
+if fp_prev == fp_now and not FORCE:
+    print(f"[persist_to_brain] coin {SYM}: niets gewijzigd sinds vorige refire ({fp_prev[:10]}…) — overgeslagen. "
+          f"Forceer met --force.")
+    dst.close()
+    sys.exit(0)
 with dst.cursor() as c:
     c.execute("SELECT symbol FROM coins WHERE id=%s", (SYM,))
     row = c.fetchone()
@@ -230,6 +271,12 @@ with dst.cursor() as c:
              int(legres) if legres is not None else None,
              float(legpl) if legpl is not None else None))
 
+dst.commit()
+# A1: leg de fingerprint vast na succesvolle refire — volgende run skipt als niets wijzigt.
+with dst.cursor() as c:
+    c.execute("INSERT INTO coin_refire_state (trading_symbol_id, fingerprint, last_refired_at) "
+              "VALUES (%s, %s, NOW()) ON DUPLICATE KEY UPDATE "
+              "fingerprint=VALUES(fingerprint), last_refired_at=VALUES(last_refired_at)", (SYM, fp_now))
 dst.commit()
 print(f"=== persist_to_brain (rebuild A) — {SYMBOL} ({SYM}) ===")
 print(f"periods: {len(periods)}  |  fires: {len(all_fires)}  "

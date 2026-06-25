@@ -14,6 +14,7 @@ Usage: routines.py [--no-rebuild] [--date YYYY-MM-DD] [--trigger routine|manual|
 import datetime
 import hashlib
 import json
+import os
 import subprocess
 import sys
 
@@ -21,6 +22,21 @@ from db import brain
 import daily_optimization as opt
 
 NO_REBUILD = "--no-rebuild" in sys.argv
+
+# A3: live progress-log. Voorheen schreef Journal pas aan het eind van de routine — bij vastlopen of
+# lange subprocess-aanroepen had je nul zicht op waar de run zat. Nu schrijven we elke add() én elke
+# fase-overgang line-buffered naar een append-only file in engine/out/routines/, plus stdout (flush=True).
+_PROGRESS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out", "routines")
+os.makedirs(_PROGRESS_DIR, exist_ok=True)
+_PROGRESS_PATH = os.path.join(_PROGRESS_DIR, f"progress_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+_pf = open(_PROGRESS_PATH, "a", buffering=1)        # line-buffered → onmiddellijk leesbaar via `tail -f`
+
+
+def _live(msg, set_key=None):
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    line = f"[{ts}] " + (f"[{set_key}] " if set_key else "") + str(msg)
+    _pf.write(line + "\n")
+    print(line, flush=True)
 APPLY = "--apply" in sys.argv          # actually apply safe candidates; without it, propose-only
 FORCE = "--force" in sys.argv          # bypass the data-changed gate (manual preview / testing)
 FIX = "--fix" in sys.argv              # data-integriteit: allow the safe cache-rebuild auto-fix
@@ -93,6 +109,9 @@ class Journal:
 
     def add(self, message, level="info", rule=None, data=None):
         self.lines.append({"level": level, "rule_number": rule, "message": message, "data": data})
+        # A3: ook live wegschrijven zodat lange routines een leesbare voortgang hebben.
+        if level in ("change", "result", "finding", "error", "warn"):
+            _live(message, set_key=self.key)
 
 
 # --------------------------------------------------------------------------- routines
@@ -508,18 +527,25 @@ def main():
         run_id = c.lastrowid
     conn.commit()
 
+    _live(f"=== START set '{set_key}' (run #{run_id}, trigger={TRIGGER}) ===")
+    _live(f"progress-log: {_PROGRESS_PATH}")
     seq = 0
     summaries = []
     status = "success"
     try:
         for key, fn in registry:
             j = Journal(key)
+            _live(f"-> routine '{key}' gestart", set_key=set_key)
+            t0 = datetime.datetime.now()
             try:
                 summary = fn(j)
+                _live(f"<- routine '{key}' klaar in {(datetime.datetime.now()-t0).total_seconds():.0f}s: {summary}",
+                      set_key=set_key)
             except (Exception, SystemExit) as e:  # one routine failing must not lose the journal.
                 # SystemExit (geen Exception-subclass!) komt uit de refire-helpers en opt.run; zonder
                 # deze vangst ontsnapt die crash en wordt de run alsnog als 'success' gejournald.
                 j.add(f"FOUT in routine {key}: {e}", level="error")
+                _live(f"!! routine '{key}' GEFAALD: {e}", set_key=set_key)
                 summary = f"FOUT: {e}"
                 status = "failed"
             with conn.cursor() as c:
