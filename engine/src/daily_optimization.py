@@ -96,8 +96,23 @@ def run_optimization(rebuild=True):
     """Run the pipeline and return structured results — the entry point for routines.py.
     {ratios: {rule: (good, bad)}, new: [candidate dicts], rebuilt: bool}. Applies nothing."""
     if rebuild:
-        for c in COINS:
-            run("persist_to_brain.py", c)
+        # A4: parallel coin-refires. persist_to_brain.py is per coin onafhankelijk (verschillende
+        # trading_symbol_id → geen lock-conflict op coin_fires/coin_periods); MySQL handelt het parallelle
+        # schrijven prima. SSL is uit (A2), dus de connecties zijn stabiel. Snelheidswinst is N-voudig
+        # (was sequentieel ~5-15 min/coin → nu ~ langste enkele refire). A1's fingerprint-skip blijft
+        # actief: een coin die niets is veranderd refired binnen seconden.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        workers = min(len(COINS), 4)
+        errors = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = {pool.submit(run, "persist_to_brain.py", c): c for c in COINS}
+            for f in as_completed(futs):
+                try:
+                    f.result()
+                except SystemExit as e:
+                    errors.append(f"coin {futs[f]}: {e}")
+        if errors:
+            raise SystemExit("FAILED parallel refire:\n" + "\n".join(errors))
         run("build_indicator_metrics.py")
     run("rq1_tighten.py", "all", 5)
     return {"ratios": current_ratios(), "new": new_safe_candidates(), "rebuilt": rebuild}

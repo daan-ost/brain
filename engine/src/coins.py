@@ -53,6 +53,30 @@ def refresh():
     _cache = None
 
 
+# B3: coin-age-class — onderscheid statische (historische) coins van actieve (groeiende) coins. Drijft
+# routines die per coin beslissen of een dure stap (refire/cache) überhaupt zin heeft. A1's
+# fingerprint-skip vangt de "static + ongewijzigde rules" gevallen al impliciet; deze helper geeft de
+# semantische context: bij een rule-wijziging die ALLE coins triggert kun je op static coins andere
+# keuzes maken (bv. lichtere refire, of een sneller pad zonder sell_promising).
+_STATIC_DAYS = 30
+
+
+def coin_age_class(symbol_id):
+    """Geef 'static' (>30 dagen geen nieuwe indicator-tick), 'active' (recente data) of 'unknown'."""
+    with brain().cursor() as c:
+        c.execute("SELECT TIMESTAMPDIFF(DAY, MAX(datetime), NOW()) days_since "
+                  "FROM indicators WHERE trading_symbol_id=%s", (symbol_id,))
+        r = c.fetchone()
+    if not r or r.get("days_since") is None:
+        return "unknown"
+    return "static" if int(r["days_since"]) > _STATIC_DAYS else "active"
+
+
+def active_market_coin_ids():
+    """De coins die nog 'leven' (data groeit). Voor routines die alleen op verse coins moeten draaien."""
+    return [s for s in active_coin_ids() if coin_age_class(s) == "active"]
+
+
 if __name__ == "__main__":
     for s, n in active_coins():
         print(f"  {s:>5d}  {n}")
