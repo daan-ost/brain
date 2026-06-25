@@ -4,6 +4,13 @@ Python trading-engine (`engine/`) die de legacy bot-regels herbouwt + valideert 
 (de "oracle"), met een Laravel-app (`www/`) op de `brain` DB. Details staan in de skills
 (`brain-engine`, `brain-sell-engine`, `brain-routines`, `brain-rule-tuning`, ...) en in de memory.
 
+## Git-werkwijze (verplicht)
+
+**Switch of maak NOOIT zelf een branch aan — blijf op de branch waar we zijn (meestal `main`), tenzij
+Daan expliciet om een (andere) branch vraagt.** Dit overschrijft de standaard "splits af op de
+default-branch". Committen mag gewoon op de huidige branch wanneer Daan erom vraagt; geen `git checkout`
+/ `git switch` / `git checkout -b` zonder zijn aanwijzing.
+
 ## Terminologie (altijd aanhouden — in communicatie, docs en UI)
 
 - **"trades"** — niet "fires" of "coin_fires". De databasetabel heet technisch `coin_fires`, maar in
