@@ -32,20 +32,20 @@ GOOD_PL = 3.0
 BAD_PL = 0.0
 GOOD_UPSIDE = 3.0
 BAD_UPSIDE = 0.5
-from coins import active_coin_ids
+from coins import active_coin_ids, optimize_coin_ids
 
 # Back-compat: een paar onderzoek-tools (rq1/rq2/split_2b/new_feat_discover) gebruiken nog `o.DOGEAI`/
 # `o.NOS` als constanten. Die tools zijn 2-coin-only by design (vroege analyses op DOGEAI/NOS); shim
-# vermijdt een AttributeError-crash zonder ze allemaal te hoeven herschrijven. Nieuwe hoofd-keten-code
-# moet active_coin_ids() / crosscoin_splits() gebruiken (schaalt naar N coins).
+# vermijdt een AttributeError-crash zonder ze allemaal te hoeven herschrijven.
 DOGEAI = 2525
 NOS = 244
 
-# Cross-coin validatie: voorheen hardgecodeerd ((DOGEAI,NOS),(NOS,DOGEAI)). Nu LEAVE-ONE-OUT over alle
-# coins met indicator-data (coins.active_coin_ids) — voor elke coin: train = alle anderen samengevoegd,
-# test = deze coin. Schaalt automatisch naar N munten zonder code-edit zodra een coin wordt ingeladen.
+# Cross-coin validatie via leave-one-out over de OPTIMIZE-set (snel pad: DOGEAI+NOS; overrule via env
+# OPTIMIZE_COINS). 4-coin LOO bleek onpraktisch traag (5u rq1_tighten zonder resultaat). De
+# discovery-engine + sell-tuning gebruiken nog steeds alle coins; alleen rule-precision is hier
+# geschaald omdat de bottleneck zich daar manifesteerde.
 def crosscoin_splits():
-    cs = active_coin_ids()
+    cs = optimize_coin_ids()
     return [(tuple(x for x in cs if x != te), te) for te in cs] if len(cs) >= 2 else []
 
 HERE = os.path.dirname(os.path.abspath(__file__))

@@ -34,6 +34,19 @@ def active_coin_ids():
     return [s for s, _ in active_coins()]
 
 
+def optimize_coin_ids():
+    """De coins die de rule-precision OPTIMIZE-keten gebruikt (zoekruimte + LOO cross-coin validatie).
+    Default: DOGEAI + NOS (snelle dagelijkse run; LOO over 4 coins maakte rq1_tighten onpraktisch traag,
+    5u zonder resultaat). Override via env var OPTIMIZE_COINS=2525,244,2735,8427 voor een diepe sweep.
+    Discovery/sell-tuning blijven ongelimiteerd via active_coin_ids() — de bottleneck zat alleen in de
+    rule-precision LOO."""
+    import os
+    env = os.environ.get("OPTIMIZE_COINS")
+    if env:
+        return [int(x) for x in env.split(",") if x.strip().isdigit()]
+    return [2525, 244]
+
+
 def refresh():
     """Forceer een verse query (na het inladen van een nieuwe coin in dezelfde proces-levensduur)."""
     global _cache
