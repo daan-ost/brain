@@ -134,7 +134,7 @@ def main():
     report = {}
     for rule in RULES:
         s = singles(long, rule)
-        p = pairs(long, rule) if (PAIRS or rule == 20) else []
+        p = pairs(long, rule) if PAIRS else []   # 4-coin: pairs-search alleen op --pairs flag (was O(n²)×4-coin data — vastlooprisico in routine; aparte run mag wel)
         report[rule] = {"singles": s, "pairs": p}
         print(f"\n===== RULE {rule} =====")
         safe_s = [c for c in s if c["verdict"] == "SAFE"]
