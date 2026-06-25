@@ -1,0 +1,45 @@
+{
+  "_doc": "BENCHMARK voor Epic G (regime-gate). De IDEALE aan/uit-perioden per munt volgens Daans handmatige oordeel (vastgelegd 2026-06-25). Dit is de GROUND TRUTH waartegen we automatische stop/start-methodes scoren. Buiten een interval geldt: de munt bestond nog niet / handelde niet. state: on = traden, off = pauze. confidence: hard = zeker, soft = Daans nuance/twijfel (lager gewicht bij scoren).",
+  "philosophy": "Op tijd stoppen weegt zwaarder dan een late goede week meepakken. Liever roteren naar een kansrijke munt op de exchange dan doorsudderen met iets wat afloopt. Daarom: een methode die te laat stopt (doorsuddert in de afloop) is erger dan een die een losse late spike mist.",
+  "cadence_note": "Live moet de beslissing dagelijks (voorkeur) of wekelijks vallen — niet op maand-einde (te laat). De benchmark is in maand-grofte vastgelegd omdat Daan zo oordeelt; de te kiezen methode mag fijnmaziger (dag/week) reageren zolang hij deze perioden goed benadert.",
+  "coins": {
+    "2735": {
+      "symbol": "MUMU",
+      "active": ["2024-07", "2025-11"],
+      "intervals": [
+        {"from": "2024-07-01", "to": "2024-12-15", "state": "on",  "confidence": "hard"},
+        {"from": "2024-12-15", "to": "2025-11-30", "state": "off", "confidence": "hard", "note": "half december 2024 stoppen en NIET meer starten; mei 2025 +21 is een losse maand, geen herstart"}
+      ]
+    },
+    "2525": {
+      "symbol": "DOGEAI",
+      "active": ["2025-02", "2025-07"],
+      "intervals": [
+        {"from": "2025-02-01", "to": "2025-06-30", "state": "on",  "confidence": "hard"},
+        {"from": "2025-07-01", "to": "2025-07-31", "state": "off", "confidence": "hard", "note": "juli 2025 +5, te weinig"}
+      ]
+    },
+    "8427": {
+      "symbol": "FARTCOIN",
+      "active": ["2024-11", "2025-11"],
+      "intervals": [
+        {"from": "2024-11-01", "to": "2025-03-31", "state": "on",  "confidence": "hard"},
+        {"from": "2025-04-01", "to": "2025-11-30", "state": "off", "confidence": "hard", "note": "vanaf april 2025 uit en uit blijven"}
+      ]
+    },
+    "244": {
+      "symbol": "NOS",
+      "active": ["2023-11", "2025-01"],
+      "intervals": [
+        {"from": "2023-11-01", "to": "2024-02-29", "state": "on",  "confidence": "hard", "note": "belangrijkste aan-periode (nov 2023 - feb 2024)"},
+        {"from": "2024-03-01", "to": "2024-04-30", "state": "on",  "confidence": "soft", "note": "mrt +61 = prima, dus AAN; apr geen data; de echte stop valt in mei"},
+        {"from": "2024-05-01", "to": "2024-07-31", "state": "off", "confidence": "hard", "note": "stop ergens in mei 2024 (rond 9 mei; exacte dag bepaalt de methode); mei +7 = te weinig"},
+        {"from": "2024-08-01", "to": "2024-08-31", "state": "on",  "confidence": "soft", "note": "evt aug 2024 aan (+50 spike)"},
+        {"from": "2024-09-01", "to": "2024-10-31", "state": "off", "confidence": "hard", "note": "sept-okt 2024 uit"},
+        {"from": "2024-11-01", "to": "2024-11-30", "state": "off", "confidence": "soft", "note": "nov 2024 +17, lean uit"},
+        {"from": "2024-12-01", "to": "2024-12-31", "state": "on",  "confidence": "soft", "note": "dec 2024 +36 -> mag aan, maar UIT-blijven is ook prima (Daan: check)"},
+        {"from": "2025-01-01", "to": "2025-01-31", "state": "off", "confidence": "soft", "note": "jan 2025 +4, te weinig"}
+      ]
+    }
+  }
+}

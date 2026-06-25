@@ -34,6 +34,11 @@
                   {{ request()->routeIs('coins.ranking') ? 'bg-white border border-b-white -mb-px text-gray-900' : 'text-gray-500 hover:text-gray-700' }}">
             Kansrijk (engine)
         </a>
+        <a href="{{ route('coins.weekly') }}"
+           class="px-4 py-2 text-sm font-medium rounded-t-lg transition
+                  {{ request()->routeIs('coins.weekly') ? 'bg-white border border-b-white -mb-px text-gray-900' : 'text-gray-500 hover:text-gray-700' }}">
+            Per week
+        </a>
         <a href="{{ route('coins.mexc') }}"
            class="px-4 py-2 text-sm font-medium rounded-t-lg transition
                   {{ request()->routeIs('coins.mexc') ? 'bg-white border border-b-white -mb-px text-gray-900' : 'text-gray-500 hover:text-gray-700' }}">

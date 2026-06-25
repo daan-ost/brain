@@ -320,6 +320,7 @@ Route::middleware(['auth', 'two_factor'])->group(function () {
     // -------------------------------------------------------------------------
     Route::get('/trades', \App\Livewire\Trades\Index::class)->name('trades.index');
     Route::get('/coins', \App\Livewire\Coins\Ranking::class)->name('coins.ranking');
+    Route::get('/coins/weekly', \App\Livewire\Coins\Weekly::class)->name('coins.weekly');
     Route::get('/coins/mexc', \App\Livewire\Coins\MexcScan::class)->name('coins.mexc');
     Route::get('/coin-explorer', \App\Livewire\Trades\CoinExplorer::class)->name('trades.explorer');
     Route::get('/promising-labeler', \App\Livewire\Trades\PromisingLabeler::class)->name('trades.labeler');

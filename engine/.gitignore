@@ -1,5 +1,6 @@
 .venv/
-data/
+data/*
+!data/regime_benchmark.json
 out/
 __pycache__/
 *.pyc
