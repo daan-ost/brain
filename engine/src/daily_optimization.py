@@ -96,23 +96,26 @@ def run_optimization(rebuild=True):
     """Run the pipeline and return structured results — the entry point for routines.py.
     {ratios: {rule: (good, bad)}, new: [candidate dicts], rebuilt: bool}. Applies nothing."""
     if rebuild:
-        # A4: parallel coin-refires. persist_to_brain.py is per coin onafhankelijk (verschillende
-        # trading_symbol_id → geen lock-conflict op coin_fires/coin_periods); MySQL handelt het parallelle
-        # schrijven prima. SSL is uit (A2), dus de connecties zijn stabiel. Snelheidswinst is N-voudig
-        # (was sequentieel ~5-15 min/coin → nu ~ langste enkele refire). A1's fingerprint-skip blijft
-        # actief: een coin die niets is veranderd refired binnen seconden.
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        workers = min(len(COINS), 4)
-        errors = []
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futs = {pool.submit(run, "persist_to_brain.py", c): c for c in COINS}
-            for f in as_completed(futs):
+        # Refire SERIEEL (vervangt de parallelle A4-versie). Parallelle persist_to_brain-processen botsen
+        # op InnoDB gap-/next-key-locks van de secundaire index coin_fires_trading_symbol_id_*: een
+        # DELETE WHERE trading_symbol_id=X vergrendelt niet alleen de eigen rijen maar ook de gap in de
+        # index-reeks, en twee gelijktijdige deletes op aangrenzende reeksen wachten op elkaar →
+        # "Lock wait timeout" (1205). Dat liet de 4-munts --apply herhaaldelijk falen. De dure stap
+        # (rq1_tighten-validatie) is al snel via het schaalplan, dus serieel refiren kost weinig extra:
+        # A1's fingerprint-skip slaat een ongewijzigde munt in seconden over. Per munt 2 retries op
+        # transiente DB-fouten. Zie memory routine-schedule-collision + routine-4coin-runtime-wall.
+        import time as _time
+        TRANSIENT = ("Lock wait timeout", "gone away", "Deadlock", "try restarting transaction")
+        for c in COINS:
+            for attempt in range(3):
                 try:
-                    f.result()
+                    run("persist_to_brain.py", c)
+                    break
                 except SystemExit as e:
-                    errors.append(f"coin {futs[f]}: {e}")
-        if errors:
-            raise SystemExit("FAILED parallel refire:\n" + "\n".join(errors))
+                    if attempt < 2 and any(t in str(e) for t in TRANSIENT):
+                        _time.sleep(2 * (attempt + 1))
+                        continue
+                    raise SystemExit(f"refire munt {c} faalde:\n{e}")
         run("build_indicator_metrics.py")
     run("rq1_tighten.py", "all", 5)
     return {"ratios": current_ratios(), "new": new_safe_candidates(), "rebuilt": rebuild}
