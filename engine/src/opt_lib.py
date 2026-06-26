@@ -16,6 +16,7 @@ MIDDEL= 0.5 .. 3%   (grey zone, ignored in good/bad separation)
 import glob
 import hashlib
 import os
+import tempfile
 
 import duckdb
 import numpy as np
@@ -148,6 +149,11 @@ def load_long(trades=None):
 # expliciete trades (een afwijkende trade-set, bv. simulate_brain_vf, valt terug op load_long).
 LONG_DIR = os.path.join(HERE, "..", "data", "long")
 _METRICS_DIR = os.path.join(HERE, "..", "data", "metrics")
+# Codeversie van de long-BOUW (los van de metrics-fingerprint die build_indicator_metrics zet). De
+# cache-inhoud hangt óók af van CALC_COLS (=WINDOW_METRIC_KEYS) en de join/melt/dropna in _materialize_long;
+# die zitten NIET in de metrics-fingerprint. ','.join(CALC_COLS) verandert de fp automatisch als de
+# feature-set wijzigt; bump _LONG_CODE_VER met de hand bij een wijziging aan de join/melt/dropna-logica.
+_LONG_CODE_VER = "long-v1"
 
 
 def _long_fingerprint(sym):
@@ -165,7 +171,8 @@ def _long_fingerprint(sym):
                   "FROM coin_fires WHERE trading_symbol_id=%s AND is_executed=1 AND profit_loss IS NOT NULL", (sym,))
         t = c.fetchone()
     conn.close()
-    return hashlib.md5(f"{mfp}|fires:{t['n']}:{t['mx']}:{t['cx']}".encode()).hexdigest()[:16]
+    return hashlib.md5(f"{mfp}|long:{_LONG_CODE_VER}:{','.join(CALC_COLS)}"
+                       f"|fires:{t['n']}:{t['mx']}:{t['cx']}".encode()).hexdigest()[:16]
 
 
 def _materialize_long(sym, trades_all):
@@ -197,6 +204,13 @@ def load_long_cached(trades=None):
         return load_long(trades=trades)
     trades_all = load_trades()
     os.makedirs(LONG_DIR, exist_ok=True)
+    # wees-temp-bestanden van een eerder gekilde write opruimen (matchen niet de cache-glob, dus worden
+    # nooit als cache gelezen — alleen netheid).
+    for stale in glob.glob(os.path.join(LONG_DIR, "*.parquet.tmp")):
+        try:
+            os.remove(stale)
+        except OSError:
+            pass
     parts = []
     for sym in sorted(trades_all["sym"].unique()):
         fp = _long_fingerprint(int(sym))
@@ -207,7 +221,20 @@ def load_long_cached(trades=None):
         lg = _materialize_long(int(sym), trades_all)
         if lg is None or lg.empty:
             continue
-        lg.to_parquet(fpath, index=False)
+        # Atomic write: schrijf naar temp + os.replace, zodat een gelijktijdige lezer (overlappende
+        # routine-runs, zie memory routine-schedule-collision) nooit een half-geschreven parquet leest
+        # en een SIGTERM tijdens de write geen corrupt cache-bestand achterlaat dat blijft hangen.
+        fd, tmp = tempfile.mkstemp(dir=LONG_DIR, suffix=".parquet.tmp")
+        os.close(fd)
+        try:
+            lg.to_parquet(tmp, index=False)
+            os.replace(tmp, fpath)
+        except BaseException:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
         for old in glob.glob(os.path.join(LONG_DIR, f"long_{int(sym)}__*.parquet")):
             if old != fpath:
                 try:

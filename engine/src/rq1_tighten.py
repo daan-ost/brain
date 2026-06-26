@@ -122,11 +122,14 @@ def pairs(long, rule, top_k=14):
         r = eval_split(te)
         if r:
             splits["time"] = {"good_keep": round(r[0], 3), "bad_drop": round(r[1], 3), "n_te_good": r[3], "n_te_bad": r[4]}
-        for tr_s, te_s in ((o.DOGEAI, o.NOS), (o.NOS, o.DOGEAI)):
+        # N-munt LEAVE-ONE-OUT cross-coin (was hardcoded 2-munt DOGEAI<->NOS): elke munt één keer apart,
+        # train = de rest. Zelfde LOO-bron + label-format als full_validation/validate_crosscoin.
+        for train_syms, te_s in o.crosscoin_splits():
             r = eval_split(m[m.sym == te_s])
             if r:
-                splits[f"{tr_s}->{te_s}"] = {"good_keep": round(r[0], 3), "bad_drop": round(r[1], 3),
-                                             "n_te_good": r[3], "n_te_bad": r[4]}
+                tr_label = "+".join(str(x) for x in train_syms)
+                splits[f"{tr_label}->{te_s}"] = {"good_keep": round(r[0], 3), "bad_drop": round(r[1], 3),
+                                                 "n_te_good": r[3], "n_te_bad": r[4]}
         verdict, keeps = classify(splits)
         if o.scale_unsafe(a["indicator"], a["calc"]) or o.scale_unsafe(b["indicator"], b["calc"]):
             verdict = "SCALE_UNSAFE"   # either leg's cache threshold is invalid in the engine
