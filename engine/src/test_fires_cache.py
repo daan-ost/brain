@@ -114,6 +114,57 @@ def test_min_volume_change_invalidates(frm, to):
         c.close()
 
 
+def test_per_rule_identity(frm, to):
+    """Plan B: de per-rule cache geeft EXACT dezelfde all_fires als de all-rules-lus (gesorteerde concat),
+    cold == warm == direct."""
+    re = RuleEngine(SYM)
+    try:
+        rules = sorted(re.rules.keys())
+        direct = _compute_fn(re, frm, to)()
+        crf = lambda rule: re.fires(rule, frm, to)
+        cold, n_warm, n_rules = fc.cached_fires_per_rule(SYM, frm, to, rules, crf, force=True)
+        assert n_warm == 0, "force=True moet alle rules cold"
+        assert cold == direct, f"per-rule cold != all-rules direct: {len(cold)} vs {len(direct)}"
+        warm, n_warm2, _ = fc.cached_fires_per_rule(SYM, frm, to, rules, crf)
+        assert n_warm2 == n_rules, f"tweede call moet alle {n_rules} rules warm zijn (was {n_warm2})"
+        assert warm == direct, "per-rule warm (parquet round-trip) != direct"
+        assert all(isinstance(d, _dt.datetime) and isinstance(r, int) for d, r in warm), "verkeerde types"
+        print(f"  E per-rule cold==warm==direct: PASS ({len(direct)} fires, {n_rules} rules)")
+    finally:
+        re.close()
+
+
+def test_per_rule_isolation(frm, to):
+    """Plan B-kern: één rule's BAND wijzigen verandert ALLEEN die rule's fingerprint; de andere rules
+    blijven warm (hun fp ongewijzigd). Dat is de hele winst — anders re-firen de zware discovery-rules mee."""
+    re = RuleEngine(SYM)
+    rules = sorted(re.rules.keys())
+    re.close()
+    fps0 = {r: fc.rule_fires_fingerprint(SYM, r, frm, to) for r in rules}
+    target = 20 if 20 in rules else rules[0]
+    c = brain()
+    snap = None
+    try:
+        with c.cursor() as cur:
+            cur.execute("SELECT id, b_min FROM rules WHERE active=1 AND rule_number=%s "
+                        "AND b_min IS NOT NULL ORDER BY sort LIMIT 1", (target,))
+            snap = cur.fetchone()
+            assert snap, f"geen subregel met b_min op rule {target} om te testen"
+            cur.execute("UPDATE rules SET b_min=%s WHERE id=%s", (float(snap["b_min"]) - 7.77, snap["id"]))
+        c.commit()
+        fps1 = {r: fc.rule_fires_fingerprint(SYM, r, frm, to) for r in rules}
+        assert fps1[target] != fps0[target], f"rule {target} band-wijziging veranderde z'n fingerprint NIET"
+        others_changed = [r for r in rules if r != target and fps1[r] != fps0[r]]
+        assert not others_changed, f"andere rules' fp veranderde mee (zou niet mogen): {others_changed}"
+        print(f"  F per-rule isolatie: PASS (rule {target} wijzigde, {len(rules)-1} andere rules ongemoeid)")
+    finally:
+        with c.cursor() as cur:
+            if snap:
+                cur.execute("UPDATE rules SET b_min=%s WHERE id=%s", (snap["b_min"], snap["id"]))
+        c.commit()
+        c.close()
+
+
 def test_determinism(frm, to):
     a = fc.fires_fingerprint(SYM, frm, to)
     b = fc.fires_fingerprint(SYM, frm, to)
@@ -126,6 +177,8 @@ if __name__ == "__main__":
     frm, to = _window()
     print(f"test_fires_cache — fires-memoïsatie vangnet (NOS, venster {frm} .. {to})")
     test_bit_identity(frm, to)
+    test_per_rule_identity(frm, to)
+    test_per_rule_isolation(frm, to)
     test_sell_change_does_not_invalidate(frm, to)
     test_min_volume_change_invalidates(frm, to)
     test_determinism(frm, to)

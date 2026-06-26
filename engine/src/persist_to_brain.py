@@ -169,21 +169,20 @@ def horizons_at(dt, buy):
     return out, lowest10
 
 
-def _compute_all_fires():
-    af = []
-    for rule in sorted(rule_eng.rules.keys()):          # 20-23 + actieve discovery-rules (bv. 30)
-        for dt in rule_eng.fires(rule, FROM_dt, TO_dt):
-            af.append((dt, rule))
-    af.sort()
-    return af
+def _compute_rule_fires(rule):
+    return list(rule_eng.fires(rule, FROM_dt, TO_dt))
 
 
-# Plan A — memoïseer all_fires op een fingerprint van ALLEEN de fires-bepalende inputs (indicators +
-# rules + min_volume), NIET de verkoop-instellingen. De discovery-rules (ongepoort, elke tick) zijn ~90%
-# van de refire; een sell-tuning-refire wijzigt alleen sl_settings → identieke fire-momenten → uit cache
-# i.p.v. de ~10-13 min fires()-lus. --force (en elke rule/indicator-wijziging via de fingerprint) omzeilt
-# de cache. Bit-identiek bewezen in test_fires_cache.py. Zie docs/findings/refire-speedup-plan-2026-06-26.md.
-all_fires, _fires_from_cache = fires_cache.cached_all_fires(SYM, FROM_dt, TO_dt, _compute_all_fires, force=FORCE)
+# Plan A+B — memoïseer de fire-momenten PER RULE op een fingerprint van ALLEEN de fires-bepalende inputs
+# (indicators + die rule's definitie + volledige min_volume), NIET de verkoop-instellingen. De discovery-
+# rules (ongepoort, elke tick) zijn ~90% van de refire. Plan A: een sell-tuning-refire wijzigt alleen
+# sl_settings → álle rules uit cache. Plan B (per-rule): één koop-rule wijzigen (bv. auto-apply scherpt
+# rule 21 aan) re-firet ALLEEN die rule; de zware discovery-rules blijven warm. --force (en elke
+# rule/indicator/min_volume-wijziging via de fingerprint) omzeilt de cache. Bit-identiek bewezen in
+# test_fires_cache.py. Zie docs/findings/refire-speedup-plan-2026-06-26.md.
+all_fires, _n_warm, _n_rules = fires_cache.cached_fires_per_rule(
+    SYM, FROM_dt, TO_dt, sorted(rule_eng.rules.keys()), _compute_rule_fires, force=FORCE)
+_fires_from_cache = _n_warm == _n_rules
 
 # legacy reference (offline): (rule, datetime) -> result, profit_loss
 leg = legacy()
