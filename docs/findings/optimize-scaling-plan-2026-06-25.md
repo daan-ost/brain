@@ -59,8 +59,15 @@ werkbaar. De hoog-risico groupby-vectorisatie van `full_validation` (strikt-<-vs
 NaN-good_keep) levert dan **geen praktische winst** meer op tegen reëel correctheidsrisico. Niet bouwen.
 De orakel-test (`test_opt_lib.py`) blijft staan als permanent vangnet mocht dit later toch nodig zijn.
 
-**Open (apart, geen blocker):** `pairs()` gebruikt nog hardcoded 2-munt cross-coin (`o.DOGEAI`/`o.NOS`) i.p.v.
-N-munt LOO. Alleen relevant als `--pairs` op >2 munten gedraaid wordt; los dit op vóór een N-munt deep-sweep.
+**N-munt afgemaakt + critical-eye (commit `1a3597f`):** `pairs()` doet nu N-munt LOO via `crosscoin_splits()`
+(was hardcoded `DOGEAI`/`NOS`); 2-munt default identiek, 4-munt geeft 4 LOO-splits. Twee cache-fixes uit de
+sceptische review: (1) `_long_fingerprint` nam de long-bouwlogica niet mee → nu `_LONG_CODE_VER` +
+`','.join(CALC_COLS)` zodat een gewijzigde feature-set/bouwcode de fp auto-invalideert; (2) niet-atomic
+parquet-write → nu `tempfile` + `os.replace` + wees-`.tmp`-sweep tegen de routine-collisie/SIGTERM-corruptie
+([[routine-schedule-collision]]). Open ontwerp-keuze (consistent met singles, niet eenzijdig gewijzigd): een
+te-dunne uitgehouden munt (<3 goed/slecht in het paar-frame) levert geen split-entry en krijgt zo een vrije
+pass — dezelfde `min_te_good=3`-vloer als singles' `validate_crosscoin`. Bij >2 munten valt vaker een dunne
+munt weg; overweeg een zichtbare `UNSAFE_SPARSE`-markering als `--pairs` op veel munten serieus wordt.
 
 ## Wat we bewust NIET doen (overleefde de adversariële toets niet)
 
