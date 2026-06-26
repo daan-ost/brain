@@ -48,7 +48,7 @@ def _toeval_filter(strongest, n_hyp, emit):
     # te kunnen halen), met een ondergrens van 400 en het PERM_MAX-plafond tegen runaway kosten.
     n_perm = PERM_MAX if p_req <= 0 else min(PERM_MAX, max(400, int(4.0 / p_req)))
     floor = 1.0 / (n_perm + 1)
-    long = o.load_long()
+    long = o.load_long_cached()   # fase 2: per-munt fingerprint-cache (zie rq1_tighten)
     kept = {}
     for rule in sorted(strongest):
         c = dict(strongest[rule])           # kopie: NOOIT de gedeelde new_safe_candidates-dict muteren

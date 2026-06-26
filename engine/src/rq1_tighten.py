@@ -41,14 +41,26 @@ def singles(long, rule):
     if sw.empty:
         return []
     sw = sw[sw["drop_insample"] >= MIN_DROP]
+    # Fase 3 groep-cache: één keer op (rule,ind,lb,calc) groeperen zodat full_validation per kandidaat een
+    # klein vooraf-gefilterd subframe krijgt i.p.v. 5x de hele long-tabel te scannen. Bit-identiek.
+    long_r = long[long["rule"] == rule]
+    groups = {k: sub for k, sub in long_r.groupby(["indicator", "lookback", "calc"], sort=False)}
     out = []
     for _, r in sw.iterrows():
-        splits = o.full_validation(long, rule, r["indicator"], int(r["lookback"]), r["calc"], r["bound"])
+        ind, lb, calc = r["indicator"], int(r["lookback"]), r["calc"]
+        # Fase 3 prefilter: scale_unsafe overschreef het verdict tóch al (regel hieronder) — bepaal het
+        # vóór de dure validatie en sla die over. Bit-identiek aan de oude volgorde.
+        if o.scale_unsafe(ind, calc):
+            out.append({"kind": "single", "rule": rule, "indicator": ind, "calc": calc, "lookback": lb,
+                        "bound": r["bound"], "threshold": float(r["threshold"]),
+                        "drop_insample": int(r["drop_insample"]), "n_good": int(r["n_good"]),
+                        "n_bad": int(r["n_bad"]), "oos": {}, "min_good_keep": None, "verdict": "SCALE_UNSAFE"})
+            continue
+        g = groups.get((ind, lb, calc))
+        splits = o.full_validation(long, rule, ind, lb, calc, r["bound"], g=g)
         verdict, keeps = classify(splits)
-        if o.scale_unsafe(r["indicator"], r["calc"]):
-            verdict = "SCALE_UNSAFE"   # cache threshold invalid in the engine (volumeud level-metric)
-        out.append({"kind": "single", "rule": rule, "indicator": r["indicator"],
-                    "calc": r["calc"], "lookback": int(r["lookback"]), "bound": r["bound"],
+        out.append({"kind": "single", "rule": rule, "indicator": ind,
+                    "calc": calc, "lookback": lb, "bound": r["bound"],
                     "threshold": float(r["threshold"]), "drop_insample": int(r["drop_insample"]),
                     "n_good": int(r["n_good"]), "n_bad": int(r["n_bad"]),
                     "oos": splits, "min_good_keep": (round(min(keeps), 3) if keeps else None),
@@ -130,7 +142,7 @@ def pairs(long, rule, top_k=14):
 
 
 def main():
-    long = o.load_long()
+    long = o.load_long_cached()   # fase 2: per-munt fingerprint-cache; bit-identiek aan load_long(), static munten worden niet herbouwd
     report = {}
     for rule in RULES:
         s = singles(long, rule)

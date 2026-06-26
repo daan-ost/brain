@@ -14,6 +14,7 @@ BAD   = executed trade, best_upside <  0.5% (slecht — to prevent)
 MIDDEL= 0.5 .. 3%   (grey zone, ignored in good/bad separation)
 """
 import glob
+import hashlib
 import os
 
 import duckdb
@@ -140,6 +141,86 @@ def load_long(trades=None):
 
 
 # ---------------------------------------------------------------------------
+# Fase 2 (schaalplan): gematerialiseerde PER-COIN long-parquet + fingerprint-cache. load_long doet de
+# DuckDB-join+melt elke run opnieuw en wordt door meerdere rq-subprocessen herhaald. Per coin cachen
+# (fp = metrics-scope + executed-trades-staat) laat STATIC coins de join+melt overslaan; de globale long
+# = concat van de per-coin caches. load_long_cached() is bedoeld als drop-in voor load_long() ZONDER
+# expliciete trades (een afwijkende trade-set, bv. simulate_brain_vf, valt terug op load_long).
+LONG_DIR = os.path.join(HERE, "..", "data", "long")
+_METRICS_DIR = os.path.join(HERE, "..", "data", "metrics")
+
+
+def _long_fingerprint(sym):
+    """Fingerprint van de per-coin long: de metrics-scope (indicator_metrics_state, gevuld door
+    build_indicator_metrics) + de executed trades van deze coin. count+max(datetime) bepalen de 70/30
+    tijd-split (die hangt aan de datetime-ordening); de cls-checksum (SUM(CRC32(datetime|rule|cls)))
+    vangt een classificatie-RUIL bij gelijke counts. SUM, niet XOR (CRC32-lineariteit, zie test_opt_lib)."""
+    conn = brain()
+    with conn.cursor() as c:
+        c.execute("SELECT fingerprint FROM indicator_metrics_state WHERE trading_symbol_id=%s", (sym,))
+        r = c.fetchone(); mfp = r["fingerprint"] if r else "no-metrics"
+        c.execute("SELECT COUNT(*) n, COALESCE(MAX(datetime),'') mx, "
+                  "COALESCE(SUM(CRC32(CONCAT(datetime,'|',rule,'|',"
+                  "CASE WHEN profit_loss>=3 THEN 'g' WHEN profit_loss<0 THEN 'b' ELSE 'm' END))),0) cx "
+                  "FROM coin_fires WHERE trading_symbol_id=%s AND is_executed=1 AND profit_loss IS NOT NULL", (sym,))
+        t = c.fetchone()
+    conn.close()
+    return hashlib.md5(f"{mfp}|fires:{t['n']}:{t['mx']}:{t['cx']}".encode()).hexdigest()[:16]
+
+
+def _materialize_long(sym, trades_all):
+    """Bouw de per-coin long-slice: de coin's trades (met hun reeds-bepaalde 70/30 split) gejoind met
+    ALLEEN die coin's metrics-parquet. Identiek aan de globale load_long, maar per coin."""
+    tr = trades_all[trades_all["sym"] == sym]
+    fpath = os.path.join(_METRICS_DIR, f"indicator_metrics_{sym}.parquet")
+    if tr.empty or not os.path.exists(fpath):
+        return None
+    con = duckdb.connect(); con.register("trades", tr)
+    wide = con.execute(f"""
+        SELECT t.sym, t.datetime, t.rule, t.cls, t.split, t.best_upside,
+               m.indicator, m.lookback, {','.join('m.' + c for c in CALC_COLS)}
+        FROM read_parquet('{fpath}') m
+        JOIN trades t ON m.trading_symbol_id=t.sym AND m.datetime=t.datetime
+    """).df()
+    con.close()
+    return wide.melt(
+        id_vars=["sym", "datetime", "rule", "cls", "split", "best_upside", "indicator", "lookback"],
+        value_vars=CALC_COLS, var_name="calc", value_name="value").dropna(subset=["value"])
+
+
+def load_long_cached(trades=None):
+    """Drop-in voor load_long(): per-coin gematerialiseerde long-parquet met fingerprint-cache. Een coin
+    waarvan de fingerprint matcht wordt direct van schijf gelezen (geen join+melt). De globale long =
+    concat van de per-coin slices over alle coins MET executed trades. Met een expliciete `trades`
+    (afwijkende set) valt het terug op load_long want die cache hoort bij de default trade-set."""
+    if trades is not None:
+        return load_long(trades=trades)
+    trades_all = load_trades()
+    os.makedirs(LONG_DIR, exist_ok=True)
+    parts = []
+    for sym in sorted(trades_all["sym"].unique()):
+        fp = _long_fingerprint(int(sym))
+        fpath = os.path.join(LONG_DIR, f"long_{int(sym)}__{fp}.parquet")
+        if os.path.exists(fpath):
+            parts.append(pd.read_parquet(fpath))
+            continue
+        lg = _materialize_long(int(sym), trades_all)
+        if lg is None or lg.empty:
+            continue
+        lg.to_parquet(fpath, index=False)
+        for old in glob.glob(os.path.join(LONG_DIR, f"long_{int(sym)}__*.parquet")):
+            if old != fpath:
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+        parts.append(lg)
+    if not parts:
+        return load_long()
+    return pd.concat(parts, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Principle 2 — threshold at the BAD EDGE (in the gap), keeping ALL good by construction.
 # ---------------------------------------------------------------------------
 def bad_edge_conditions(good_vals, bad_vals):
@@ -209,11 +290,14 @@ def sweep_single(long, rule, min_good=5, min_bad=5):
 
 
 def validate_timesplit(long, rule, ind, lb, calc, bound,
-                       min_tr_good=5, min_tr_bad=5, min_te_good=3, min_te_bad=3):
+                       min_tr_good=5, min_tr_bad=5, min_te_good=3, min_te_bad=3, g=None):
     """Per-coin TIME split (train 70 / test 30, pooled): derive the bad-edge threshold on train,
-    score on test. Returns None if too little data. The OOS safety gate from validate_subrules.py."""
-    g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
-             (long["lookback"] == lb) & (long["calc"] == calc)]
+    score on test. Returns None if too little data. The OOS safety gate from validate_subrules.py.
+    Fase 3: optioneel `g` = het al op (rule,ind,lb,calc) gefilterde subframe (groep-cache) — bit-
+    identiek aan zelf filteren, maar bespaart de O(long) boolean-scan per kandidaat per split."""
+    if g is None:
+        g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
+                 (long["lookback"] == lb) & (long["calc"] == calc)]
     tr_good = g[(g["split"] == "train") & (g["cls"] == "goed")]["value"]
     tr_bad = g[(g["split"] == "train") & (g["cls"] == "slecht")]["value"]
     te_good = g[(g["split"] == "test") & (g["cls"] == "goed")]["value"]
@@ -230,14 +314,16 @@ def validate_timesplit(long, rule, ind, lb, calc, bound,
 
 
 def validate_crosscoin(long, rule, ind, lb, calc, bound, train_syms, test_sym,
-                       min_tr_good=5, min_tr_bad=5, min_te_good=3, min_te_bad=3):
+                       min_tr_good=5, min_tr_bad=5, min_te_good=3, min_te_bad=3, g=None):
     """CROSS-COIN split: leid de bad-edge-drempel af op de samengevoegde TRAIN-coins (een lijst of een
     enkele id), evalueer op test_sym. Robuustheidstoets: houdt een band die op N-1 munten ontstond
-    stand op de overgebleven munt? Schaalt naar N coins (LOO via crosscoin_splits())."""
+    stand op de overgebleven munt? Schaalt naar N coins (LOO via crosscoin_splits()).
+    Fase 3: optioneel `g` = het al op (rule,ind,lb,calc) gefilterde subframe (groep-cache)."""
     if isinstance(train_syms, int):
         train_syms = (train_syms,)
-    g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
-             (long["lookback"] == lb) & (long["calc"] == calc)]
+    if g is None:
+        g = long[(long["rule"] == rule) & (long["indicator"] == ind) &
+                 (long["lookback"] == lb) & (long["calc"] == calc)]
     tr_good = g[(g["sym"].isin(train_syms)) & (g["cls"] == "goed")]["value"]
     tr_bad = g[(g["sym"].isin(train_syms)) & (g["cls"] == "slecht")]["value"]
     te_good = g[(g["sym"] == test_sym) & (g["cls"] == "goed")]["value"]
@@ -255,16 +341,18 @@ def validate_crosscoin(long, rule, ind, lb, calc, bound, train_syms, test_sym,
             "train_drop": conds[bound]["drop_insample"], **m}
 
 
-def full_validation(long, rule, ind, lb, calc, bound):
+def full_validation(long, rule, ind, lb, calc, bound, g=None):
     """Out-of-sample splits voor één kandidaat: tijd-split + LEAVE-ONE-OUT cross-coin (per coin: train op
     alle anderen, test op deze). Een kandidaat is SAFE iff good_keep ~ 1.0 op ÉLKE split met genoeg data.
-    Schaalt automatisch naar N coins (crosscoin_splits() uit brain.coins via coins.py)."""
+    Schaalt automatisch naar N coins (crosscoin_splits() uit brain.coins via coins.py).
+    Fase 3: optioneel `g` = het op (rule,ind,lb,calc) gefilterde subframe (groep-cache); doorgegeven aan
+    elke split-validatie zodat de O(long) boolean-scan niet per split herhaald wordt. Bit-identiek."""
     res = {}
-    t = validate_timesplit(long, rule, ind, lb, calc, bound)
+    t = validate_timesplit(long, rule, ind, lb, calc, bound, g=g)
     if t:
         res["time"] = t
     for tr, te in crosscoin_splits():
-        cc = validate_crosscoin(long, rule, ind, lb, calc, bound, tr, te)
+        cc = validate_crosscoin(long, rule, ind, lb, calc, bound, tr, te, g=g)
         if cc:
             res[cc["split"]] = cc
     return res
