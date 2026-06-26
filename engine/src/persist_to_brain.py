@@ -25,6 +25,7 @@ from cluster_promising import scan_periods, best_entry
 from rule_engine import RuleEngine, RULES
 from sell_engine import SellEngine
 from buy_confirm import confirm_buy, params_by_rule
+import fires_cache
 
 # Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
 HORIZONS = [5, 10, 15, 30, 45, 60]
@@ -168,11 +169,21 @@ def horizons_at(dt, buy):
     return out, lowest10
 
 
-all_fires = []
-for rule in sorted(rule_eng.rules.keys()):          # 20-23 + actieve discovery-rules (bv. 30)
-    for dt in rule_eng.fires(rule, FROM_dt, TO_dt):
-        all_fires.append((dt, rule))
-all_fires.sort()
+def _compute_all_fires():
+    af = []
+    for rule in sorted(rule_eng.rules.keys()):          # 20-23 + actieve discovery-rules (bv. 30)
+        for dt in rule_eng.fires(rule, FROM_dt, TO_dt):
+            af.append((dt, rule))
+    af.sort()
+    return af
+
+
+# Plan A — memoïseer all_fires op een fingerprint van ALLEEN de fires-bepalende inputs (indicators +
+# rules + min_volume), NIET de verkoop-instellingen. De discovery-rules (ongepoort, elke tick) zijn ~90%
+# van de refire; een sell-tuning-refire wijzigt alleen sl_settings → identieke fire-momenten → uit cache
+# i.p.v. de ~10-13 min fires()-lus. --force (en elke rule/indicator-wijziging via de fingerprint) omzeilt
+# de cache. Bit-identiek bewezen in test_fires_cache.py. Zie docs/findings/refire-speedup-plan-2026-06-26.md.
+all_fires, _fires_from_cache = fires_cache.cached_all_fires(SYM, FROM_dt, TO_dt, _compute_all_fires, force=FORCE)
 
 # legacy reference (offline): (rule, datetime) -> result, profit_loss
 leg = legacy()
