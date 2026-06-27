@@ -230,14 +230,18 @@ Gebouwd: status-streep (groen/rood) bovenaan elke munt in `/coins/weekly`, met v
 
 ## Nieuwe bestanden aan te maken
 
-| Bestand | Type | Fase |
-|---|---|---|
-| `engine/src/coin_regime.py` | regime-status berekenen (signalen + demping) | 1–3 |
-| `engine/src/regime_backtest.py` | terugtoets + apart-gehouden testperiode + toeval-toets | 2 |
-| migratie `coin_regime` tabel | per munt per dag: status, kansrijk_7d, beweeg_7d, result_30d, reden | 3 |
-| routine `coin-regime` in `routines.py` | dagelijkse ongegate set | 3 |
-| `www/.../coins/weekly.blade.php` (wijziging) | derde strook: groen/rood per week | 1 |
-| `engine/tests/test_coin_regime.py` | demping, leak-vrij, drempel-logica | 1–3 |
+> **Status 2026-06-26:** Fase 1+2 zijn gebouwd (zie hieronder). De **Fase 3-bestanden** (`coin_regime.py`,
+> migratie `coin_regime`, routine, helpers) zijn verhuisd naar **[epic-H](epic-H-regime-apply.md)** — dáár staat
+> de actuele, uitgewerkte lijst. De cadans is **wekelijks** (getest, zie boven), niet dagelijks.
+
+| Bestand | Type | Fase | Status |
+|---|---|---|---|
+| `www/app/Livewire/Coins/Weekly.php` + `weekly.blade.php` | gate-logica + groen/rode streep | 1 | ✅ gebouwd |
+| `engine/src/regime_backtest.py` | cadans-test (dag/3-daags/week) tegen benchmark | 2 | ✅ gebouwd |
+| `engine/src/regime_validate.py` | 4 statistische toetsen | 2 | ✅ gebouwd |
+| `engine/src/regime_economics.py` + `regime_forward.py` | niet-circulaire bevestiging (P1/P2) | 2 | ✅ gebouwd |
+| `engine/data/regime_benchmark.json` | ground truth (Daans ideale aan/uit) | 2 | ✅ vastgelegd |
+| `coin_regime.py` + migratie + routine + helpers | operationaliseren (wekelijks, ongegate) | 3 | → epic-H |
 
 ## Niet in scope
 

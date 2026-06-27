@@ -33,12 +33,34 @@ winst i.p.v. verstopt.
 
 ## Bestaande Code (referentie)
 
+> **Bijgewerkt 2026-06-26 na de engine-snelheidswijzigingen** (commits `b0bfa3e`/`4f3370f`/`9c4c7bc`/`39182ac`):
+> regelnummers verschoven en er is een **cache-/fingerprint-laag** bijgekomen die het filter raakt — zie de
+> nieuwe beslissing #8 hieronder. Dit is de belangrijkste correctie t.o.v. de oorspronkelijke epic.
+
 **Trade-loaders die het filter moeten erven (engine):**
-- `engine/src/opt_lib.py:95` `load_trades()` — centrale loader voor de buy/sell-optimalisatie. `SELECT ... FROM
-  coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL`. Hier het filter toevoegen propageert naar ~20
-  modules (`daily_optimization`, `auto_apply`, `rq1_tighten`, `rq2_*`, `sell_tuning`, `feature_quality`, …).
-- `engine/src/opt_lib.py:379` `load_all_fires()` — idem (gebruikt door `split_2b*`).
-- Eigen loaders die apart langs moeten: `sell_tuning.py:85`, `subrule_power.py:52`, `gate_window.py:56`.
+- `engine/src/opt_lib.py:97` `load_trades()` — centrale loader voor de buy/sell-optimalisatie. `SELECT ... FROM
+  coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL`. Pure DB-read (consumptie-laag); voedt ook
+  `load_long()`. Hier het filter toevoegen propageert naar ~20 modules (`daily_optimization`, `auto_apply`,
+  `rq1_tighten`, `rq2_*`, `sell_tuning`, `feature_quality`, …).
+- `engine/src/opt_lib.py:494` `load_all_fires()` — idem (gebruikt door `split_2b*`). *(Was :379; verschoven door
+  de snelheidswijziging.)*
+- Eigen loaders die apart langs moeten: `sell_tuning.py:85`, `subrule_power.py:52`, `gate_window.py:56` *(alle drie
+  ongewijzigd).*
+
+**Nieuwe cache-/fingerprint-laag (door de snelheidswijziging) — het filter MOET hierin doorwerken:**
+- `engine/src/opt_lib.py:198` `load_long_cached()` + `:159` `_long_fingerprint(sym)` — per-munt long-parquet-cache.
+  De fingerprint hasht nú de **volledige** executed-trade-set (count/max-datetime/cls-checksum). Filtert
+  `load_trades()` straks default op actieve periode, dan blijft de fingerprint gelijk bij een regime-wijziging →
+  **de cache serveert een verouderde actieve-set.** De **regime-versie** moet in `_long_fingerprint`.
+- `engine/src/routines.py:49` `input_fingerprint()` — de "data-veranderd"-gate die beslist of de optimalisatie-keten
+  überhaupt draait. Verandert alléén het regime (niet de trades/rules), dan verandert deze fingerprint niet → de
+  keten **slaat over** → het nieuwe actieve-venster wordt nooit doorgerekend. De **regime-versie** moet hierin mee.
+- `engine/src/fires_cache.py` (`cached_all_fires`/`cached_fires_per_rule`) — dit is de **re-fire**-laag (berekent +
+  schrijft welke trades vuren), **upstream** van het filter. Re-fire blijft ALLE trades berekenen/opslaan (de gate
+  heeft de volledige historie nodig; `/coins/weekly` toont 'm). Het filter is puur consumptie → **NIET** in
+  `fires_cache` inbouwen. (Expliciet vermeld zodat een latere bouwer dit niet per ongeluk koppelt.)
+
+**Schermen die trades tonen (PHP):**
 
 **Schermen die trades tonen (PHP):**
 - `www/app/Livewire/Trades/Index.php` — Samenvatting (per-maand-per-coin Σ + goed/middel/slecht) + lijst.
@@ -56,6 +78,7 @@ winst i.p.v. verstopt.
 | 5 | Filter standaard aan? | **Ja, overal default AAN** (inactieve-periode-trades tellen niet). Schermen krijgen een **toggle** om inactieve trades alsnog te tonen (gedimd/gemarkeerd). |
 | 6 | Geldt het filter ook voor de stats? | Ja — goed/middel/slecht + Σ worden default op de **actieve** trades berekend. Toon ernaast de winst-van-stoppen (Σ actief vs Σ alles). |
 | 7 | Volgorde-afhankelijkheid (feedback-lus) | Het regime hangt af van trades; rules hangen (na filter) af van het regime. Discipline: **(1) trades → (2) regime berekenen → (3) rules tunen op actieve trades → (4) re-fire → (5) regime herberekenen.** De routine-keten serialiseert dit; documenteer in [[brain-routines]]. |
+| 8 | **Cache-/fingerprint-interactie (NIEUW na de snelheidswijziging)** | Het filter zit op de **consumptie-laag** (`load_trades`/`load_all_fires`), los van de re-fire-cache (`fires_cache.py`) die ALLE trades blijft berekenen. **Maar** elke cache/fingerprint **downstream** van `load_trades` moet de **regime-versie** kennen, anders maskeert een oude cache de filter: (a) `_long_fingerprint(sym)` → anders serveert de long-cache een verouderde actieve-set; (b) `input_fingerprint()` → anders draait de keten niet opnieuw als alléén het regime wijzigt; (c) de groep-/validatie-cache uit het schaalplan idem. Regime-versie = bv. `MAX(computed_at)` of een checksum van `coin_regime` per munt. |
 
 ## Features (5)
 
@@ -85,10 +108,15 @@ PHP: `App\Services\CoinRegime` met `isActive(int $coinId, Carbon $dt): bool` + E
 `opt_lib.load_trades()` + `load_all_fires()` filteren default de inactieve-periode-trades weg (via `regime.py`).
 De eigen loaders `sell_tuning.py`/`subrule_power.py`/`gate_window.py` idem. Een parameter `include_inactive=False`
 laat analyse alsnog alles laden. De buy/sell-rule-routines tunen daardoor alleen op actieve trades.
+**Let op de cache-laag (zie beslissing #8):** de regime-versie moet in `_long_fingerprint` (per-munt long-cache)
+én in `input_fingerprint` (de data-veranderd-gate), anders maskeert een verouderde cache het filter. `fires_cache`
+(re-fire) blijft alle trades berekenen — daar NIET ingrijpen.
 **Acceptance Criteria**
 - [ ] `load_trades()` levert default geen trades uit inactieve perioden; `include_inactive=True` wel.
 - [ ] Een optimalisatie-run (bijv. `daily_optimization`) telt aantoonbaar minder trades (alleen actief).
 - [ ] Geen module omzeilt het filter ongemerkt (de 3 eigen loaders zijn meegenomen).
+- [ ] **Een regime-wijziging invalideert de long-cache** (`_long_fingerprint` verandert) **én triggert de keten**
+      (`input_fingerprint` verandert) — een test met handmatig verzet regime bewijst dit.
 
 ### 4. Schermen — default filter + winst-van-stoppen zichtbaar
 **Status:** Approved

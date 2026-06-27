@@ -32,6 +32,8 @@ trade-resultaat is het signaal. Wekelijkse cadans is getest als beste (beter dan
 | Gate-logica + streep (UI, backtest) | `www/app/Livewire/Coins/Weekly.php` (`applyGate`, de `GATE_*`-constants) + `resources/views/livewire/coins/weekly.blade.php` |
 | Cadans-test (dag vs 3-daags vs week) | `engine/src/regime_backtest.py` |
 | Statistische validatie (4 toetsen) | `engine/src/regime_validate.py` |
+| Niet-circulaire bevestiging: economisch mét slippage (P1) | `engine/src/regime_economics.py` |
+| Niet-circulaire bevestiging: vooruit-voorspellend (P2) | `engine/src/regime_forward.py` |
 | Benchmark (ground truth) | `engine/data/regime_benchmark.json` |
 | Opslag actieve perioden (epic-H) | tabel `coin_regime` + `engine/data/coin_regime.json` |
 | Berekenen + routine (epic-H) | `engine/src/coin_regime.py` + set `coin-regime` in `routines.py` |
@@ -73,7 +75,9 @@ prestatie én laat de rule-tuner leren van trades die nooit zouden hebben plaats
 
 - **Engine:** het filter zit in `opt_lib.load_trades()` / `load_all_fires()` (+ de eigen loaders in
   `sell_tuning.py`, `subrule_power.py`, `gate_window.py`). Default uit-filtert; `include_inactive=True`
-  voor analyse.
+  voor analyse. **Cache-laag (sinds de snelheidswijziging):** de regime-versie MOET in `_long_fingerprint`
+  (per-munt long-cache, `opt_lib.py`) én `input_fingerprint` (`routines.py`, de data-veranderd-gate), anders
+  maskeert een oude cache de filter. `fires_cache.py` (re-fire) blijft alle trades berekenen — daar NIET ingrijpen.
 - **Schermen:** `Trades/Index.php` + `CoinExplorer.php` tonen default alleen actieve trades (toggle voor
   de rest). `/coins/weekly` toont juist de héle historie (kalibratie-bril) met de aan/uit-streep.
 - **Volgorde-discipline (feedback-lus):** trades → regime berekenen → rules tunen op actieve trades →
@@ -84,6 +88,9 @@ prestatie én laat de rule-tuner leren van trades die nooit zouden hebben plaats
 - **Niet vooruitkijken.** Elke beslissing gebruikt alleen verleden-data t/m dat moment.
 - **GROUP BY-alias-botsing:** bij wekelijkse trade-sommen NOOIT aliassen naar `id` — dat botst met
   `coin_fires.id` → MySQL groepeert op de primaire sleutel → 1 trade/week i.p.v. de hele week.
+- **Cache maskeert de filter:** filter je de actieve periode in `load_trades` maar laat je de regime-versie uit
+  `_long_fingerprint` / `input_fingerprint`, dan blijft een oude cache de verouderde (volledige) trade-set serveren
+  en draait de keten niet opnieuw bij een regime-wijziging. Regime-versie hoort in elke cache downstream van `load_trades`.
 - **Kansrijk/beweeglijk sturen de gate niet** — alleen het trade-resultaat. (Wel als context getoond.)
 - **Gate ≠ rule-kwaliteit.** De gate = wanneer in de markt; de rules = welke trades als je in de markt
   bent. Het filter koppelt ze: tune rules alleen op trades uit actieve perioden.

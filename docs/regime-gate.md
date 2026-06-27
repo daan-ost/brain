@@ -79,6 +79,15 @@ geen overfit op deze vier munten. **Kanttekening:** 4 munten + een deels handmat
 bewijs, geen absolute zekerheid. Bij nieuwe munten: benchmark aanvullen en `regime_validate.py` opnieuw
 draaien.
 
+**Twee niet-circulaire bevestigingen bovenop de benchmark** (de benchmark is met de hand gelabeld, dus
+deze twee leunen er niet op):
+- **Economisch mét slippage** (`engine/src/regime_economics.py`): bij 0,4%/trade is álles verhandelen een
+  verliesstrategie; de actieve-periode-filter maakt er winst van. De gate is dus het verschil tussen verlies
+  en winst — de vlakke ruwe Σ verborg dat.
+- **Vooruit-voorspellend** (`engine/src/regime_forward.py`): de gate-stand op moment T (alleen verleden)
+  voorspelt het resultaat ná T — AAN → volgende weken sterk positief, UIT → na slippage netto verlies
+  (p=0,000, alle 4 munten dezelfde richting). De toekomst-weken zaten niet in de beslissing → niet circulair.
+
 ## 6. Backtest → live: het herstart-signaal
 
 In de backtest bestaan er trades over de héle periode (de oude bot handelde door), dus de gate kan
@@ -106,6 +115,10 @@ Trades uit een **inactieve** periode tellen **standaard niet mee**:
 - **Optimalisatie:** het filter zit in `opt_lib.load_trades()` / `load_all_fires()` (+ de eigen loaders
   in `sell_tuning.py`, `subrule_power.py`, `gate_window.py`). De buy/sell-rule-routines tunen daardoor
   alleen op trades uit actieve perioden — niet op trades die we nooit gemaakt zouden hebben.
+  *Cache-laag (sinds de engine-snelheidswijziging):* de regime-versie moet meelopen in de fingerprints
+  downstream van `load_trades` — `_long_fingerprint` (per-munt long-cache) én `input_fingerprint` (de
+  data-veranderd-gate in `routines.py`) — anders maskeert een oude cache het filter en draait de keten niet
+  opnieuw bij een regime-wijziging. De re-fire-cache `fires_cache.py` blijft juist álle trades berekenen.
 - **Schermen:** `Trades/Index.php` + `CoinExplorer.php` tonen default alleen actieve trades (toggle voor
   de rest) en zetten Σ-actief naast Σ-alles, zodat de winst van het stoppen zichtbaar is. `/coins/weekly`
   toont juist de volledige historie — dat is de kalibratie-bril.
