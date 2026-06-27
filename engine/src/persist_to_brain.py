@@ -24,7 +24,7 @@ from promising import PromisingEngine
 from cluster_promising import scan_periods, best_entry
 from rule_engine import RuleEngine, RULES
 from sell_engine import SellEngine
-from buy_confirm import confirm_buy, params_by_rule
+from buy_confirm import confirm_buy, has_forward_data, params_by_rule
 import fires_cache
 
 # Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
@@ -209,7 +209,7 @@ def klasse_of(pl):
 # greedy single-position dedup + koop-bevestiging + our sell-engine P&L
 fp_params = params_by_rule(dst)                  # futureprice/x_rows per rule (koop-bevestiging)
 open_until = open_at = None
-n_exec = n_shadow = n_good = n_cancelled = 0
+n_exec = n_shadow = n_good = n_cancelled = n_nodata = 0
 with dst.cursor() as c:
     for idx, (dt, rule) in enumerate(all_fires):
         signal_price = price_at(dt)
@@ -219,6 +219,9 @@ with dst.cursor() as c:
 
         if open_until is not None and dt <= open_until:
             # SHADOW — signaal tijdens een open positie (telt niet als trade). Instap = signaalmoment.
+            # `<=` is BEWUST (critical-eye 2026-06-26): de live-bot herkoopt NIET op de verkoop-tick zelf
+            # (de positie is op `open_until` net dicht, een nieuwe koop start pas op de eerstvolgende tick).
+            # Een signaal exact op de exit-tick blijft dus shadow — niet wijzigen naar `<`.
             executed, shadow_parent, sell = 0, open_at, None
             buy_dt, buy = dt, signal_price
             n_shadow += 1
@@ -232,6 +235,13 @@ with dst.cursor() as c:
             fp = fp_params.get(rule)
             confirmed = signal_price is not None
             if fp and signal_price:
+                # Geen forward-data binnen het venster (staartstuk/datagat) = NIET te beoordelen, ≠ afgeblazen.
+                # Weggooien zonder mee te tellen (critical-eye 2026-06-26: anders lekken staart-trades in de
+                # 'afgeblazen'-telling alsof de prijs niet kruiste). De trade werd hoe dan ook al gedropt;
+                # dit splitst alleen de telling — coin_fires blijft bit-identiek.
+                if not has_forward_data(DT, dt, fp["window"]):
+                    n_nodata += 1
+                    continue
                 confirmed = confirm_buy(DT, PX, dt, signal_price, fp["bmin"], fp["window"], fp["xrows"]) is not None
             if not confirmed:
                 n_cancelled += 1
@@ -290,6 +300,7 @@ with dst.cursor() as c:
 dst.commit()
 print(f"=== persist_to_brain (rebuild A) — {SYMBOL} ({SYM}) ===")
 print(f"periods: {len(periods)}  |  fires: {len(all_fires)}  "
-      f"({n_exec} executed / {n_shadow} shadow / {n_cancelled} afgeblazen door koop-bevestiging)  "
+      f"({n_exec} executed / {n_shadow} shadow / {n_cancelled} afgeblazen door koop-bevestiging "
+      f"/ {n_nodata} weggegooid: geen forward-data)  "
       f"|  in promising: {n_good}")
 eng.close(); rule_eng.close(); sell_eng.close(); dst.close()

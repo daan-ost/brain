@@ -8,7 +8,7 @@ de b_min-abort, futureprice_x_rows, geen-forward-data, en dat 'exact op het sign
 """
 import datetime as _dt
 
-from buy_confirm import confirm_buy
+from buy_confirm import confirm_buy, has_forward_data
 
 T = [_dt.datetime(2025, 1, 1, 12, 0) + _dt.timedelta(minutes=i) for i in range(8)]
 S = 100.0
@@ -58,6 +58,21 @@ def test_venster_grens():
 
 def test_geen_forward_data():
     assert confirm_buy(T, [100, 99], T[7], S) is None
+
+
+def test_has_forward_data():
+    """De no-data-detectie die de aanroeper gebruikt om staart-trades weg te gooien ZONDER ze als
+    afgeblazen te tellen. Tick op het laatste moment → geen forward-data; midden in de reeks → wel."""
+    # T[7] is de laatste tick → niets erna binnen 3 min → leeg venster
+    assert has_forward_data(T, T[7]) is False
+    # ver na de reeks → leeg
+    assert has_forward_data(T, T[0] + _dt.timedelta(hours=1)) is False
+    # midden in de reeks → er zijn ticks binnen 3 min
+    assert has_forward_data(T, T[0]) is True
+    # grens: window_min=0 → niets strikt ná het signaal binnen 0 min → leeg
+    assert has_forward_data(T, T[0], window_min=0) is False
+    # spiegelt confirm_buy: waar has_forward_data False is, geeft confirm_buy ook None (geen bevestiging)
+    assert confirm_buy(T, [100, 99], T[7], S) is None and has_forward_data(T, T[7]) is False
 
 
 def run():

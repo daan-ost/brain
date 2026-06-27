@@ -16,6 +16,18 @@ import bisect
 import datetime as _dt
 
 
+def has_forward_data(DT, signal_dt, window_min=3.0):
+    """True als er minstens één tick in (signal_dt, signal_dt+window_min] zit. Zo niet, dan kan de
+    koop-bevestiging NIET draaien door datagebrek (staartstuk van de reeks / een datagat groter dan
+    het venster) — dat is iets anders dan 'afgeblazen omdat de prijs niet kruiste'. De aanroeper
+    gooit zo'n trade weg ZONDER 'm als afgeblazen te tellen (we kunnen 'm simpelweg niet beoordelen).
+    Spiegelt exact de lo>=hi-grens in confirm_buy zodat beide dezelfde definitie van 'leeg venster'
+    gebruiken."""
+    lo = bisect.bisect_right(DT, signal_dt)
+    hi = bisect.bisect_right(DT, signal_dt + _dt.timedelta(minutes=window_min))
+    return lo < hi
+
+
 def confirm_buy(DT, PX, signal_dt, signal_price, fp_bmin=None, window_min=3.0, xrows=None):
     """Geeft (buy_dt, buy_price) als de koop bevestigd wordt, anders None (afgeblazen).
 
