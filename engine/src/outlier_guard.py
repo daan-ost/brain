@@ -70,6 +70,31 @@ def filter_outliers(DT, PX, VV, window=OUTLIER_WINDOW, factor=OUTLIER_FACTOR):
     return [DT[i] for i in keep], [PX[i] for i in keep], [VV[i] for i in keep], len(bad)
 
 
+def outlier_dt_set(conn, symbol, indicator="volumeud", window=OUTLIER_WINDOW, factor=OUTLIER_FACTOR):
+    """Set van outlier-datetimes voor (symbol, indicator) in brain.indicators — voor de KOOP-kant
+    (RuleEngine, PromisingEngine) om dezelfde feed-glitches te skippen als de SellEngine wegfiltert.
+
+    Anders raakt koop-datetime ontkoppeld van koop-prijs: rule_engine zou kunnen vuren op een rotte
+    tick die `price_at()` in persist_to_brain (gebruikt SellEngine.DT/PX) niet meer kent → de greedy
+    dedup-lus pakt dan de vorige tick z'n prijs i.p.v. die van het fire-moment. Defense-in-depth boven
+    op de ingest-fix (`null_price_outliers`) en de SellEngine-filter.
+
+    Indicator default 'volumeud' want dat is de leidende reeks waarop fires gedreven worden (vf=1
+    gate + tick-grid). Read-only.
+    """
+    with conn.cursor() as c:
+        c.execute("SELECT datetime, price FROM indicators "
+                  "WHERE trading_symbol_id=%s AND indicator=%s AND price IS NOT NULL ORDER BY datetime",
+                  (symbol, indicator))
+        rows = c.fetchall()
+    if not rows:
+        return set()
+    DT = [r["datetime"] for r in rows]
+    PX = [float(r["price"]) for r in rows]
+    bad = outlier_indices(PX, window, factor)
+    return {DT[i] for i in bad}
+
+
 def null_price_outliers(conn, symbols, indicators, window=OUTLIER_WINDOW, factor=OUTLIER_FACTOR):
     """Zet price=NULL voor outlier-ticks per (symbol, indicator) in brain.indicators.
 

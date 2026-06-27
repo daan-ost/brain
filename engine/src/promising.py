@@ -23,6 +23,7 @@ import pymysql
 
 from config import (FORWARD_MINUTES, MIN_DURATION_MINUTES, DROP_BELOW_PCT,
                     MIN_UPSIDE_PCT, MAX_EARLY_DIP_PCT, upside_minutes)
+from outlier_guard import outlier_indices
 
 # 5-min-rule profile (rules 20/21/22/23) — simulate_buy.php:1550
 PROFILE = dict(
@@ -71,6 +72,15 @@ class PromisingEngine:
             rows = c.fetchall()
         self.DT = [r["datetime"] for r in rows]
         self.PX = [float(r["price"]) for r in rows]
+        # Defense-in-depth (zelfde als SellEngine.filter_outliers): gooi prijs-outliers (feed-glitch)
+        # uit de reeks vóór we het upside-window scannen. Ingest (null_price_outliers) is leidend; dit
+        # vangt een tick die ongezuiverd in de DB staat. Anders zou één rotte tick `highest` opblazen
+        # tot honderden % en de promising-verdict vervuilen.
+        bad = set(outlier_indices(self.PX))
+        if bad:
+            keep = [i for i in range(len(self.PX)) if i not in bad]
+            self.DT = [self.DT[i] for i in keep]
+            self.PX = [self.PX[i] for i in keep]
 
     def close(self):
         if self._own:

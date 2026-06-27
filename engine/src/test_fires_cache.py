@@ -173,6 +173,42 @@ def test_determinism(frm, to):
     print("  D determinisme + venster-gevoeligheid: PASS")
 
 
+def test_cleanup_isolates_per_rule(frm, to):
+    """Cleanup mag GEEN cache van een ander (frm,to)-venster weggooien. Anders wist een test op smal
+    venster de productie-cache van persist_to_brain en omgekeerd — dat ondermijnt Plan B in beide
+    richtingen. Bewijst: na een run op smal venster bestaan de files van een eerdere run op ander
+    venster (gemockt) nóg steeds.
+    Was vóór deze fix STUK: de cleanup gooide elk niet-in-keep bestand voor de munt weg."""
+    import os, glob
+    re = RuleEngine(SYM)
+    try:
+        rules = sorted(re.rules.keys())
+        # Run 1: smal venster — schrijf cache, leg paden vast
+        crf = lambda rule: re.fires(rule, frm, to)
+        _, _, _ = fc.cached_fires_per_rule(SYM, frm, to, rules, crf, force=True)
+        paths_smal = sorted(glob.glob(os.path.join(fc.FIRES_DIR, f"fires_{SYM}_r*_w*__*.parquet")))
+        assert len(paths_smal) == len(rules), f"smal: verwachtte {len(rules)} files, kreeg {len(paths_smal)}"
+        # Run 2: ander venster (verschoven met +1 dag) — moet eigen files schrijven en de smal-files LATEN STAAN
+        frm2, to2 = frm + _dt.timedelta(days=1), to + _dt.timedelta(days=1)
+        crf2 = lambda rule: re.fires(rule, frm2, to2)
+        _, _, _ = fc.cached_fires_per_rule(SYM, frm2, to2, rules, crf2, force=True)
+        paths_na = sorted(glob.glob(os.path.join(fc.FIRES_DIR, f"fires_{SYM}_r*_w*__*.parquet")))
+        # Verwacht: 2 fp-files per rule (smal + ander), dus 2*N totaal
+        assert len(paths_na) == 2 * len(rules), (
+            f"cleanup gooide cross-venster files weg: verwachtte {2*len(rules)}, kreeg {len(paths_na)} "
+            f"(smal {len(paths_smal)} → na {len(paths_na)})")
+        # Smal-files moeten er ALLEMAAL nog zijn
+        kept_smal = [p for p in paths_smal if os.path.exists(p)]
+        assert kept_smal == paths_smal, f"smal-venster files verdwenen: {set(paths_smal) - set(kept_smal)}"
+        print(f"  G cleanup respecteert ander venster: PASS ({len(rules)} smal + {len(rules)} ander = {len(paths_na)} files)")
+    finally:
+        # Beide vensters' caches opruimen zodat het geen rommel achterlaat in fires-dir
+        for p in glob.glob(os.path.join(fc.FIRES_DIR, f"fires_{SYM}_r*_w*__*.parquet")):
+            try: os.remove(p)
+            except OSError: pass
+        re.close()
+
+
 if __name__ == "__main__":
     frm, to = _window()
     print(f"test_fires_cache — fires-memoïsatie vangnet (NOS, venster {frm} .. {to})")
@@ -182,4 +218,5 @@ if __name__ == "__main__":
     test_sell_change_does_not_invalidate(frm, to)
     test_min_volume_change_invalidates(frm, to)
     test_determinism(frm, to)
+    test_cleanup_isolates_per_rule(frm, to)
     print("ALLE TESTS PASS")

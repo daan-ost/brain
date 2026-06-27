@@ -16,6 +16,7 @@ from datetime import timedelta
 from db import brain
 from calc import subrule_value
 from volume import missingdata, check_volumeud_3, volume_settings
+from outlier_guard import outlier_dt_set
 
 RULES = (20, 21, 22, 23)
 
@@ -58,6 +59,13 @@ class RuleEngine:
             # relvol-basislijn = laagste min_volume (zelfde als discovery/data.min_volume): relvol =
             # volumeud / relvol_base, zodat discovery-rules met relvol-subregels correct vuren via deze engine
             self.relvol_base = min([v for v in self.minvol.values() if 0 < v < 1e11] or [1.0])
+            # Defense-in-depth (koop-kant): outlier-ticks die de SellEngine wegfiltert mogen ook hier
+            # niet vuren — anders raakt koop-datetime ontkoppeld van koop-prijs (price_at gebruikt de
+            # gefilterde reeks; de fire-tick is dan onbekend → vorige tick z'n prijs wordt gepakt).
+            # Volumeud is de leidende reeks (zelfde als SellEngine). Skip in fires() i.p.v. de series
+            # zelf droppen — een outlier mag wel als BUUR meedoen bij _vals/_vol_rows (dezelfde rauwe
+            # data die de validatie/cache ook ziet), hij mag alleen niet als eigen fire-moment vuren.
+            self._outlier_dts = outlier_dt_set(self.conn, symbol, "volumeud")
 
     def close(self):
         if self._own:
@@ -135,6 +143,8 @@ class RuleEngine:
                 continue
             if to and dt >= to:
                 break
+            if dt in self._outlier_dts:        # defense-in-depth: skip prijs-outliers (zie __init__)
+                continue
             if self._fire_at(rule, dt):
                 out.append(dt)
         return out

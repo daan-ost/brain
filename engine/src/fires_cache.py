@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIRES_DIR = os.path.join(HERE, "..", "data", "fires")
 # Codeversie van de fires-bouw/serialisatie. Bump bij een wijziging aan compute/serialisatie zodat oude
 # parquet's automatisch invalideren (los van de data-fingerprint).
-_FIRES_CODE_VER = "fires-v1"
+_FIRES_CODE_VER = "fires-v3"   # v3: venster-hash in per-rule filename (cross-venster cache-isolatie)
 
 
 def fires_fingerprint(sym, frm, to, gate_col="brain_volume_found"):
@@ -103,8 +103,20 @@ def _path(sym, fp):
     return os.path.join(FIRES_DIR, f"fires_{int(sym)}__{fp}.parquet")
 
 
-def _rule_path(sym, rule, fp):
-    return os.path.join(FIRES_DIR, f"fires_{int(sym)}_r{int(rule)}__{fp}.parquet")
+def _win_hash(frm, to):
+    """Korte hash van het (frm,to)-venster — komt in de filename zodat cleanup files van een ander
+    venster (bv. smal-venster test naast volle-venster productie) niet weggooit. Hier OK om short te
+    zijn: een collision zou alleen een verouderde cache laten staan, niet de juiste invalideren — de
+    data-fp dekt dat af."""
+    return hashlib.md5(f"{frm}|{to}".encode()).hexdigest()[:8]
+
+
+def _rule_path(sym, rule, fp, frm=None, to=None):
+    """Per-rule cache-pad. Bevat venster-hash zodat één-rule files van verschillende vensters naast
+    elkaar kunnen bestaan (test smal venster vs productie volle venster) — cleanup ruimt dan per
+    (sym, rule, venster) op, niet over de vensters heen."""
+    wh = _win_hash(frm, to)
+    return os.path.join(FIRES_DIR, f"fires_{int(sym)}_r{int(rule)}_w{wh}__{fp}.parquet")
 
 
 def _load(path):
@@ -171,9 +183,10 @@ def cached_fires_per_rule(sym, frm, to, rules, compute_rule_fn, gate_col="brain_
     all_fires = []
     keep = set()
     n_warm = 0
+    wh = _win_hash(frm, to)
     for rule in rules:
         fp = rule_fires_fingerprint(sym, rule, frm, to, gate_col)
-        path = _rule_path(sym, rule, fp)
+        path = _rule_path(sym, rule, fp, frm, to)
         keep.add(path)
         if not force and os.path.exists(path):
             df = pd.read_parquet(path)
@@ -194,15 +207,19 @@ def cached_fires_per_rule(sym, frm, to, rules, compute_rule_fn, gate_col="brain_
                 pass
             raise
         all_fires.extend(fires)
-    # opruimen: alle fires-bestanden van DEZE munt die niet bij deze run horen (oude per-rule fp's én de
-    # all-rules Plan A-parquet). De glob matcht niet per ongeluk een andere munt: de underscore na het
-    # munt-id voorkomt prefix-botsing (244 vs 2440).
-    for old in glob.glob(os.path.join(FIRES_DIR, f"fires_{int(sym)}_*.parquet")) + \
-               glob.glob(os.path.join(FIRES_DIR, f"fires_{int(sym)}__*.parquet")):
-        if old not in keep:
-            try:
-                os.remove(old)
-            except OSError:
-                pass
+    # Opruimen: PER (sym, rule, venster) alleen de verouderde data-fp weggooien. De venster-hash
+    # (w<wh>) in de filename isoleert verschillende vensters: een smal-venster test naast volle-
+    # venster productie blijft naast elkaar bestaan. Wij ruimen alleen ONS venster's verouderde
+    # data-fps op (bv. een min_volume-wijziging op DIT venster maakt de oude fp obsolete).
+    # De all-rules Plan A-parquet (`fires_<sym>__<fp>.parquet`, dubbele underscore) wordt door deze
+    # glob niet gepakt (we vragen om _r<rule>_w<wh>__*).
+    for rule in rules:
+        pat = os.path.join(FIRES_DIR, f"fires_{int(sym)}_r{int(rule)}_w{wh}__*.parquet")
+        for old in glob.glob(pat):
+            if old not in keep:
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
     all_fires.sort()
     return all_fires, n_warm, len(rules)
