@@ -57,8 +57,23 @@ CATDOG was de enige met legacy 20-23 → kopieer dan de legacy min_volume i.p.v.
 discovery coin_strategies (kopie rule-20 ≠ globaal) → 1× opgeruimd aan het eind van fase B; controle
 bevestigt discovery coin_strategies alleen op 244/2525.
 
-## Nog te doen
+## De schone 12-munts-optimalisatie-run (run #84, --apply) — GEDRAAID
 
-De **schone 12-munts-optimalisatie-run** (draaiboek stap 4): regime → rules tunen op actieve trades →
-re-fire → regime herberekenen. Dat is een aparte, langere stap (de `--apply`-variant muteert live rules)
-→ Daans go. De onboarding zelf (inladen + per-munt-verificatie) is hiermee compleet.
+Volgorde: regime-routine #83 (regime + JSON-spiegel vers, alle 12) → rule-precisie `--apply` #84.
+**Geverifieerd dat de optimizer op de actieve-periode-trades tunet:** `opt_lib.load_trades(include_inactive=
+False)` filtert via `regime.active_sql_clause()` (NOT EXISTS inactief interval); regime-versie zit in de
+fingerprint (Epic H #8).
+
+**Uitkomst (run #84, success):**
+- **rule-optimization:** portfolio-totaal 0,07 (748 goed / 10.009 executed actieve-periode-trades over 12
+  munten). Per rule: r20 0,32 · r23 0,21 · r22 0,16 sterk; discovery r30-34 0,05-0,07 zwak. 978 nieuwe
+  veilige kandidaat-verscherpingen gevonden (in-sample).
+- **auto-apply: 0 toegepast** — alle sterkste kandidaten per rule **gezakt op de toeval-toets**
+  (Šidák-gecorrigeerd). Geen enkele verscherping was significant genoeg → niets toegepast.
+- **auto-loosen: 0 versoepeld, 0 afgewezen** (full-refire-gate, 6397s).
+- **0 regelwijzigingen** (`rules_history` vandaag leeg) — live rules ongewijzigd.
+
+**Duiding:** zelfs met 12 munten haalt geen enkele losse verscherping de significantie-lat (de
+anti-ruis-discipline werkt). De 978 kandidaten staan als voorstel op het scherm, niet toegepast. Dit
+bevestigt het patroon uit [[parent-gate-gemene-deler]]/[[rule-discovery-statistical-discipline]]: de
+hefboom blijft de trade-kwaliteitsmix, niet strengere/lossere filters. De keten zelf draait schoon op 12.
