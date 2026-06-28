@@ -4,10 +4,16 @@
 Vervolg op het draaiboek [[onboarding-batch-en-bouwvolgorde-2026-06-27]] en de TURBO-test
 ([[turbo-onboarding-2026-06-28]]). Per-munt-lessen: memory [[turbo-onboarding-learnings]].
 
-## Resultaat — universe (12)
+## Resultaat — universe (11; POPCAT verwijderd)
 
 DOGEAI (2525), NOS (244), FARTCOIN (8427), MUMU (2735) [bestaand] + **TURBO (32), PONKE (2157), PEPE2
-(37), ATR (2587), POPCAT (3168), CATDOG (7572), 1DOLLAR (8601), JELLYJELLY (8652)** [nieuw].
+(37), ATR (2587), CATDOG (7572), 1DOLLAR (8601), JELLYJELLY (8652)** [nieuw].
+
+**POPCAT (3168) ná de run weer volledig verwijderd** (2026-06-28, Daans beslissing): de regime-gate
+markeerde 'm als bijna volledig inactief (2 actieve trades, Σ −0,9%) — niet verhandelbaar in dit
+datavenster. Alle rijen gewist uit coins/indicators/coin_rule_settings/coin_fires/coin_periods/
+coin_moment_labels/coin_moment_sells/coin_daily_metrics/coin_regime/coin_refire_state. `data.COINS`
+(=`coins.active_coins()`) pikt dat automatisch op → 11 munten. Geen code-edit nodig.
 
 ## Trades + regime-filter per nieuwe munt (executed, vóór tuning)
 
