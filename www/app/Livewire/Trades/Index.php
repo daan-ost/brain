@@ -3,6 +3,7 @@
 namespace App\Livewire\Trades;
 
 use App\Models\CoinFire;
+use App\Models\CoinRegime;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
@@ -36,6 +37,7 @@ class Index extends Component
     #[Url] public string $outcome = '';       // '' | goed | middel | slecht | shadow
     #[Url] public string $from = '';
     #[Url] public string $to = '';
+    #[Url] public bool $activeOnly = true;
 
     public function mount(): void
     {
@@ -49,7 +51,14 @@ class Index extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['rule', 'outcome', 'from', 'to']);
+        $this->reset(['rule', 'outcome', 'from', 'to', 'activeOnly']);
+        $this->activeOnly = true;
+        $this->resetPage();
+    }
+
+    public function toggleActiveOnly(): void
+    {
+        $this->activeOnly = ! $this->activeOnly;
         $this->resetPage();
     }
 
@@ -61,9 +70,7 @@ class Index extends Component
 
     private function baseQuery(): Builder
     {
-        // Klasse-thresholds gerealiseerd resultaat: goed >=3%, middel 0..3%, slecht <0% (verlies).
-        // Komt overeen met CoinFire::autoKlasseKey() voor executed trades.
-        return CoinFire::query()
+        $q = CoinFire::query()
             ->when($this->coin !== '', fn (Builder $q) => $q->where('trading_symbol_id', (int) $this->coin))
             ->when($this->rule !== '', fn (Builder $q) => $q->where('rule', (int) $this->rule))
             ->when($this->outcome === 'goed', fn (Builder $q) => $q->where('is_executed', true)->where('profit_loss', '>=', 3))
@@ -72,6 +79,12 @@ class Index extends Component
             ->when($this->outcome === 'shadow', fn (Builder $q) => $q->where('is_executed', false))
             ->when($this->from !== '', fn (Builder $q) => $q->whereDate('datetime', '>=', $this->from))
             ->when($this->to !== '', fn (Builder $q) => $q->whereDate('datetime', '<=', $this->to));
+
+        if ($this->activeOnly) {
+            CoinRegime::scopeActiveOnly($q);
+        }
+
+        return $q;
     }
 
     /**
@@ -104,11 +117,19 @@ class Index extends Component
         // die trade in een EERDERE kans startte en met zijn hold-window over deze kans heen loopt
         // (je kon daar geen nieuwe trade openen, dus het is geen gemiste kans).
         $tradeWins = []; // symbol_id => [[startTs, endTs], ...]
-        $db->table('coin_fires')->where('is_executed', true)->whereNotNull('selling_datetime')
+        $twQ = $db->table('coin_fires')->where('is_executed', true)->whereNotNull('selling_datetime')
             ->when($this->coin !== '', fn ($q) => $q->where('trading_symbol_id', (int) $this->coin))
             ->when($this->rule !== '', fn ($q) => $q->where('rule', (int) $this->rule))
-            ->select('trading_symbol_id', 'datetime', 'selling_datetime')->orderBy('datetime')
-            ->get()->each(function ($f) use (&$tradeWins) {
+            ->select('trading_symbol_id', 'datetime', 'selling_datetime')->orderBy('datetime');
+        if ($this->activeOnly) {
+            $twQ->whereNotExists(function ($sub) {
+                $sub->selectRaw('1')->from('coin_regime')
+                    ->whereColumn('coin_regime.trading_symbol_id', 'coin_fires.trading_symbol_id')
+                    ->where('coin_regime.state', 'inactive')
+                    ->whereRaw('coin_fires.datetime >= coin_regime.period_from AND coin_fires.datetime < coin_regime.period_to + INTERVAL 1 DAY');
+            });
+        }
+        $twQ->get()->each(function ($f) use (&$tradeWins) {
                 $tradeWins[$f->trading_symbol_id][] = [strtotime((string) $f->datetime),
                                                        strtotime((string) $f->selling_datetime)];
             });
@@ -138,15 +159,23 @@ class Index extends Component
             return false;
         };
 
-        $moments = $db->table('coin_moment_sells')
+        $momQ = $db->table('coin_moment_sells')
             ->select('trading_symbol_id', 'symbol', 'datetime', 'selling_datetime', 'profit_loss')
             ->whereNotNull('profit_loss')
             ->whereBetween('profit_loss', [self::SANE_MIN_PL, self::SANE_MAX_PL])
             ->when($this->coin !== '', fn ($q) => $q->where('trading_symbol_id', (int) $this->coin))
             ->when($this->from !== '', fn ($q) => $q->whereDate('datetime', '>=', $this->from))
             ->when($this->to !== '', fn ($q) => $q->whereDate('datetime', '<=', $this->to))
-            ->orderBy('trading_symbol_id')->orderBy('datetime')
-            ->get();
+            ->orderBy('trading_symbol_id')->orderBy('datetime');
+        if ($this->activeOnly) {
+            $momQ->whereNotExists(function ($sub) {
+                $sub->selectRaw('1')->from('coin_regime')
+                    ->whereColumn('coin_regime.trading_symbol_id', 'coin_moment_sells.trading_symbol_id')
+                    ->where('coin_regime.state', 'inactive')
+                    ->whereRaw('coin_moment_sells.datetime >= coin_regime.period_from AND coin_moment_sells.datetime < coin_regime.period_to + INTERVAL 1 DAY');
+            });
+        }
+        $moments = $momQ->get();
 
         $prom = [];      // key "ym|symbol_id" => array
         $curSym = null; $curSellTs = null; $curKey = null; $curTraded = false;
@@ -182,7 +211,7 @@ class Index extends Component
         $db = DB::connection(config('database.default'));
 
         // 1) executed trades per maand/coin
-        $trades = $db->table('coin_fires')
+        $tradesQ = $db->table('coin_fires')
             ->selectRaw("DATE_FORMAT(datetime, '%Y-%m') AS ym, trading_symbol_id, symbol,
                 COUNT(*) AS n_total,
                 SUM(CASE WHEN profit_loss >= 3 THEN 1 ELSE 0 END) AS n_goed,
@@ -197,9 +226,16 @@ class Index extends Component
             ->when($this->coin !== '', fn ($q) => $q->where('trading_symbol_id', (int) $this->coin))
             ->when($this->rule !== '', fn ($q) => $q->where('rule', (int) $this->rule))
             ->when($this->from !== '', fn ($q) => $q->whereDate('datetime', '>=', $this->from))
-            ->when($this->to !== '', fn ($q) => $q->whereDate('datetime', '<=', $this->to))
-            ->groupBy('ym', 'trading_symbol_id', 'symbol')
-            ->get();
+            ->when($this->to !== '', fn ($q) => $q->whereDate('datetime', '<=', $this->to));
+        if ($this->activeOnly) {
+            $tradesQ->whereNotExists(function ($sub) {
+                $sub->selectRaw('1')->from('coin_regime')
+                    ->whereColumn('coin_regime.trading_symbol_id', 'coin_fires.trading_symbol_id')
+                    ->where('coin_regime.state', 'inactive')
+                    ->whereRaw('coin_fires.datetime >= coin_regime.period_from AND coin_fires.datetime < coin_regime.period_to + INTERVAL 1 DAY');
+            });
+        }
+        $trades = $tradesQ->groupBy('ym', 'trading_symbol_id', 'symbol')->get();
 
         // 2) merge per (maand, coin) — ook maanden mét promising maar ZONDER trade tonen
         $rows = [];
@@ -261,12 +297,37 @@ class Index extends Component
         ];
         $promPill['pct'] = $promPill['n'] > 0 ? $promPill['traded'] / $promPill['n'] * 100 : 0.0;
 
+        // Σ-alles: als activeOnly aan staat, toon het verschil (de bespaarde verliezers).
+        // Bouw allQ met dezelfde filters als baseQuery() ZONDER regime-filter, zodat het vergelijk
+        // appels-met-appels is bij elke outcome-filter.
+        $regimeSaving = null;
+        if ($this->activeOnly) {
+            $allQ = CoinFire::query()
+                ->when($this->coin !== '', fn (Builder $q) => $q->where('trading_symbol_id', (int) $this->coin))
+                ->when($this->rule !== '', fn (Builder $q) => $q->where('rule', (int) $this->rule))
+                ->when($this->outcome === 'goed', fn (Builder $q) => $q->where('is_executed', true)->where('profit_loss', '>=', 3))
+                ->when($this->outcome === 'middel', fn (Builder $q) => $q->where('is_executed', true)->where('profit_loss', '>=', 0)->where('profit_loss', '<', 3))
+                ->when($this->outcome === 'slecht', fn (Builder $q) => $q->where('is_executed', true)->where('profit_loss', '<', 0))
+                ->when($this->outcome === 'shadow', fn (Builder $q) => $q->where('is_executed', false))
+                ->when($this->outcome === '', fn (Builder $q) => $q->where('is_executed', true))
+                ->when($this->from !== '', fn (Builder $q) => $q->whereDate('datetime', '>=', $this->from))
+                ->when($this->to !== '', fn (Builder $q) => $q->whereDate('datetime', '<=', $this->to));
+            $regimeSaving = [
+                'n_all' => (clone $allQ)->count(),
+                'pl_all' => (float) (clone $allQ)->sum('profit_loss'),
+                'slecht_all' => (clone $allQ)->where('profit_loss', '<', 0)->count(),
+            ];
+            $regimeSaving['n_filtered'] = $regimeSaving['n_all'] - $totals['n'];
+            $regimeSaving['pl_saved'] = $totals['pl'] - $regimeSaving['pl_all'];
+            $regimeSaving['slecht_saved'] = $regimeSaving['slecht_all'] - $pills['slecht']['n'];
+        }
+
         // tab-specifieke data: alleen ophalen wat de tab nodig heeft
         $trades = $this->tab === 'list'
             ? $this->baseQuery()->orderByDesc('datetime')->paginate(50)
             : null;
         $summary = $this->tab === 'summary' ? $this->summaryRows($prom) : [];
 
-        return view('livewire.trades.index', compact('trades', 'summary', 'coins', 'rules', 'pills', 'totals', 'promPill'));
+        return view('livewire.trades.index', compact('trades', 'summary', 'coins', 'rules', 'pills', 'totals', 'promPill', 'regimeSaving'));
     }
 }

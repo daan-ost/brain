@@ -7,6 +7,7 @@ use App\Models\CoinAnnotation;
 use App\Models\CoinFire;
 use App\Models\CoinMomentLabel;
 use App\Models\CoinPeriod;
+use App\Models\CoinRegime;
 use Illuminate\Support\Carbon;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -40,6 +41,7 @@ class CoinExplorer extends Component
     public string $bestSell = '';       // override beste sell — alleen TIJD (H:i:s); datum = koopdatum
     public string $hardSell = '';       // harde verkoopdatum — alleen TIJD (H:i:s); datum = koopdatum
     public bool $skipShadows = true;    // nav-pijltjes slaan schaduw-trades over (default aan)
+    #[Url] public bool $activeOnly = true;
 
     public function mount(): void
     {
@@ -150,6 +152,7 @@ class CoinExplorer extends Component
         $q = CoinFire::where('trading_symbol_id', $this->coin)
             ->where('datetime', $dir > 0 ? '>' : '<', $cur->datetime);
         if ($this->skipShadows) $q->where('is_executed', true);
+        if ($this->activeOnly) CoinRegime::scopeActiveOnly($q);
         $next = $q->orderBy('datetime', $dir > 0 ? 'asc' : 'desc')->first();
         if (! $next) return;
 
@@ -168,6 +171,7 @@ class CoinExplorer extends Component
             $q = CoinFire::where('trading_symbol_id', $this->coin)
                 ->whereBetween('datetime', [$start, $end]);
             if ($this->skipShadows) $q->where('is_executed', true);
+            if ($this->activeOnly) CoinRegime::scopeActiveOnly($q);
             return $q->orderBy('datetime')->pluck('id')->all();
         }
         return CoinPeriod::where('trading_symbol_id', $this->coin)
@@ -313,8 +317,12 @@ class CoinExplorer extends Component
         $periods = CoinPeriod::query()->where('trading_symbol_id', $this->coin)
             ->where('period_from', '<=', $end)->where('period_to', '>=', $start)
             ->orderBy('period_from')->get();
-        $fires = CoinFire::query()->where('trading_symbol_id', $this->coin)
-            ->whereBetween('datetime', [$start, $end])->orderBy('datetime')->get();
+        $firesQ = CoinFire::query()->where('trading_symbol_id', $this->coin)
+            ->whereBetween('datetime', [$start, $end])->orderBy('datetime');
+        if ($this->activeOnly) {
+            CoinRegime::scopeActiveOnly($firesQ);
+        }
+        $fires = $firesQ->get();
 
         // attach manual moment-labels so klasseKey() applies the override on the chart + table
         // (single source of truth = coin_moment_labels, survives the persist re-fire).
@@ -341,6 +349,8 @@ class CoinExplorer extends Component
         // goed/middel/slecht counts over EXECUTED trades (best_upside class)
         $exec = $fires->where('is_executed', true)->groupBy(fn ($f) => $f->klasseKey());
 
+        $dayActive = CoinRegime::isActive((int) $this->coin, $start);
+
         return view('livewire.trades.coin-explorer', [
             'periods' => $periods,
             'fires' => $fires,
@@ -352,6 +362,7 @@ class CoinExplorer extends Component
             'goedToday' => $exec->get('goed', collect())->count(),
             'middelToday' => $exec->get('middel', collect())->count(),
             'slechtToday' => $exec->get('slecht', collect())->count(),
+            'dayActive' => $dayActive,
         ]);
     }
 }

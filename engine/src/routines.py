@@ -20,6 +20,7 @@ import sys
 
 from db import brain
 import daily_optimization as opt
+import regime
 
 NO_REBUILD = "--no-rebuild" in sys.argv
 
@@ -98,7 +99,8 @@ def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
                       "CASE WHEN profit_loss>=3 THEN 'g' WHEN profit_loss<0 THEN 'b' ELSE 'm' END))),0) cx "
                       "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL")
             fires = c.fetchone()
-    conn.close()
+    rn, rcx = regime.regime_ver_global(conn)   # Epic H beslissing #8: regime-versie in de data-veranderd-gate,
+    conn.close()                               # anders draait de keten NIET opnieuw als alléén het regime wijzigt
     sig = "|".join(f"{r['s']}:{r['n']}:{r['mx']}" for r in ind) + f"#rules:{rules['n']}:{rules['mx']}"
     if lab:
         sig += f"#labels:{lab['n']}:{lab['mx']}"
@@ -106,6 +108,7 @@ def input_fingerprint(with_labels=False, with_sell=False, with_fires=False):
         sig += sell
     if fires:
         sig += f"#fires:{fires['n']}:{fires['g']}:{fires['s']}:{fires['cx']}"
+    sig += f"#regime:{rn}:{rcx}"
     return hashlib.md5(sig.encode()).hexdigest()
 
 
@@ -341,6 +344,27 @@ def routine_mexc_scan(j):
     return f"mexc-scan | {res['fetched']} paren | {res['kept']} kandidaten"
 
 
+def routine_coin_regime(j):
+    """COIN-REGIME: herbereken de actieve/inactieve perioden per munt (Epic H gate-algoritme) en
+    schrijf ze idempotent naar coin_regime + JSON-spiegel. Niet gegated: draait elke keer zodat een
+    nieuwe week trades direct het regime bijwerkt. De idempotente write voorkomt drift (regime_ver
+    is invariant bij ongewijzigde uitkomst)."""
+    import coin_regime
+    conn = brain()
+    try:
+        result = coin_regime.run(conn)
+    finally:
+        conn.close()
+    parts = []
+    for sym, ivs in sorted(result.items()):
+        act = sum(1 for iv in ivs if iv["state"] == "active")
+        ina = sum(1 for iv in ivs if iv["state"] == "inactive")
+        parts.append(f"coin {sym}: {act}A/{ina}I")
+        j.add(f"coin {sym}: {len(ivs)} intervallen ({act} actief / {ina} inactief)", level="result",
+              data={"sym": sym, "intervals": len(ivs), "active": act, "inactive": ina})
+    return f"coin-regime · {len(result)} coins · " + ", ".join(parts)
+
+
 def routine_coin_metrics(j):
     """COIN-METRICS: meet read-only per (munt, dag) de KANSRIJK-score (up_pct = % momenten met >=3%
     stijging binnen 60 min) + beweeglijkheid (vol_pct) + liquiditeit (n_ticks), en schrijf naar
@@ -432,6 +456,12 @@ REGISTRY_VOL = [
     ("coin-metrics", routine_coin_metrics),
 ]
 
+REGIME_SET_KEY = "coin-regime"
+REGIME_SET_NAME = "Coin-regime — actieve/inactieve perioden herberekenen"
+REGISTRY_REGIME = [
+    ("coin-regime", routine_coin_regime),
+]
+
 SETS = {
     SET_KEY: (SET_NAME, REGISTRY, True),                 # gated by the data-changed fingerprint
     INTEGRITY_SET_KEY: (INTEGRITY_SET_NAME, REGISTRY_INTEGRITY, False),
@@ -439,6 +469,7 @@ SETS = {
     SELL_SET_KEY: (SELL_SET_NAME, REGISTRY_SELL, True),        # gated; fingerprint includes sell knobs + overrides
     BUY_SET_KEY: (BUY_SET_NAME, REGISTRY_BUY, True),          # gated; fingerprint includes rules + trades
     SELL_DISC_SET_KEY: (SELL_DISC_SET_NAME, REGISTRY_SELL_DISC, True),  # gated; fingerprint includes rules + trades
+    REGIME_SET_KEY: (REGIME_SET_NAME, REGISTRY_REGIME, False),  # NIET gegated — idempotent, elke run
     VOL_SET_KEY: (VOL_SET_NAME, REGISTRY_VOL, False),         # NIET gegated — draait elke dag
     MEXC_SET_KEY: (MEXC_SET_NAME, REGISTRY_MEXC, False),     # NIET gegated — draait elke dag
 }

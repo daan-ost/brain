@@ -29,6 +29,7 @@ import pandas as pd
 import pymysql
 
 import new_feat_lib as nfl
+import regime
 
 CHANNELS = ("vzo", "mfi", "phobos", "obv-x-value", "volume", "price")
 INDS_CONFIRM = ("vzo", "mfi", "phobos", "obv-x-value")
@@ -53,12 +54,14 @@ def load_series(symbol_id):
     return series
 
 
-def load_trades(symbol_id):
+def load_trades(symbol_id, include_inactive=False):
+    # Epic H: default zónder de inactieve-periode-trades (regime-gate); include_inactive=True = alles.
+    reg = "" if include_inactive else " AND " + regime.active_sql_clause()
     c = pymysql.connect(host="127.0.0.1", port=8889, user="root", password="root",
                         database="brain", cursorclass=pymysql.cursors.DictCursor)
     cur = c.cursor()
     cur.execute("""SELECT datetime, best_upside, profit_loss FROM coin_fires
-                   WHERE trading_symbol_id=%s AND is_executed=1 ORDER BY datetime""", (symbol_id,))
+                   WHERE trading_symbol_id=%s AND is_executed=1""" + reg + " ORDER BY datetime", (symbol_id,))
     rows = cur.fetchall(); c.close()
     out = []
     for r in rows:

@@ -60,7 +60,11 @@
                 <span class="text-xs font-medium text-gray-500">Tot</span>
                 <input type="date" wire:model.live="to" class="rounded-lg border-gray-300 text-sm">
             </label>
-            <div class="flex items-end">
+            <div class="flex items-end gap-2">
+                <button wire:click="toggleActiveOnly" title="{{ $activeOnly ? 'Toon ook inactieve-periode trades' : 'Verberg inactieve-periode trades' }}"
+                    class="rounded-lg border px-3 py-2 text-sm transition {{ $activeOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50' }}">
+                    {{ $activeOnly ? 'Actief' : 'Alles' }}
+                </button>
                 <button wire:click="resetFilters" class="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">Reset</button>
             </div>
         </div>
@@ -75,6 +79,12 @@
             <span class="px-2.5 py-1 rounded-full bg-green-100 text-green-800">Goed {{ $pills['goed']['n'] }} · ⌀{{ $pct($pills['goed']['avg']) }} · Σ {{ $pct($pills['goed']['pl']) }}</span>
             <span class="px-2.5 py-1 rounded-full bg-orange-100 text-orange-800">Middel {{ $pills['middel']['n'] }} · Σ {{ $pct($pills['middel']['pl']) }}</span>
             <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-800">Slecht {{ $pills['slecht']['n'] }} · Σ {{ $pct($pills['slecht']['pl']) }}</span>
+            @if ($regimeSaving && $regimeSaving['n_filtered'] > 0)
+                <span class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      title="Door regime-filter: {{ $regimeSaving['n_filtered'] }} trades uit inactieve periodes verborgen ({{ $regimeSaving['slecht_saved'] }} extra verliezers). Σ alles = {{ $pct($regimeSaving['pl_all']) }}">
+                    Regime: −{{ $regimeSaving['n_filtered'] }} trades · bespaard {{ $pct($regimeSaving['pl_saved']) }}
+                </span>
+            @endif
             <span class="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800"
                   title="Promising kansen (goede koop-stijgingen, één positie tegelijk: overlappende momenten binnen hetzelfde hold-window tellen als één trade) met Σ sell-winst van het vroegste instapmoment, en welk deel we verhandeld hebben. Het totaal is rule-onafhankelijk; het verhandeld-deel volgt wél de rule-filter.">
                 Promising {{ number_format($promPill['n'], 0, ',', '.') }} · Σ {{ $pct($promPill['pl']) }} ·

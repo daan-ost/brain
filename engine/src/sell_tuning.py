@@ -25,6 +25,7 @@ from collections import defaultdict
 
 import sell_engine
 import opt_lib as ol
+import regime
 from db import brain
 from coins import active_coin_ids
 
@@ -82,12 +83,14 @@ def split_per_rule(rows):
     return splits, med_by_rule
 
 
-def load_trades(conn, sym):
+def load_trades(conn, sym, include_inactive=False):
     """Executed trades, chronologisch. Splitst PER REGEL op de eigen mediaan (zie split_per_rule).
-    Geeft (trades, naam, {rule: mediaan-datetime})."""
+    Geeft (trades, naam, {rule: mediaan-datetime}). Epic H: default zónder de inactieve-periode-trades
+    (regime-gate); include_inactive=True laadt alles."""
+    reg = "" if include_inactive else " AND " + regime.active_sql_clause()   # gekwalificeerd (coin_fires.*)
     with conn.cursor() as c:
         c.execute("SELECT datetime, buy_price, rule, symbol FROM coin_fires WHERE trading_symbol_id=%s "
-                  "AND is_executed=1 AND buy_price IS NOT NULL ORDER BY datetime", (sym,))
+                  "AND is_executed=1 AND buy_price IS NOT NULL" + reg + " ORDER BY datetime", (sym,))
         rows = c.fetchall()
     splits, med_by_rule = split_per_rule(rows)
     trades = [{"dt": r["datetime"], "buy": float(r["buy_price"]), "rule": int(r["rule"]),

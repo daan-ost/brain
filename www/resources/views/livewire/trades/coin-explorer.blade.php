@@ -16,6 +16,15 @@
 
         <span class="text-xs text-slate-400">{{ $dayCount }} dagen met perioden</span>
 
+        @if (! $dayActive)
+            <span class="px-2 py-1 rounded bg-rose-900/60 text-rose-300 text-xs">inactieve periode</span>
+        @endif
+
+        <button wire:click="$toggle('activeOnly')" title="{{ $activeOnly ? 'Toon ook inactieve-periode trades' : 'Verberg inactieve-periode trades' }}"
+            class="px-2 py-1 rounded text-xs transition {{ $activeOnly ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700' : 'bg-slate-800 text-slate-400 border border-slate-700' }}">
+            {{ $activeOnly ? 'Actief' : 'Alles' }}
+        </button>
+
         <div class="ml-auto flex items-center gap-2 text-sm">
             <span class="px-2 py-1 rounded bg-emerald-900/60 text-emerald-300">{{ $periods->count() }} promising</span>
             <span class="px-2 py-1 rounded bg-emerald-900/60 text-emerald-300">{{ $goedToday }} goed</span>

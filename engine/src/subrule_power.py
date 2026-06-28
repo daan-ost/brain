@@ -32,6 +32,7 @@ from statistics import median
 
 import numpy as np
 
+import regime
 from db import brain
 from rule_engine import RuleEngine
 from calc import window_metrics, WINDOW_METRIC_KEYS
@@ -49,10 +50,12 @@ N_PERM = 400
 TOPN = 16
 
 
-def load_trades(conn, sym, rule):
+def load_trades(conn, sym, rule, include_inactive=False):
+    # Epic H: default zónder de inactieve-periode-trades (regime-gate); include_inactive=True = alles.
+    reg = "" if include_inactive else " AND " + regime.active_sql_clause()
     with conn.cursor() as c:
         c.execute("SELECT datetime, profit_loss FROM coin_fires WHERE trading_symbol_id=%s AND rule=%s "
-                  "AND is_executed=1 AND profit_loss IS NOT NULL ORDER BY datetime", (sym, rule))
+                  "AND is_executed=1 AND profit_loss IS NOT NULL" + reg + " ORDER BY datetime", (sym, rule))
         return [(r["datetime"], float(r["profit_loss"])) for r in c.fetchall()]
 
 

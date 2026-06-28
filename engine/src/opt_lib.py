@@ -24,6 +24,7 @@ import pandas as pd
 
 from db import brain
 from calc import WINDOW_METRIC_KEYS
+import regime
 
 # Classification thresholds — must mirror www/app/Models/CoinFire.php::klasseKey().
 # For EXECUTED trades we now classify on profit_loss (realized result) to match the UI; this is
@@ -94,16 +95,24 @@ def _cls_pl(pl):
     return "goed" if pl >= GOOD_PL else ("slecht" if pl < BAD_PL else "middel")
 
 
-def load_trades():
+def load_trades(include_inactive=False):
     """Executed trades (both coins). Classified on profit_loss (realized result) to match the UI.
     The optimization routine therefore targets actually-realized winners/losers, not theoretical
-    upside-within-the-hour — a rule's "slecht" now includes trades the sell-engine couldn't capture."""
+    upside-within-the-hour — a rule's "slecht" now includes trades the sell-engine couldn't capture.
+
+    Epic H: default filtert dit de trades uit een INACTIEVE periode weg (regime-gate) — die periode
+    hadden we niet gehandeld, dus de rule-tuner mag er niet van leren. include_inactive=True laadt
+    alsnog alles (analyse). De regime-versie zit in _long_fingerprint + input_fingerprint, zodat een
+    oude cache deze filter niet maskeert (beslissing #8)."""
     if not glob.glob(METRICS_GLOB):
         raise SystemExit("no indicator_metrics parquet — run build_indicator_metrics.py first")
+    where = "is_executed=1 AND profit_loss IS NOT NULL"
+    if not include_inactive:
+        where += " AND " + regime.active_sql_clause()   # gekwalificeerd (coin_fires.*): zie helper-docstring
     conn = brain()
     with conn.cursor() as c:
         c.execute("SELECT trading_symbol_id AS sym, datetime, rule, best_upside, profit_loss "
-                  "FROM coin_fires WHERE is_executed=1 AND profit_loss IS NOT NULL")
+                  f"FROM coin_fires WHERE {where}")
         df = pd.DataFrame(c.fetchall())
     conn.close()
     # MySQL DECIMAL columns arrive as Python Decimal objects; cast to float so DuckDB registers
@@ -153,7 +162,7 @@ _METRICS_DIR = os.path.join(HERE, "..", "data", "metrics")
 # cache-inhoud hangt óók af van CALC_COLS (=WINDOW_METRIC_KEYS) en de join/melt/dropna in _materialize_long;
 # die zitten NIET in de metrics-fingerprint. ','.join(CALC_COLS) verandert de fp automatisch als de
 # feature-set wijzigt; bump _LONG_CODE_VER met de hand bij een wijziging aan de join/melt/dropna-logica.
-_LONG_CODE_VER = "long-v1"
+_LONG_CODE_VER = "long-v2"   # v2: regime-versie in de fingerprint (Epic H) — invalideert de v1-cache
 
 
 def _long_fingerprint(sym):
@@ -170,9 +179,10 @@ def _long_fingerprint(sym):
                   "CASE WHEN profit_loss>=3 THEN 'g' WHEN profit_loss<0 THEN 'b' ELSE 'm' END))),0) cx "
                   "FROM coin_fires WHERE trading_symbol_id=%s AND is_executed=1 AND profit_loss IS NOT NULL", (sym,))
         t = c.fetchone()
-    conn.close()
+    rv = regime.regime_ver(sym, conn)   # Epic H beslissing #8: regime-versie in de per-munt long-cache,
+    conn.close()                        # anders serveert de cache een verouderde actieve-set na een regime-wijziging
     return hashlib.md5(f"{mfp}|long:{_LONG_CODE_VER}:{','.join(CALC_COLS)}"
-                       f"|fires:{t['n']}:{t['mx']}:{t['cx']}".encode()).hexdigest()[:16]
+                       f"|fires:{t['n']}:{t['mx']}:{t['cx']}|regime:{rv}".encode()).hexdigest()[:16]
 
 
 def _materialize_long(sym, trades_all):
@@ -491,14 +501,19 @@ def signflip_pvalue(deltas, n_perm=4000, seed=42):
     return {"p": (ge + 1) / (n_perm + 1), "n": n, "floor": floor, "obs": obs}
 
 
-def load_all_fires():
+def load_all_fires(include_inactive=False):
     """ALL fires (executed AND shadow), both coins, with rule + best_upside class. Shadows matter
     for redundancy: single-position dedup means only one rule executes at a time, so executed-only
-    overlap is always ~0 (an artefact). A shadow records that another rule ALSO fired there."""
+    overlap is always ~0 (an artefact). A shadow records that another rule ALSO fired there.
+
+    Epic H: default filtert inactieve-periode-fires weg (zie load_trades); include_inactive=True = alles."""
+    where = "best_upside IS NOT NULL"
+    if not include_inactive:
+        where += " AND " + regime.active_sql_clause()   # gekwalificeerd (coin_fires.*): zie helper-docstring
     conn = brain()
     with conn.cursor() as c:
         c.execute("SELECT trading_symbol_id AS sym, datetime, rule, is_executed, best_upside "
-                  "FROM coin_fires WHERE best_upside IS NOT NULL")
+                  f"FROM coin_fires WHERE {where}")
         df = pd.DataFrame(c.fetchall())
     conn.close()
     df["cls"] = df["best_upside"].apply(_cls)
