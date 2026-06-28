@@ -94,6 +94,18 @@ def restore(snap):
         c.close()
 
 
+def _clean_firesinc(frm):
+    """Ruim de firesinc-parquets op die deze test onder zijn eigen venster-START (frm) schreef via de
+    persist-subprocessen — anders blijft er dode cache-litter staan (productie gebruikt frm=None)."""
+    import glob
+    import fires_cache as fc
+    for f in glob.glob(os.path.join(fc.FIRES_DIR, f"firesinc_{SYM}_r*_f{fc._frm_hash(frm)}__*.parquet")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
 def read_fires():
     """Genormaliseerde coin_fires-rijen voor de vergelijking: drop de genegeerde velden, sorteer
     deterministisch op (datetime, rule, is_executed)."""
@@ -152,6 +164,7 @@ def test_split_bit_identity():
         full = read_fires()
     finally:
         restore(snap)
+        _clean_firesinc(frm)
 
     # B MOET incrementeel zijn gegaan (anders test de assert het incrementele pad niet — stille terugval
     # op volledig zou ook slagen). De log bewijst het pad + dat er echt een staart verwerkt is.
@@ -200,14 +213,54 @@ def test_prefix_mismatch_falls_back():
             cur.execute("UPDATE indicators SET value=%s WHERE id=%s", (orig_val, tick["id"]))
         c.close()
         restore(snap)
+        _clean_firesinc(frm)
 
     assert "prefix gewijzigd" in b_out, f"B zag de prefix-wijziging NIET (geen terugval op volledig):\n{b_out}"
     assert incremental == full, "fallback-volledig != referentie-volledig:\n" + _diff(incremental, full)
     print(f"  B prefix-mismatch → volledige fallback: PASS ({len(full)} fires, correct)")
 
 
+def test_cached_fires_incremental_direct():
+    """Directe unit-test van cached_fires_incremental (niet via persist): prime t/m M, dan grow t/m end
+    waarbij end VOORBIJ de series-max ligt (de venster-rand). Eis: grow bit-identiek aan een volledige
+    verse fires()-berekening, geen duplicaten, prefix warm. Bewaakt de invariant 'cache nooit voorbij
+    new_max' — anders zou een venster-caller met to>new_max dubbele trades krijgen (critical-eye #1).
+    Raakt geen coin_-tabellen; schrijft alleen z'n eigen (unieke frm) parquet-lineage + ruimt die op."""
+    import glob
+    from collections import Counter
+    import fires_cache as fc
+    from rule_engine import RuleEngine
+
+    _, hi = _series_bounds()
+    frm = hi - _dt.timedelta(days=14)          # smal, eigen venster
+    M = hi - _dt.timedelta(days=4)
+    end = hi + _dt.timedelta(days=1)           # VOORBIJ de series-max
+    re = RuleEngine(SYM)
+    try:
+        rules = sorted(re.rules.keys())
+        fires_fn = lambda rule, a, b: re.fires(rule, a, b)
+        nm1 = fc.series_max_datetime(SYM, M)
+        fc.cached_fires_incremental(SYM, frm, M, rules, fires_fn, last_max=None, new_max=nm1, force=True)
+        nm2 = fc.series_max_datetime(SYM, end)
+        grow, w2, n2 = fc.cached_fires_incremental(SYM, frm, end, rules, fires_fn, last_max=nm1, new_max=nm2)
+        ref = sorted((d, rule) for rule in rules for d in fires_fn(rule, frm, end))
+    finally:
+        re.close()
+        for f in glob.glob(os.path.join(fc.FIRES_DIR, f"firesinc_{SYM}_r*_f{fc._frm_hash(frm)}__*.parquet")):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    dups = [k for k, c in Counter(grow).items() if c > 1]
+    assert w2 == n2, f"prefix niet warm: {w2}/{n2}"
+    assert not dups, f"duplicaten in grow (cache reikte voorbij new_max): {dups[:5]}"
+    assert grow == ref, f"grow != volledig vers: n_grow={len(grow)} n_ref={len(ref)}"
+    print(f"  C cached_fires_incremental direct (to voorbij new_max): PASS ({len(ref)} fires, warm {w2}/{n2})")
+
+
 if __name__ == "__main__":
     print("test_incremental_refire — orakel-vangnet (NOS)")
+    test_cached_fires_incremental_direct()
     test_split_bit_identity()
     test_prefix_mismatch_falls_back()
     print("ALLE TESTS PASS")

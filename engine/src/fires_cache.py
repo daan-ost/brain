@@ -364,9 +364,17 @@ def cached_fires_incremental(sym, frm, to, rules, fires_fn, last_max, new_max,
         else:
             rule_fires = [(d, int(rule)) for d in fires_fn(rule, frm, to)]
         all_fires.extend(rule_fires)
-        npath = _inc_rule_path(sym, rule, _combine_fp(gate, shared_new, rule_sigs[rule]), frm)
-        keep.add(npath)
-        _write_fires_atomic(rule_fires, npath)
+        # De cache is gesleuteld op de fp t/m new_max → de WEGGESCHREVEN inhoud mag nooit fires VOORBIJ
+        # new_max bevatten, anders laadt een volgende run ze als prefix én plakt ze als staart (> last_max)
+        # erachter → dubbele trades. In correct gebruik (new_max = series_max_datetime(to)) is rule_fires
+        # al ⊆ ≤new_max, dus dit is een no-op; het maakt de invariant zelf-afdwingend, los van hoe `to`
+        # zich tot new_max verhoudt (foot-gun voor een toekomstige venster-caller). De RETOURwaarde blijft
+        # bewust de volledige fires(frm,to). new_max=None (lege reeks) → niets te cachen.
+        if shared_new is not None:
+            cache_content = [x for x in rule_fires if x[0] <= new_max]
+            npath = _inc_rule_path(sym, rule, _combine_fp(gate, shared_new, rule_sigs[rule]), frm)
+            keep.add(npath)
+            _write_fires_atomic(cache_content, npath)
     # verouderde firesinc-fp's van dit (sym, rule, START) opruimen — de prefix van gisteren is vandaag
     # geconsumeerd; alleen de net-geschreven (t/m new_max) blijft. Andere START (ander frm) blijft staan.
     for rule in rules:
