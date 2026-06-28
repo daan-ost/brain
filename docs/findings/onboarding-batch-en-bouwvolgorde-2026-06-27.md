@@ -1,6 +1,8 @@
 # Munt-onboarding batch + bouwvolgorde (Epic H → J → inladen → één run)
 
-**Status:** Vastgelegd 2026-06-27 · **Start:** Epic H eerst (Daans keuze) · Refines de strategie uit
+**Status:** Vastgelegd 2026-06-27 · **INLADEN VOLTOOID 2026-06-28** — alle 8 batch-munten ingeladen +
+geverifieerd, universe = 12. Zie `docs/findings/batch-onboarding-12coins-2026-06-28.md`. Resteert: de
+schone 12-munts-optimalisatie-run (stap 4). · Refines de strategie uit
 [[discovery-consensus-precision]] (consensus dood) + [[coin-regime-gate-plan]] (regime = de hefboom) +
 [[coins-universe-4]] (het inlaad-pad).
 
