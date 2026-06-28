@@ -40,6 +40,37 @@ Daan wil gewone-taal uitleg, geen Engels ML-jargon. Gebruik deze woorden NIET; g
 
 Bij nieuwe Engelse termen: leg ze één keer in gewone taal uit en hou daarna de Nederlandse term aan.
 
+## Munt-onboarding: wat we uit legacy halen
+
+Uit `bot_signals` (legacy) halen we **alleen twee dingen**:
+
+1. **Indicatoren** — via `import_indicators.py <id>`: de 5 tijdreeksen (vzo, phobos, obv-x-value, mfi,
+   volumeud) + de coin-rij. Meer niet.
+2. **min_volume per rule** — uit `bot_signals.wp_trading_symbols_rule` (kolom `settings` → JSON-veld
+   `min_volume`). Dit is het volumeud-drempelwaarde per rule per munt.
+
+Rule-definities (subrules, condities, operators) komen **uitsluitend uit `brain.rules`** — die beheren
+we zelf. `seed_rules.py` NOOIT draaien: die wist alle coin_rule_settings + rules en herseeded.
+
+### min_volume is een per-munt ijk-constante (GEEN optimizer-output)
+
+`min_volume` is de **volume-schaal van de munt**: de normalisator in `relvol = volumeud / min_volume`
+(`volume.py:72`). Daarom varieert het enorm per munt (DOGEAI ~15k, MUMU ~33 mln). Empirisch (4 munten)
+zit min_volume rond het **~90e percentiel** van de volumeud-verdeling: ~7,5–12,7% van de ticks ligt
+erboven.
+
+**Geen enkele routine schrijft `min_volume`** — alleen `seed_rules.py` (init) en een test. De
+optimalisatie-keten tunet het **niet**. Wat je seedt is dus permanent tot je het handmatig wijzigt, en
+het is **vereist vóór** `compute_volume_found.py` (zonder min_volume → `brain_volume_found=0` → géén
+kandidaat-ticks → géén trades).
+
+**Let op — `min_volume=0` crasht de engine** (`volume.py:72` deelt door min_volume zonder nul-guard).
+
+**Munt mét legacy rules 20-23** (MUMU/FARTCOIN/DOGEAI/NOS): kopieer de legacy min_volume per rule.
+**Munt zónder** (bijv. TURBO gebruikte legacy alleen rules 12/29/101): seed min_volume ≈ **p90 van de
+volumeud-reeks** van die munt (zodat ~10% van de ticks erboven ligt, gelijk aan de 4 bestaande munten).
+Niet de legacy min_volume van andere rule-nummers overnemen — die hoort bij andere volume-settings-bands.
+
 ## Rule-discovery filosofie (Daans uitgangspunt — altijd aanhouden)
 
 Nieuwe koop-rules (30, 31, …) vinden is **speelruimte om een portfolio op te bouwen**, geen jacht op

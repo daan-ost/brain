@@ -78,6 +78,17 @@ Per munt het bestaande **inlaad-pad** ([[coins-universe-4]], alle scripts in `en
 6. `sell_promising.py <id> --run` — `coin_moment_sells`.
 7. **yes-marks:** `php artisan trades:auto-ok <id> --sell=8 --run` (auto-ok genereert de yes-marks die
    `rises()` nodig heeft; terugdraaien: `DELETE FROM coin_moment_labels WHERE set_by='auto-ok'`).
+8. **`coin_metrics.py`** (idempotent, alle munten) — vult `coin_daily_metrics`, de invoer die `coin_regime.py`
+   nodig heeft. Draai dit vóór de regime-routine (stap 4-verificatie). **Stond niet in het oorspronkelijke
+   pad — toegevoegd na TURBO** ([[turbo-onboarding-learnings]]).
+
+**Twee valkuilen ontdekt bij TURBO (2026-06-28) — zie `docs/findings/turbo-onboarding-2026-06-28.md`:**
+- **Munt zónder legacy 20-23** (bijv. TURBO): seed in stap 2 `min_volume ≈ p90 van de volumeud-reeks`
+  voor 20-23 (NIET 0 → crasht; NIET de min_volume van andere legacy-rule-nummers). Verifieer ná
+  `compute_volume_found` dat de kandidaat-ratio in 7-10% valt.
+- **`apply.py --activate --write` globaal neveneffect:** reset `coin_strategies` van de discovery-rule
+  naar kopie-rule-20 voor álle munten met een rule-20-rij. Snapshot-diff `coin_strategies` vóór/na en
+  verwijder rijen op munten die je niet inlaadt (bij TURBO kreeg MUMU ongevraagd rijen → hersteld).
 - **Valkuil (belangrijk):** lange persist/apply-taken worden afgebroken bij een user-turn / harness-timeout.
   Draai elke munt-refire via **`run_detached.py`** (overleeft de timeout) en poll; apply per rule is
   idempotent + hervatbaar. Reken op ~12-15 min koude refire per munt (Epic I versnelt pas de dagelijkse
