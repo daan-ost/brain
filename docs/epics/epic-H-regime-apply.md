@@ -1,7 +1,10 @@
 # EPIC H: Regime operationaliseren — actieve periode als bron-van-waarheid
 
-> **Status:** Plan (nog niets gebouwd). Bouwt op [epic-G](epic-G-coin-regime-gate.md) (de gevalideerde
-> aan/uit-gate) en de findings/benchmark daar. Skill: [[brain-regime-gate]]. Doc: [[docs/regime-gate.md]].
+> **Status:** Plan — BOUW-KLAAR gemaakt 2026-06-27 (zie **Build-ready details** hieronder: exacte file:regels,
+> gate-algoritme, cache-versie-injectie + verplichte tests, geverifieerd tegen de huidige code). **Start hier**
+> (Daans keuze: H vóór J vóór munten inladen — zie [[../findings/onboarding-batch-en-bouwvolgorde-2026-06-27.md]]).
+> Bouwt op [epic-G](epic-G-coin-regime-gate.md) (de gevalideerde aan/uit-gate) + de benchmark daar.
+> Skill: [[brain-regime-gate]]. Doc: [[docs/regime-gate.md]].
 
 ## Epic Specification
 
@@ -80,6 +83,70 @@ winst i.p.v. verstopt.
 | 7 | Volgorde-afhankelijkheid (feedback-lus) | Het regime hangt af van trades; rules hangen (na filter) af van het regime. Discipline: **(1) trades → (2) regime berekenen → (3) rules tunen op actieve trades → (4) re-fire → (5) regime herberekenen.** De routine-keten serialiseert dit; documenteer in [[brain-routines]]. |
 | 8 | **Cache-/fingerprint-interactie (NIEUW na de snelheidswijziging)** | Het filter zit op de **consumptie-laag** (`load_trades`/`load_all_fires`), los van de re-fire-cache (`fires_cache.py`) die ALLE trades blijft berekenen. **Maar** elke cache/fingerprint **downstream** van `load_trades` moet de **regime-versie** kennen, anders maskeert een oude cache de filter: (a) `_long_fingerprint(sym)` → anders serveert de long-cache een verouderde actieve-set; (b) `input_fingerprint()` → anders draait de keten niet opnieuw als alléén het regime wijzigt; (c) de groep-/validatie-cache uit het schaalplan idem. Regime-versie = bv. `MAX(computed_at)` of een checksum van `coin_regime` per munt. |
 
+## Build-ready details (geverifieerd 2026-06-27 tegen de huidige code — leidend bij conflict met regelnummers hierboven)
+
+### A. Het gate-algoritme dat `coin_regime.py` EXACT moet spiegelen
+Bron-van-waarheid = `www/app/Livewire/Coins/Weekly.php::applyGate()` (regel 74-117) + de constants (regel 37-41):
+`GATE_ROLL_WEEKS=4`, `GATE_STOP_FLOOR=20.0`, `GATE_STOP_CONFIRM=2`, `GATE_RESTART_FLOOR=30.0`, `GATE_RESTART_CONFIRM=3`.
+
+Algoritme per munt, chronologisch over de weken (ISO-week, `YEARWEEK(date,3)`, maandag-start):
+```
+state='on'; below=0; above=0; hist=[]; started=false
+voor elke week w (op volgorde):
+  als niet started: als w heeft trades -> started=true; anders regime='pre', skip
+  hist.append(w.week_pl); als len(hist)>4: hist.pop(0); roll=sum(hist)
+  als state=='on':  below = (roll<20 ? below+1 : 0); above=0; als below>=2: state='off'; below=0
+  anders:           above = (roll>=30 ? above+1 : 0); below=0; als above>=3: state='on'; above=0
+  w.regime=state
+```
+- `week_pl` = `SUM(profit_loss)` van de executed trades in die week. Python moet dezelfde week-aggregatie op
+  `coin_fires` doen als `Weekly.weeklyTradeResult()`: `YEARWEEK(datetime,3)`, `SUM(profit_loss)` per (coin, week),
+  `is_executed=1 AND profit_loss IS NOT NULL`.
+- **Leak-vrij by construction:** de stand van week T gebruikt alleen `hist` (weken ≤ T). Niet vooruitkijken.
+- **Inactieve munten (beslissing #4):** als een munt op `off` staat zijn er live geen echte trades → voed `week_pl`
+  met het **schaduw-resultaat** (`coin_moment_sells`, sell-engine zonder geld). Stop op echt resultaat, herstart op
+  schaduw. In de backtest/eerste-vulling bestaan er trades over de hele historie, dus daar = echte `coin_fires`.
+- **Opslag:** groepeer aaneengesloten gelijke-`state`-weken tot intervallen → rijen `coin_regime`
+  (`period_from`=maandag eerste week, `period_to`=zondag laatste week, `state`, `reason`, `rolling_result`,
+  `computed_at`). `pre`-weken vóór de eerste actieve periode: geen rij (munt bestond/handelde nog niet).
+- **Bit-gelijk aan de UI-streep:** een test moet bewijzen dat `coin_regime` per week dezelfde `on/off` geeft als
+  `Weekly.applyGate` op de 4 huidige munten (zelfde constants, zelfde week-pl-bron).
+
+### B. De cache-versie — EXACT waar (kern van beslissing #8; deze laag is 2026-06-26 gebouwd, dus regels kloppen nu)
+Het filter zit op de **consumptie-laag**, maar drie caches downstream maskeren 'm als de **regime-versie** er niet in zit.
+Definieer in `regime.py`: `regime_ver(sym)` = `SELECT COALESCE(SUM(CRC32(CONCAT(period_from,'|',period_to,'|',state))),0)
+FROM coin_regime WHERE trading_symbol_id=%s` (per munt) en `regime_ver_global()` = `SELECT COUNT(*) n, COALESCE(MAX(computed_at),'') mx FROM coin_regime`. Injecteer:
+
+1. **`opt_lib._long_fingerprint(sym)`** — `engine/src/opt_lib.py:159`. Huidige return (≈ regel 172):
+   `hashlib.md5(f"{mfp}|long:{_LONG_CODE_VER}:{','.join(CALC_COLS)}|fires:{t['n']}:{t['mx']}:{t['cx']}".encode())`
+   → voeg `|regime:{regime_ver(sym)}` toe. Zónder: de per-munt long-cache (`load_long_cached`) serveert een
+   verouderde actieve-set na een regime-wijziging.
+2. **`routines.input_fingerprint(...)`** — `engine/src/routines.py:49`, sig-assemblage regel 102-108. Voeg toe vóór de
+   `return`: `sig += f"#regime:{n}:{mx}"` (uit `regime_ver_global()`). Zónder: de keten draait NIET opnieuw als alléén
+   het regime wijzigt → het nieuwe actieve-venster wordt nooit doorgerekend (de "data-veranderd"-gate skipt).
+3. **Schaalplan long-/groep-cache** — leunt volledig op `_long_fingerprint`, dus gedekt zodra punt 1 klopt.
+   **`fires_cache.py`** (`cached_fires_per_rule` / `cached_fires_incremental`) krijgt het **NIET**: dat is de re-fire
+   (upstream, berekent ALLE trades; de gate heeft de volle historie nodig). Expliciet niet aankoppelen.
+4. **Epic J's rq2-cache** (volgt ná H): ook regime-versie in de sleutel — dáárom H vóór J.
+5. **Eenmalige invalidatie:** bump `_LONG_CODE_VER` (`opt_lib.py:156`, "long-v1"→"v2") en `_FIRES_CODE_VER`
+   (`fires_cache.py`, nu "fires-v3") bij de eerste H-deploy zodat caches van vóór de regime-component verdwijnen.
+
+### C. De trade-loaders + het filter — EXACT waar
+- `opt_lib.load_trades()` — `engine/src/opt_lib.py:97`; de SELECT op regel 105-106 (`FROM coin_fires WHERE is_executed=1
+  AND profit_loss IS NOT NULL`). Voeg default de actieve-periode-filter toe (`regime.active_sql_clause()`), param
+  `include_inactive=False`.
+- `opt_lib.load_all_fires()` — `engine/src/opt_lib.py:494`; idem.
+- Eigen loaders die apart langs moeten (elk hun eigen coin_fires-SELECT): `sell_tuning.py:85`, `subrule_power.py:52`,
+  `gate_window.py:56`.
+- Helper `engine/src/regime.py`: `is_active(sym, dt)`, `active_filter(df, sym_col, dt_col)`, en
+  `active_sql_clause(alias)` (de herbruikbare WHERE-snippet) — één bron voor alle loaders.
+
+### D. Verplichte cache-coherentie-test (de borging tegen "verouderde cache maskeert het filter")
+`engine/src/test_regime_filter.py` (plain assert): (1) verzet een `coin_regime`-interval (munt X, een week → inactive);
+(2) assert `_long_fingerprint(X)` verandert; (3) assert `input_fingerprint(with_fires=True)` verandert; (4) assert
+`load_trades()` levert minder trades en `load_trades(include_inactive=True)` weer alle; (5) herstel in `finally`.
+Plus `test_coin_regime.py`: `coin_regime` == `Weekly.applyGate` per week op de 4 huidige munten (bit-gelijk).
+
 ## Features (5)
 
 ### 1. Opslag `coin_regime` + de gate-routine
@@ -137,11 +204,16 @@ winst van het stoppen direct leesbaar is.
 
 ## Aanbevolen Implementatie Volgorde
 
-1. Feature 1 (opslag + routine) — eerst de bron-van-waarheid.
-2. Feature 2 (helper) — de gedeelde lees-laag.
-3. Feature 3 (engine-filter) — optimalisatie op actieve trades.
-4. Feature 4 (schermen) — zichtbaar maken.
-5. Feature 5 (validatie blijft mee-lopen).
+Volg per stap de **Build-ready details** (sectie A-D) voor exacte file:regels + snippets.
+1. **Migratie + `coin_regime.py`** (Feature 1) met het gate-algoritme uit **sectie A** (spiegelt `Weekly.applyGate`
+   bit-gelijk). Test `test_coin_regime.py` (== UI-streep op 4 munten) vóór je verder gaat.
+2. **`regime.py` helper** (Feature 2) — `is_active`/`active_filter`/`active_sql_clause` + `regime_ver`/`regime_ver_global`
+   (sectie B+C). De helper is de enige bron voor zowel het filter als de cache-versie.
+3. **Engine-filter + cache-versie** (Feature 3) — het filter in de loaders (**sectie C**) ÉN de regime-versie in
+   `_long_fingerprint` + `input_fingerprint` + de code-versie-bumps (**sectie B**). Sluit af met de verplichte
+   `test_regime_filter.py` (**sectie D**) — dít is de borging; niet mergen zonder groen.
+4. **Routine `coin-regime`** (Feature 1, ongegate wekelijks) — pas aanzetten als 1-3 groen zijn.
+5. **Schermen** (Feature 4) + **validatie** (Feature 5) blijft mee-lopen.
 
 ## Nieuwe bestanden aan te maken
 
