@@ -30,7 +30,8 @@ import fires_cache
 # Multi-horizon upside checkpoints (minutes) shown per buy-moment in the Promising labeler.
 HORIZONS = [5, 10, 15, 30, 45, 60]
 
-FORCE = "--force" in sys.argv                     # overrule skip-on-unchanged (A1)
+FORCE = "--force" in sys.argv                     # overrule skip-on-unchanged (A1) + koude cache
+FULL = "--full" in sys.argv                       # forceer het VOLLEDIGE (niet-incrementele) fires-pad
 # Positionele args: alles wat geen --flag is (zodat persist_to_brain.py 244 --force niet --force als FROM ziet)
 _pos = [a for a in sys.argv[1:] if not a.startswith("--")]
 SYM = int(_pos[0]) if len(_pos) > 0 else 2525
@@ -169,20 +170,28 @@ def horizons_at(dt, buy):
     return out, lowest10
 
 
-def _compute_rule_fires(rule):
-    return list(rule_eng.fires(rule, FROM_dt, TO_dt))
-
-
-# Plan A+B — memoïseer de fire-momenten PER RULE op een fingerprint van ALLEEN de fires-bepalende inputs
-# (indicators + die rule's definitie + volledige min_volume), NIET de verkoop-instellingen. De discovery-
-# rules (ongepoort, elke tick) zijn ~90% van de refire. Plan A: een sell-tuning-refire wijzigt alleen
-# sl_settings → álle rules uit cache. Plan B (per-rule): één koop-rule wijzigen (bv. auto-apply scherpt
-# rule 21 aan) re-firet ALLEEN die rule; de zware discovery-rules blijven warm. --force (en elke
-# rule/indicator/min_volume-wijziging via de fingerprint) omzeilt de cache. Bit-identiek bewezen in
-# test_fires_cache.py. Zie docs/findings/refire-speedup-plan-2026-06-26.md.
-all_fires, _n_warm, _n_rules = fires_cache.cached_fires_per_rule(
-    SYM, FROM_dt, TO_dt, sorted(rule_eng.rules.keys()), _compute_rule_fires, force=FORCE)
-_fires_from_cache = _n_warm == _n_rules
+# epic-I — INCREMENTELE fires: bij dagelijkse aangroei is alleen het staartje nieuw; de prefix-fires
+# (t/m de vorige MAX) komen uit cache, alleen de staart (> last_max) wordt herberekend. De discovery-
+# rules (ongepoort, elke tick) zijn ~99% van de refire-tijd (gemeten) → de fires zijn de ENIGE hefboom;
+# de rest (sell, dedup, periods, DELETE+INSERT) blijft VOLLEDIG en is bit-identiek by construction.
+# Keuze incrementeel-vs-volledig op de DATA-prefix-checksum: match (data t/m last_max onveranderd) →
+# incrementeel; mismatch / geen state / --full / --force → volledig. cached_fires_incremental subsumeert
+# Plan A/B (geen nieuwe data + ongewijzigde rule = lege staart = volledige cache-hit). Bit-identiek
+# bewezen in test_incremental_refire.py. Zie docs/epics/epic-I-incremental-refire.md.
+new_max = fires_cache.series_max_datetime(SYM, TO_dt)
+last_max = _prefix_cksum_prev = None
+with dst.cursor() as c:
+    c.execute("SELECT last_max_datetime, prefix_checksum FROM coin_refire_state WHERE trading_symbol_id=%s", (SYM,))
+    _st = c.fetchone()
+    if _st:
+        last_max, _prefix_cksum_prev = _st["last_max_datetime"], _st["prefix_checksum"]
+incremental = (not FULL and not FORCE and last_max is not None and _prefix_cksum_prev
+               and fires_cache.prefix_indicators_checksum(SYM, last_max) == _prefix_cksum_prev)
+_fires_fn = lambda rule, a, b: rule_eng.fires(rule, a, b)
+all_fires, _n_warm, _n_rules = fires_cache.cached_fires_incremental(
+    SYM, FROM_dt, TO_dt, sorted(rule_eng.rules.keys()), _fires_fn,
+    last_max=(last_max if incremental else None), new_max=new_max, force=FORCE)
+_n_tail = sum(1 for d, _ in all_fires if last_max is not None and d > last_max) if incremental else None
 
 # legacy reference (offline): (rule, datetime) -> result, profit_loss
 leg = legacy()
@@ -293,11 +302,21 @@ with dst.cursor() as c:
 
 dst.commit()
 # A1: leg de fingerprint vast na succesvolle refire — volgende run skipt als niets wijzigt.
+# epic-I: leg ook last_max_datetime + prefix_checksum (t/m new_max) vast — de grens + handtekening die
+# de VOLGENDE refire gebruikt om aangroei (incrementeel) van een data-wijziging (volledig) te scheiden.
+_new_prefix_cksum = fires_cache.prefix_indicators_checksum(SYM, new_max) if new_max is not None else None
 with dst.cursor() as c:
-    c.execute("INSERT INTO coin_refire_state (trading_symbol_id, fingerprint, last_refired_at) "
-              "VALUES (%s, %s, NOW()) ON DUPLICATE KEY UPDATE "
-              "fingerprint=VALUES(fingerprint), last_refired_at=VALUES(last_refired_at)", (SYM, fp_now))
+    c.execute("INSERT INTO coin_refire_state (trading_symbol_id, fingerprint, last_refired_at, "
+              "last_max_datetime, prefix_checksum) VALUES (%s, %s, NOW(), %s, %s) "
+              "ON DUPLICATE KEY UPDATE fingerprint=VALUES(fingerprint), last_refired_at=VALUES(last_refired_at), "
+              "last_max_datetime=VALUES(last_max_datetime), prefix_checksum=VALUES(prefix_checksum)",
+              (SYM, fp_now, new_max, _new_prefix_cksum))
 dst.commit()
+if incremental:
+    print(f"refire-modus: incrementeel — {_n_tail} nieuwe fire-momenten na {last_max} (prefix uit cache)")
+else:
+    print(f"refire-modus: volledig" + (" (--full/--force)" if (FULL or FORCE) else
+          (" (prefix gewijzigd)" if last_max is not None else " (geen eerdere staat)")))
 print(f"=== persist_to_brain (rebuild A) — {SYMBOL} ({SYM}) ===")
 print(f"periods: {len(periods)}  |  fires: {len(all_fires)}  "
       f"({n_exec} executed / {n_shadow} shadow / {n_cancelled} afgeblazen door koop-bevestiging "

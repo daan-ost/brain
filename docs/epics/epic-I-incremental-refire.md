@@ -1,7 +1,31 @@
 # EPIC I: Incrementele refire (alleen het nieuwe staartje herberekenen)
 
-**Status:** Approved, te bouwen in een aparte sessie · **Datum opgesteld:** 2026-06-26 · Refines: schaalplan
+**Status:** GEBOUWD (Feature 2+3) — 2026-06-27 · **Datum opgesteld:** 2026-06-26 · Refines: schaalplan
 ([[../findings/optimize-scaling-plan-2026-06-25.md]]) + refire-speedup ([[../findings/refire-speedup-plan-2026-06-26.md]])
+
+## Gebouwd (2026-06-27)
+
+**Fase 0-meting wijzigde de aanpak.** Een refire is voor **99,8%** discovery-fires (gemeten, NOS 30d);
+de promising-scan (0,2%) + verkoop/dedup (0,0%) zijn verwaarloosbaar. Daarom is **alleen de fires-
+berekening incrementeel gemaakt**; `persist_to_brain` herbouwt de rest (sell, dedup, periods,
+coin_fires/coin_periods) gewoon VOLLEDIG — bit-identiek by construction. **Feature 2c (incrementele sell +
+behoud coin_fires<T_safe) is daarmee vervallen** (geen meetbare winst), en de twee grens-aanscherpingen
+(open-positie-init, gedeelde periode-grens) zijn niet meer nodig — er wordt niets behouden, alles wordt
+herbouwd bovenop een gecachete fires-prefix.
+
+| Onderdeel | Bestand |
+|---|---|
+| Feature 2a — kolommen `last_max_datetime` + `prefix_checksum` | `www/database/migrations/2026_06_27_010000_add_incremental_refire_state.php` |
+| Feature 2b — prefix-bewuste fires-cache (`prefix_indicators_checksum`, `series_max_datetime`, `cached_fires_incremental`) | `engine/src/fires_cache.py` |
+| Feature 2a/2c — keuze incrementeel↔volledig op prefix-checksum, `--full` flag, modus-log, state-write | `engine/src/persist_to_brain.py` |
+| Feature 3 — orakel-vangnet (split bit-identiek + B-pad incrementeel + prefix-mismatch-fallback) | `engine/src/test_incremental_refire.py` |
+
+`brain_volume_found` (in de prefix-checksum) is look-back-stabiel → daily-append gaat in productie écht
+incrementeel. De daily routine roept `persist_to_brain.py <coin>` zonder venster aan (consistente
+cache-lineage). Feature 1 (incrementele ingest) NIET gebouwd — optioneel, afhankelijk van de live-databron.
+
+---
+
 
 ## Why this exists
 

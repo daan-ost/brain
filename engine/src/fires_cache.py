@@ -63,15 +63,21 @@ def fires_fingerprint(sym, frm, to, gate_col="brain_volume_found"):
     return hashlib.md5(sig.encode()).hexdigest()[:16]
 
 
-def _ind_crs_sig(c, sym, gate, frm, to):
+def _ind_crs_sig(c, sym, gate, frm, to, up_to=None):
     """De GEDEELDE fires-inputs (gelijk voor elke rule van de munt): indicators-reeks + de VOLLEDIGE
     coin_rule_settings.min_volume. De volledige min_volume MOET mee — niet alleen die van de rule zelf —
     want rule_engine.relvol_base = min(min_volume over ALLE rules); een min_volume-wijziging in een andere
-    rule verschuift de relvol-waarden van deze rule. Geeft (ind_part_str, crs_part_str)."""
+    rule verschuift de relvol-waarden van deze rule. Geeft (ind_part_str, crs_part_str).
+
+    up_to (epic-I): beperk de indicators-checksum tot datetime <= up_to (de stabiele PREFIX). Zo krijgt
+    de prefix-cache van een rule een eigen content-key; de volgende refire vindt 'm terug zolang de data
+    t/m up_to onveranderd is. up_to=None → de volledige reeks (ongewijzigd gedrag)."""
+    cond = "AND datetime <= %s" if up_to is not None else ""
+    params = (sym, up_to) if up_to is not None else (sym,)
     c.execute(f"SELECT COUNT(*) n, COALESCE(MAX(datetime),'') mx, "
               f"COALESCE(SUM(CRC32(CONCAT(indicator,'|',datetime,'|',value,'|',"
               f"COALESCE(price,''),'|',{gate}))),0) cx "
-              "FROM indicators WHERE trading_symbol_id=%s AND value IS NOT NULL", (sym,))
+              f"FROM indicators WHERE trading_symbol_id=%s AND value IS NOT NULL {cond}", params)
     ind = c.fetchone()
     c.execute("SELECT COUNT(*) n, COALESCE(SUM(CRC32(CONCAT(rule_number,'|',COALESCE(min_volume,'')))),0) cx "
               "FROM coin_rule_settings WHERE trading_symbol_id=%s", (sym,))
@@ -79,15 +85,16 @@ def _ind_crs_sig(c, sym, gate, frm, to):
     return (f"win:{frm}:{to}|ind:{ind['n']}:{ind['mx']}:{ind['cx']}|crs:{crs['n']}:{crs['cx']}")
 
 
-def rule_fires_fingerprint(sym, rule, frm, to, gate_col="brain_volume_found"):
+def rule_fires_fingerprint(sym, rule, frm, to, gate_col="brain_volume_found", up_to=None):
     """Per-rule fires-fingerprint: de gedeelde inputs (indicators + volledige min_volume) + ALLEEN de
     definitie van DEZE rule. Een banden-/subregel-wijziging in een andere rule verandert deze fp dus NIET
     → die andere rule re-firet, deze blijft warm. Een min_volume-wijziging (waar dan ook) verandert wél
-    alle per-rule fp's (relvol_base-koppeling). Sell-instellingen/labels zitten er bewust niet in."""
+    alle per-rule fp's (relvol_base-koppeling). Sell-instellingen/labels zitten er bewust niet in.
+    up_to (epic-I): de prefix-variant (indicators t/m up_to) — zie _ind_crs_sig."""
     gate = gate_col if gate_col in ("brain_volume_found", "volume_found") else "brain_volume_found"
     conn = brain()
     with conn.cursor() as c:
-        shared = _ind_crs_sig(c, sym, gate, frm, to)
+        shared = _ind_crs_sig(c, sym, gate, frm, to, up_to=up_to)
         c.execute("SELECT COUNT(*) n, COALESCE(SUM(CRC32(CONCAT(rule_number,'|',sort,'|',indicator,'|',"
                   "subrulename,'|',COALESCE(def1_value,''),'|',COALESCE(b_min,''),'|',COALESCE(b_max,''),"
                   "'|',COALESCE(value_condition,''),'|',COALESCE(source,'')))),0) cx "
@@ -216,6 +223,154 @@ def cached_fires_per_rule(sym, frm, to, rules, compute_rule_fn, gate_col="brain_
     for rule in rules:
         pat = os.path.join(FIRES_DIR, f"fires_{int(sym)}_r{int(rule)}_w{wh}__*.parquet")
         for old in glob.glob(pat):
+            if old not in keep:
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+    all_fires.sort()
+    return all_fires, n_warm, len(rules)
+
+
+# ===================== epic-I: incrementele (aangroei-bewuste) fires-cache =====================
+# De per-rule cache hierboven sleutelt op de checksum van de HELE reeks → nieuwe data verschuift de
+# checksum → alle rules koud (~13 min). Bij dagelijkse AANGROEI verandert de oude data niet; alleen
+# een staartje komt erbij. cached_fires_incremental hergebruikt de prefix-fires (t/m last_max) uit de
+# cache van de vorige run en berekent alleen de staart (> last_max). Bit-identiek aan een volledige
+# fires()-lus: de fire-uitkomst van een prefix-tick hangt alleen van zijn look-back af (data ≤ tick ≤
+# last_max), die ongewijzigd is; de staart-ticks zien de volle reeks in geheugen. Bewezen in
+# test_incremental_refire.py.
+
+
+def prefix_indicators_checksum(sym, up_to, gate_col="brain_volume_found"):
+    """PURE data-checksum van de indicators-prefix t/m up_to (count + max + CRC32-som). GEEN rule-def,
+    GEEN min_volume, GEEN venster — alleen: 'is de ruwe data t/m up_to onveranderd?'. persist_to_brain
+    bewaart 'm (t/m new_max) in coin_refire_state en vergelijkt 'm de volgende run (t/m last_max): match
+    → aangroei → incrementeel; mismatch → oude data gewijzigd/herladen → volledige refire."""
+    gate = gate_col if gate_col in ("brain_volume_found", "volume_found") else "brain_volume_found"
+    conn = brain()
+    with conn.cursor() as c:
+        c.execute(f"SELECT COUNT(*) n, COALESCE(MAX(datetime),'') mx, "
+                  f"COALESCE(SUM(CRC32(CONCAT(indicator,'|',datetime,'|',value,'|',"
+                  f"COALESCE(price,''),'|',{gate}))),0) cx "
+                  "FROM indicators WHERE trading_symbol_id=%s AND value IS NOT NULL AND datetime <= %s",
+                  (sym, up_to))
+        r = c.fetchone()
+    conn.close()
+    return hashlib.md5(f"pfx|gate:{gate}|n:{r['n']}|mx:{r['mx']}|cx:{r['cx']}".encode()).hexdigest()[:16]
+
+
+def series_max_datetime(sym, to=None):
+    """De laatste gedekte tick (MAX(datetime), value IS NOT NULL). to (exclusief, zoals fires()) begrenst
+    'm voor een venster-refire. = de new_max-grens: t/m hier is de prefix van de volgende run gedekt."""
+    cond = "AND datetime < %s" if to is not None else ""
+    params = (sym, to) if to is not None else (sym,)
+    conn = brain()
+    with conn.cursor() as c:
+        c.execute(f"SELECT MAX(datetime) mx FROM indicators WHERE trading_symbol_id=%s "
+                  f"AND value IS NOT NULL {cond}", params)
+        mx = c.fetchone()["mx"]
+    conn.close()
+    return mx
+
+
+def _write_fires_atomic(fires, path):
+    """Schrijf de (datetime, rule)-lijst atomisch weg als parquet (tmp → os.replace)."""
+    df = pd.DataFrame(fires, columns=["datetime", "rule"])
+    fd, tmp = tempfile.mkstemp(dir=FIRES_DIR, suffix=".parquet.tmp")
+    os.close(fd)
+    try:
+        df.to_parquet(tmp, index=False)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _frm_hash(frm):
+    """Hash van ALLEEN de venster-START. Het venster-EIND mag NIET in de incrementele cache-key: dat
+    eind groeit elke run (aangroei), terwijl de prefix juist hergebruikt moet worden. Identificatie van
+    een prefix = (start, gedekte-max), waar de gedekte-max in de fp zit (via up_to). Isoleert wel
+    verschillende starts (productie frm=None naast een test met vaste frm)."""
+    return hashlib.md5(f"{frm}".encode()).hexdigest()[:8]
+
+
+def _inc_rule_path(sym, rule, fp, frm):
+    """Per-rule incrementele cache (eigen prefix `firesinc_`, los van de Plan-B `fires_`-familie).
+    Filename: alleen de venster-START + de content-fp (die de gedekte-max encodeert)."""
+    return os.path.join(FIRES_DIR, f"firesinc_{int(sym)}_r{int(rule)}_f{_frm_hash(frm)}__{fp}.parquet")
+
+
+def _rule_def_sig(c, rule):
+    """De per-rule definitie-component van de fp (goedkoop: enkele subrule-rijen). EXACT het rule-deel
+    uit rule_fires_fingerprint, zodat de samengestelde fp ermee overeenkomt."""
+    c.execute("SELECT COUNT(*) n, COALESCE(SUM(CRC32(CONCAT(rule_number,'|',sort,'|',indicator,'|',"
+              "subrulename,'|',COALESCE(def1_value,''),'|',COALESCE(b_min,''),'|',COALESCE(b_max,''),"
+              "'|',COALESCE(value_condition,''),'|',COALESCE(source,'')))),0) cx "
+              "FROM rules WHERE active=1 AND rule_number=%s "
+              "AND (rule_number IN (20,21,22,23) OR source LIKE 'discovery%%')", (rule,))
+    rd = c.fetchone()
+    return f"rule:{int(rule)}:{rd['n']}:{rd['cx']}"
+
+
+def _combine_fp(gate, shared, rule_sig):
+    """Stel de per-rule fp samen uit de (1× berekende) gedeelde sig + de rule-def sig. EXACT hetzelfde
+    formaat als rule_fires_fingerprint → de fp's zijn uitwisselbaar (de cache blijft consistent)."""
+    return hashlib.md5(f"{_FIRES_CODE_VER}|gate:{gate}|{shared}|{rule_sig}".encode()).hexdigest()[:16]
+
+
+def cached_fires_incremental(sym, frm, to, rules, fires_fn, last_max, new_max,
+                             gate_col="brain_volume_found", force=False):
+    """all_fires (gesorteerde (datetime, rule)-lijst) via aangroei. Per rule:
+      - cache-hit op de prefix-fp (rule-def + data t/m last_max) → laad prefix + bereken staart (> last_max);
+      - miss (eerste run / rule of data gewijzigd / opgeruimd) of last_max=None / force → bereken vers volledig.
+    fires_fn(rule, w_frm, w_to) geeft de fire-datetimes van één rule over [w_frm, w_to) (= rule_engine.fires).
+    Schrijft per rule de NIEUWE volledige fires weg onder de fp t/m new_max — de prefix van de volgende run.
+    Geeft (all_fires, n_prefix_warm, n_rules)."""
+    os.makedirs(FIRES_DIR, exist_ok=True)
+    for stale in glob.glob(os.path.join(FIRES_DIR, "*.parquet.tmp")):
+        try:
+            os.remove(stale)
+        except OSError:
+            pass
+    gate = gate_col if gate_col in ("brain_volume_found", "volume_found") else "brain_volume_found"
+    # De ZWARE gedeelde indicators-CRC32 (1 scan over de hele prefix, ~0,9s op NOS / ~2,5s op FARTCOIN)
+    # 1× per grens berekenen i.p.v. per rule — anders 2×N volledige scans (16 op NOS ≈ 14s verspild).
+    # Rule-def is goedkoop (enkele rijen). De fp blijft bit-identiek aan rule_fires_fingerprint.
+    conn = brain()
+    with conn.cursor() as c:
+        shared_prefix = _ind_crs_sig(c, sym, gate, frm, last_max, up_to=last_max) if last_max is not None else None
+        shared_new = _ind_crs_sig(c, sym, gate, frm, new_max, up_to=new_max) if new_max is not None else None
+        rule_sigs = {rule: _rule_def_sig(c, rule) for rule in rules}
+    conn.close()
+    all_fires = []
+    keep = set()
+    n_warm = 0
+    for rule in rules:
+        prefix = None
+        if last_max is not None and not force and shared_prefix is not None:
+            ppath = _inc_rule_path(sym, rule, _combine_fp(gate, shared_prefix, rule_sigs[rule]), frm)
+            if os.path.exists(ppath):
+                df = pd.read_parquet(ppath)
+                prefix = [(d.to_pydatetime(), int(r)) for d, r in zip(df["datetime"], df["rule"])]
+        if prefix is not None:
+            # prefix bevat fires t/m last_max (inclusief); de staart is strikt erna
+            tail = [(d, int(rule)) for d in fires_fn(rule, last_max, to) if d > last_max]
+            rule_fires = prefix + tail
+            n_warm += 1
+        else:
+            rule_fires = [(d, int(rule)) for d in fires_fn(rule, frm, to)]
+        all_fires.extend(rule_fires)
+        npath = _inc_rule_path(sym, rule, _combine_fp(gate, shared_new, rule_sigs[rule]), frm)
+        keep.add(npath)
+        _write_fires_atomic(rule_fires, npath)
+    # verouderde firesinc-fp's van dit (sym, rule, START) opruimen — de prefix van gisteren is vandaag
+    # geconsumeerd; alleen de net-geschreven (t/m new_max) blijft. Andere START (ander frm) blijft staan.
+    for rule in rules:
+        for old in glob.glob(os.path.join(FIRES_DIR, f"firesinc_{int(sym)}_r{int(rule)}_f{_frm_hash(frm)}__*.parquet")):
             if old not in keep:
                 try:
                     os.remove(old)
