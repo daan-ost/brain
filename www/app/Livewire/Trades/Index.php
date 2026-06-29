@@ -297,12 +297,11 @@ class Index extends Component
         ];
         $promPill['pct'] = $promPill['n'] > 0 ? $promPill['traded'] / $promPill['n'] * 100 : 0.0;
 
-        // Σ-alles: als activeOnly aan staat, toon het verschil (de bespaarde verliezers).
-        // Bouw allQ met dezelfde filters als baseQuery() ZONDER regime-filter, zodat het vergelijk
-        // appels-met-appels is bij elke outcome-filter.
+        // Als "Alle periodes" aan staat: toon hoeveel inactieve trades er nu bij zitten.
+        // Bouw een actief-only-query om het verschil te berekenen.
         $regimeSaving = null;
-        if ($this->activeOnly) {
-            $allQ = CoinFire::query()
+        if (! $this->activeOnly) {
+            $actQ = CoinFire::query()
                 ->when($this->coin !== '', fn (Builder $q) => $q->where('trading_symbol_id', (int) $this->coin))
                 ->when($this->rule !== '', fn (Builder $q) => $q->where('rule', (int) $this->rule))
                 ->when($this->outcome === 'goed', fn (Builder $q) => $q->where('is_executed', true)->where('profit_loss', '>=', 3))
@@ -312,14 +311,13 @@ class Index extends Component
                 ->when($this->outcome === '', fn (Builder $q) => $q->where('is_executed', true))
                 ->when($this->from !== '', fn (Builder $q) => $q->whereDate('datetime', '>=', $this->from))
                 ->when($this->to !== '', fn (Builder $q) => $q->whereDate('datetime', '<=', $this->to));
+            CoinRegime::scopeActiveOnly($actQ);
+            $nActive = (clone $actQ)->count();
             $regimeSaving = [
-                'n_all' => (clone $allQ)->count(),
-                'pl_all' => (float) (clone $allQ)->sum('profit_loss'),
-                'slecht_all' => (clone $allQ)->where('profit_loss', '<', 0)->count(),
+                'n_filtered' => $totals['n'] - $nActive,
+                'pl_all' => (float) $totals['pl'],
+                'slecht_saved' => $pills['slecht']['n'] - (int) (clone $actQ)->where('profit_loss', '<', 0)->count(),
             ];
-            $regimeSaving['n_filtered'] = $regimeSaving['n_all'] - $totals['n'];
-            $regimeSaving['pl_saved'] = $totals['pl'] - $regimeSaving['pl_all'];
-            $regimeSaving['slecht_saved'] = $regimeSaving['slecht_all'] - $pills['slecht']['n'];
         }
 
         // tab-specifieke data: alleen ophalen wat de tab nodig heeft

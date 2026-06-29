@@ -1,8 +1,11 @@
 # EPIC H: Regime operationaliseren — actieve periode als bron-van-waarheid
 
-> **Status:** Plan — BOUW-KLAAR gemaakt 2026-06-27 (zie **Build-ready details** hieronder: exacte file:regels,
-> gate-algoritme, cache-versie-injectie + verplichte tests, geverifieerd tegen de huidige code). **Start hier**
-> (Daans keuze: H vóór J vóór munten inladen — zie [[../findings/onboarding-batch-en-bouwvolgorde-2026-06-27.md]]).
+> **Status:** **Afgerond** — gebouwd 2026-06-28 (geverifieerd 2026-06-29). Alle 5 features draaien:
+> migratie `2026_06_28_010000_create_coin_regime_table.php` + `coin_regime.py` (tabel gevuld, 11 munten) +
+> routine `routine_coin_regime`; helper `regime.py` + `CoinRegime.php`; filter in `opt_lib.load_trades()`/
+> `load_all_fires()` via `regime.active_sql_clause()` (`include_inactive=True` laadt alles); regime-versie in
+> `_long_fingerprint` (`_LONG_CODE_VER="long-v2"`) + `input_fingerprint`; Trades-scherm toggle. De
+> **Build-ready details** A-D hieronder zijn nu de implementatie-referentie. Validatie: `regime_validate.py`.
 > Bouwt op [epic-G](epic-G-coin-regime-gate.md) (de gevalideerde aan/uit-gate) + de benchmark daar.
 > Skill: [[brain-regime-gate]]. Doc: [[docs/regime-gate.md]].
 

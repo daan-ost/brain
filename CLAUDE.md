@@ -71,6 +71,13 @@ kandidaat-ticks → géén trades).
 volumeud-reeks** van die munt (zodat ~10% van de ticks erboven ligt, gelijk aan de 4 bestaande munten).
 Niet de legacy min_volume van andere rule-nummers overnemen — die hoort bij andere volume-settings-bands.
 
+## Lange taken (refire, sweep, etc.)
+
+Taken die langer dan ~5 minuten CPU-tijd kosten (volledige refire over alle munten, grote sweeps) **niet
+zelf in de achtergrond draaien** — die worden gekilld als de sessie afloopt. Geef in plaats daarvan het
+exacte bash-commando aan Daan, zodat hij het in een losse terminal kan draaien (met `nohup` of `screen`).
+Korte taken (<5 min, bijv. 1-2 munten refiren of een read-only sweep) mogen wél direct.
+
 ## Rule-discovery filosofie (Daans uitgangspunt — altijd aanhouden)
 
 Nieuwe koop-rules (30, 31, …) vinden is **speelruimte om een portfolio op te bouwen**, geen jacht op

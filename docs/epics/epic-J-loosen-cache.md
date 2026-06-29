@@ -1,8 +1,9 @@
 # EPIC J: Auto-loosen (rq2) caching + incrementeel
 
-**Status:** Approved — BOUW-KLAAR gemaakt 2026-06-27 (zie **Build-ready details** A-D: exacte regels, cache +
-T_safe-correctie t.o.v. Epic I, verplichte test). Te bouwen **ná Epic H** (H zet de regime-versie-in-cache-
-discipline die J's rq2-cache moet erven) en ná Epic I (**nu gebouwd** → de incrementele machinerie staat klaar).
+**Status:** **Afgerond** — gebouwd in aparte sessie (bevestigd 2026-06-29). De **Build-ready details** A-D
+hieronder zijn nu de implementatie-referentie (exacte regels, cache + T_safe-correctie t.o.v. Epic I, test).
+Was BOUW-KLAAR gemaakt 2026-06-27; oorspronkelijk te bouwen ná Epic H (regime-versie-in-cache) en ná Epic I
+(**gebouwd** → incrementele machinerie stond klaar).
 · **Datum opgesteld:** 2026-06-26 · Refines: schaalplan ([[../findings/optimize-scaling-plan-2026-06-25.md]]) ·
 Volgorde: [[../findings/onboarding-batch-en-bouwvolgorde-2026-06-27.md]]
 

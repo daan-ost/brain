@@ -1,7 +1,10 @@
 # EPIC G: Munt aan/uit — de regime-gate (stoplicht)
 
-> **Status:** Plan (nog niets gebouwd). Vervolg op [epic-05](epic-05-coin-volatility-gating.md) (oorspronkelijke
-> gating-spec) en [epic-V](epic-V-coin-volatility-flag.md) (gebouwd: kansrijkheid-ranking + `coin_daily_metrics`).
+> **Status:** **Gebouwd** (de gate-logica + validatie; geverifieerd 2026-06-29). De aan/uit-gate is
+> geoperationaliseerd via [epic-H](epic-H-regime-apply.md) (`coin_regime.py` spiegelt het gate-algoritme,
+> `regime_validate.py`/`regime_backtest.py`/`regime_economics.py` toetsen het). Vervolg op
+> [epic-05](epic-05-coin-volatility-gating.md) (oorspronkelijke gating-spec) en
+> [epic-V](epic-V-coin-volatility-flag.md) (gebouwd: kansrijkheid-ranking + `coin_daily_metrics`).
 > Bouwt voort op de findings [coin-volatiliteit-stoplicht-2026-06-17](../findings/coin-volatiliteit-stoplicht-2026-06-17.md).
 
 ## Epic Specification
