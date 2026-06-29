@@ -3,6 +3,7 @@ DB connections. The pipeline reads/writes ONLY brain. The legacy bot_signals con
 exists for the one import (import_indicators.py / seed_rules.py) and for OFFLINE validation
 against the legacy labels/oracle — never in the screens or the production path.
 """
+import os
 import time
 
 import pymysql
@@ -49,4 +50,28 @@ def brain(dict_cursor=True):
 def legacy(dict_cursor=True):
     """Read-only legacy bot_signals — import + offline validation ONLY."""
     return _connect_with_retry(database="bot_signals", **_COMMON,
+                               cursorclass=pymysql.cursors.DictCursor if dict_cursor else pymysql.cursors.Cursor)
+
+
+def mexc(dict_cursor=True):
+    """
+    MEXC coin-tracking DB — env-configureerbaar zodat dezelfde scan-code lokaal én op de server draait.
+    Default (geen env) = lokale MAMP brain-DB, zodat de bestaande routine/UI niet breekt.
+    Op de 66bio-VPS: zet MEXC_DB_* naar de eigen `mexc`-database (zie docs/findings/mexc-coin-tracking-2026-06-29.md).
+
+      MEXC_DB_HOST  (default 127.0.0.1)
+      MEXC_DB_PORT  (default 8889 — MAMP; server: 3306)
+      MEXC_DB_USER  (default root)
+      MEXC_DB_PASS  (default root)
+      MEXC_DB_NAME  (default brain — server: mexc)
+    """
+    cfg = dict(
+        host=os.environ.get("MEXC_DB_HOST", "127.0.0.1"),
+        port=int(os.environ.get("MEXC_DB_PORT", "8889")),
+        user=os.environ.get("MEXC_DB_USER", "root"),
+        password=os.environ.get("MEXC_DB_PASS", "root"),
+        database=os.environ.get("MEXC_DB_NAME", "brain"),
+        autocommit=True, read_timeout=600, write_timeout=600, connect_timeout=10, ssl=None,
+    )
+    return _connect_with_retry(**cfg,
                                cursorclass=pymysql.cursors.DictCursor if dict_cursor else pymysql.cursors.Cursor)

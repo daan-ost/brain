@@ -337,9 +337,9 @@ def routine_mexc_scan(j):
           level="result", data=res)
     for c in res.get("top", [])[:5]:
         j.add(f"  {c['symbol']}: volat {c['volat_pct']:.1f}% | "
-              f"24u-vol ${c['vol24h_usd']:,.0f} | "
-              f"mcap ${c.get('mcap_usd', 0):,.0f} | "
-              f"{c.get('age_days', '?')}d ({c.get('age_source', '?')})",
+              f"24u-vol ${c.get('vol24h_usd') or 0:,.0f} | "
+              f"mcap ${c.get('mcap_usd') or 0:,.0f} | "
+              f"{c.get('age_days') if c.get('age_days') is not None else '?'}d ({c.get('age_source') or '?'})",
               level="finding")
     return f"mexc-scan | {res['fetched']} paren | {res['kept']} kandidaten"
 
