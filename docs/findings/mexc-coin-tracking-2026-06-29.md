@@ -1,6 +1,6 @@
 # MEXC coin-tracking & classificatie — ontwerp + beslissingen (2026-06-29)
 
-**Status:** Ontwerp vastgelegd, bouw gestart. Deploy wacht op SSH-go (zie §7).
+**Status:** ✅ Gedeployed op de 66bio-VPS (2026-06-29) — 4-uurs cron draait, history bouwt op. Zie §8.
 **Aanleiding:** Daan wil systematisch de beste rotatie-munten leren kiezen op `/coins/mexc`. Drie wensen:
 1. Per 4 uur vastleggen waar een munt staat (rang + data) → tijdreeks als basis voor business rules.
 2. Munten in de lijst kunnen classificeren (niet beoordeeld / goed / slecht), slechte verdwijnen.
@@ -118,11 +118,31 @@ de Mac en leest de brain-DB. Die twee staan dan los. Volgorde:
 
 ## 7. Open punten
 
-- **SSH-deploy-go:** het VPS-IP (`116.203.78.110`) is afgeleid uit `66bio/.../migrate-all.sh` + known_hosts,
-  niet door Daan in dit repo genoemd → de Claude Code-veiligheidslaag blokkeert root-SSH tot Daan het target
-  bevestigt (en bij voorkeur als SSH-config-host + permissie vastlegt). Blokkeert alleen de deploy, niet de bouw.
-- **DB-naam op de server:** voorstel `mexc` (eigen, los van de geplande `nobrainers`-feed-DB van epic-TV).
-- **Backups:** valt de nieuwe `mexc`-DB onder de bestaande 66bio-backup-routine? Checken bij deploy.
+- **`mexc@localhost` wachtwoord-mismatch:** in stap D kreeg `mexc@127.0.0.1` het juiste wachtwoord (scan
+  + pymysql werken), maar `mexc@localhost` raakte uit sync. Onschadelijk nu (de scan verbindt op IP via
+  TCP → matcht `@127.0.0.1`), maar de `mysql`-CLI resolveert `127.0.0.1`→`localhost` en faalt daardoor.
+  Opschonen bij de brain-verhuizing: `mexc@localhost` droppen of zijn wachtwoord gelijkzetten. Zie [[qr-vps-mysql-access]].
+- **Backups:** Ploi-user-wachtwoord is nu gezet, dus Ploi ziet de `mexc`-DB. Checken of de Ploi-backup-routine
+  'm meeneemt.
+- **UI-koppeling:** classificatie-scherm (deel C) komt live bij de website-migratie (epic-SV).
+
+---
+
+## 8. Deploy-uitkomst (2026-06-29)
+
+Gedeployed naar `/opt/mexc-scan/` op `116.203.78.110` (eigen `mexc`-DB). Eerste serverrun: 1637 munten,
+279 kandidaten met rang + candle-trend, 25 faller / 3 choppy uitgevlagd (PERM −55%, KAZAR −82%, TOYL −71%).
+Cron `/etc/cron.d/mexc-scan` draait elke 4 uur (`5 */4 * * *`).
+
+**Onverwacht onderweg — server-MySQL stond in noodmodus.** MySQL draaide sinds 17 juni handmatig met
+`mysqld_safe --skip-grant-tables --skip-networking` (blijven hangen na eerder ploi-user-gedoe). Gevolg:
+geen TCP op 3306 → Ploi kon geen DB toevoegen, scan kon niet verbinden. Hersteld: skip-instantie gestopt,
+root/ploi/mexc-wachtwoorden gereset via een verse skip-grant-tables-sessie, daarna normaal via systemd
+gestart. Volledige toegang + recovery-procedure: [[qr-vps-mysql-access]] / `docs/deployment/mexc-scan-server.md` §A.
+
+**Deploy-correcties t.o.v. het oorspronkelijke runbook:** schema laden + queries via **pymysql** (niet de
+`mysql`-CLI — die resolveert `127.0.0.1`→`localhost`); `run.sh` werd apart aangemaakt; wachtwoorden op de
+server gegenereerd.
 
 ---
 

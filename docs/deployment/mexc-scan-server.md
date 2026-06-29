@@ -119,3 +119,48 @@ Verwacht ~6 rijen-groepen/dag (één per 4-uurs run), elk met de kandidaat-set.
   Daans goed/slecht-labels.
 - **Website-koppeling:** het classificatie-scherm leest/schrijft `mexc_coin_labels` en komt live bij de
   website-migratie (samen). Tot dan bouwt deze job alleen de data op.
+
+---
+
+## Werkelijk gevolgde route (2026-06-29) — afwijkingen van bovenstaand runbook
+
+- **Schema laden + queries via pymysql, NIET de `mysql`-CLI.** De CLI resolveert `127.0.0.1`→`localhost` en
+  matcht dan `user@localhost` (verkeerd ww) → "Access denied". pymysql (host=127.0.0.1) matcht `user@127.0.0.1`.
+  Forceer anders `mysql --protocol=TCP`. Zie [[qr-vps-mysql-access]].
+- **`run.sh` apart aangemaakt** (ontbrak doordat stap 3 eerder op de DB-fout afbrak).
+- **Wachtwoorden op de server gegenereerd** (`openssl rand -hex 20`) i.p.v. handmatig in het runbook.
+
+## §A — Server-MySQL-recovery (was nodig vóór de deploy kon)
+
+MySQL stond sinds 17 juni in `mysqld_safe --skip-grant-tables --skip-networking` (geen TCP → Ploi kon geen
+DB maken). Hersteld (qr-sites stonden niet live):
+
+```bash
+# 1. skip-instantie stoppen
+pkill -f mysqld_safe; sleep 2; pkill -x mysqld
+for i in $(seq 1 20); do pgrep -x mysqld >/dev/null || break; sleep 1; done
+
+# 2. verse skip-grant-tables (socket-only) voor root-toegang
+mysqld_safe --skip-grant-tables --skip-networking >/dev/null 2>&1 &
+sleep 8
+
+# 3. wachtwoorden resetten + mexc aanmaken (één mysql --no-defaults sessie, FLUSH eerst)
+mysql --no-defaults <<SQL
+FLUSH PRIVILEGES;
+ALTER USER 'root'@'localhost' IDENTIFIED BY '<ROOT_WW>';
+ALTER USER 'ploi'@'127.0.0.1' IDENTIFIED BY '<PLOI_WW>';
+ALTER USER 'ploi'@'%' IDENTIFIED BY '<PLOI_WW>';
+CREATE DATABASE IF NOT EXISTS mexc CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'mexc'@'127.0.0.1' IDENTIFIED BY '<MEXC_WW>';
+GRANT ALL PRIVILEGES ON mexc.* TO 'mexc'@'127.0.0.1';
+FLUSH PRIVILEGES;
+SQL
+
+# 4. skip-instantie stoppen, normaal via systemd starten (unit is schoon)
+pkill -f mysqld_safe; sleep 2; pkill -x mysqld
+for i in $(seq 1 20); do pgrep -x mysqld >/dev/null || break; sleep 1; done
+systemctl start mysql
+```
+
+Daarna: PLOI_WW in Ploi → server → Database settings → "Database ploi user password" + Save.
+Root-ww in Daans kluis. Verifieer: `ss -tlnp | grep 3306` (TCP terug), root-login werkt, qr-DBs intact.
