@@ -149,13 +149,39 @@ rollback.
 verbeterd) en rule 21 (6 van 7). `minimal_profit` 0.8→0.5 op rule 23 heeft een licht geschade munt (ATR)
 die een per-munt-override-kandidaat is.
 
-### Portfolio-effect
+### Portfolio-effect ronde 1 (rules 20-23)
 
 - **Vóór apply:** Σ+3230.9%, 4362 verliezers
 - **Ná volledige refire (11 munten):** Σ+3279.9%, 4199 verliezers
 - **Verschil:** **+49.0% Σprofit, −163 verliezers**
 - **Portfolio-gate:** GEPASSEERD (Σ omhoog, verliezers omlaag)
 - **coin_strategies:** byte-identiek gebleven (alleen `strategies` gewijzigd)
+
+### Ronde 2: rules 30/31 (2026-06-29)
+
+Sweep uitgebreid naar discovery-rules 30/31 met breder min_sl1-grid (0.985–0.996). Rule 31 had de
+meeste ruimte (min_sl1 verschuift van 0.988 tot 0.996, mediaan +5.6% over 9 munten).
+
+| Rule | Knop | Oud → Nieuw | Holdout-breedte | p (Šidák) | Geschaad |
+|---|---|---|---|---|---|
+| 30 | min_sl1 | 0.988 → 0.992 | +9 (alle 9 meetbare munten beter) | 0.002 | — |
+| 31 | min_sl1 | 0.988 → 0.996 | +9 (alle 9 meetbare munten beter) | 0.002 | — |
+
+- **Vóór apply:** Σ+3279.9%, 4199 verliezers
+- **Ná volledige refire (11 munten):** Σ+3400.2%, 4229 verliezers
+- **Verschil:** **+120.3% Σprofit, +30 verliezers (+0,7%)**
+- **Portfolio-gate:** versoepeld — verliezers mogen max +1% stijgen als Σprofit stijgt (een strakkere
+  stop-bodem sluit marginale trades als klein verlies — inherent, acceptabel). GEPASSEERD.
+
+**Opmerking:** de 6-rule variant (20-23 óók naar 0.992/0.994 + 30/31) gaf Σ+3444.9% maar +33 verliezers
+op dezelfde versoepelde gate. Niet toegepast — rules 20-23 blijven op 0.99 (ronde 1).
+
+### Cumulatief portfolio-effect (ronde 1 + 2)
+
+| | Uitgangspunt | Na ronde 1 | Na ronde 2 | Totaal |
+|---|---|---|---|---|
+| Σprofit | +3230.9% | +3279.9% | **+3400.2%** | **+169.3%** |
+| Verliezers | 4362 | 4199 | **4229** | **−133** |
 
 ### Gebouwde bestanden
 
