@@ -349,7 +349,7 @@ def check_rule_settings(ctx):
     """9. min_volume aanwezig per coin × actieve buy-rule (20-23)."""
     have = set((r["trading_symbol_id"], r["rule_number"]) for r in
                ctx.q("SELECT trading_symbol_id, rule_number FROM coin_rule_settings "
-                     "WHERE rule_number IN (20,21,22,23) AND min_volume IS NOT NULL"))
+                     "WHERE rule_number IN (20,21,22,23) AND min_volume IS NOT NULL AND min_volume > 0"))
     missing = []
     for cid in ctx.coins:
         for rule in BUY_RULES:

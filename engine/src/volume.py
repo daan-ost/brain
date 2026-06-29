@@ -69,6 +69,10 @@ def check_volumeud_3(rows, min_volume, s=RULE21_VOLUME_SETTINGS):
     price_0 = float(rows[0]["price"])
     if value_0 < 1:
         return False
+    # geen geldige volume-schaal → relvol is onbepaald; sla deze tick veilig over (nul-guard,
+    # net als regel 80; voorkomt ZeroDivisionError bij min_volume=0/NULL — integrity.py dwingt >0 af)
+    if min_volume <= 0:
+        return False
     rel0 = round(value_0 / min_volume, 2)
     if rel0 < s["minimal_relative_volume"] or rel0 > s["maximal_relative_volume"]:
         return False
