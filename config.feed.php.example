@@ -1,0 +1,20 @@
+<?php
+// Feed-configuratie voor retrieve_signal_tv.php (epic-TV)
+// Kopieer naar /home/ploi/nobrainersbot.com/config.feed.php (buiten www/)
+// Stel juiste waarden in. Dit bestand staat NIET in git.
+return [
+    // ── Shared-secret token (stuur mee als ?token=... of X-Feed-Token header)
+    'token'       => 'VERVANG_MET_STERK_RANDOM_TOKEN',
+
+    // ── Feed-database (nobrainers_feed)
+    'db_host'     => '127.0.0.1',
+    'db_port'     => '3306',
+    'db_name'     => 'nobrainers_feed',
+    'db_user'     => 'feed_user',
+    'db_pass'     => 'VERVANG_MET_STERK_WACHTWOORD',
+
+    // ── Optionele IP-allowlist voor TradingView-webhooks (lege array = uitgeschakeld)
+    // TradingView-webhook IPs: https://www.tradingview.com/support/solutions/43000529348
+    'allowed_ips' => [],
+    // 'allowed_ips' => ['52.89.214.238', '34.212.75.30', '54.218.53.128', '52.32.178.7'],
+];

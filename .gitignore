@@ -15,6 +15,7 @@ www/storage/framework/views/
 www/.env
 www/.env.review
 .env
+config.feed.php
 
 # IDE
 .idea/
