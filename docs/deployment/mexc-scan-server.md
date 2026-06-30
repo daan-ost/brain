@@ -164,3 +164,37 @@ systemctl start mysql
 
 Daarna: PLOI_WW in Ploi → server → Database settings → "Database ploi user password" + Save.
 Root-ww in Daans kluis. Verifieer: `ss -tlnp | grep 3306` (TCP terug), root-login werkt, qr-DBs intact.
+
+## §B — Ploi maakt databases aan als `root@localhost` (socket), niet als de ploi-user (2026-06-30)
+
+Na de recovery faalde "Create database" in Ploi telkens ("Creating your database has failed"). Eindeloos aan
+de `ploi`-user gesleuteld (grants OK, ww herzet, `ploi@localhost` toegevoegd) — allemaal naast de kwestie.
+
+**Diagnose (de werkwijze die het oploste):** zet de MySQL general query log aan, herhaal de Ploi-actie, lees
+welke verbinding faalt:
+```sql
+SET GLOBAL general_log_file = '/var/log/mysql/general.log';
+SET GLOBAL general_log = 'ON';
+-- ... nu in Ploi op "Create database" klikken ...
+```
+```bash
+tail -120 /var/log/mysql/general.log | grep -iE 'Connect|denied'
+# → root@localhost on  using Socket
+# → Access denied for user 'root'@'localhost' (using password: YES)
+```
+
+**Oorzaak:** Ploi verbindt als **`root@localhost` via de unix-socket** met het wachtwoord uit het
+Ploi-dashboard-veld. Bij de recovery (§A) hadden we het server-root-ww gewijzigd → Ploi's opgeslagen kopie
+stond out-of-sync → access denied.
+
+**Fix:** server-root-ww gelijktrekken met het Ploi-veld:
+```sql
+ALTER USER 'root'@'localhost' IDENTIFIED BY '<Ploi-veld-ww>';
+FLUSH PRIVILEGES;
+SET GLOBAL general_log = 'OFF';   -- niet aan laten staan: logt alle queries incl. wachtwoorden
+```
+Daarna in Ploi hetzelfde ww in het database-veld → Save. Database aanmaken werkt nu.
+
+> **Les:** na élke root-ww-wijziging op deze server moet je het Ploi-dashboard-veld meeveranderen, anders
+> breekt Ploi's DB-beheer. Het "Database password"-veld in Ploi = het **root**-wachtwoord, niet dat van de
+> ploi-user. Huidige waarde (2026-06-30): `PloiDB2026` (zwak/tijdelijk — nog te verstevigen op beide kanten).

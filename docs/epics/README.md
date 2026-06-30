@@ -17,6 +17,9 @@ Hard rule: `bot_signals` is a **read-only source** — never written to.
 | [RDA](epic-RDA-rule-discovery-automation.md) | Rule-discovery automatisering — autonome loop + routine-aanpassingen (verfijnt E06/E08) | RD + E07 |
 | [I](epic-I-incremental-refire.md) | Incrementele refire — alleen het nieuwe data-staartje herberekenen (~12min → seconden bij dagelijkse data) | schaalplan + refire-speedup |
 | [J](epic-J-loosen-cache.md) | Auto-loosen (rq2) caching + incrementeel — de laatste niet-versnelde routine-stap (>15min → seconden) | I (incrementele machinerie) |
+| [M](epic-M-mexc-volatile-coins.md) | **✅ GEBOUWD** — MEXC-marktscan: kandidaten-tab + 4-uurs cron op de 66bio-VPS; classificatie-UI (deel C) volgt bij SV | voorbereiding rotatie-muntkeuze |
+| [TV](epic-TV-live-indicator-ingest.md) | Live indicator-ontvangst — TradingView-webhooks ontvangen + opslaan in eigen feed-DB op de QR-server (vervangt de TransIP-VPS) | operationeel: vervangt legacy `retrieve_signal_tv.php` |
+| [SV](epic-SV-server-verhuizing.md) | Server-verhuizing — brain DB + Python engine + Laravel app naar de QR-server (laptop vrijmaken, routines 24/7) | infra: hangt af van TV |
 
 A and B are the concrete, buildable versions of the foundation. R is the path to ~legacy level (interpretable rules, before ML). **RD = de bewezen bottom-up discovery-methodiek als bouwbare engine; RDA = de automatisering ervan (verfijnt E06/E08), incl. aanpassingen aan de huidige routines.** Methodiek: [../methodology/rule-discovery.md](../methodology/rule-discovery.md). S is a parked dependency. The numbered E01–E11 below remain the grand plan.
 

@@ -1,9 +1,57 @@
 # EPIC M: Volatiele MEXC-coins ontdekken — kandidaten-tab onder /coins
 
-> **Onderzoek af 2026-06-19** (read-only, geverifieerd tegen de live MEXC- en CoinGecko-API's).
-> Findings-doc: `docs/findings/mexc-volatiele-coins-2026-06-19.md`. Dit epic bouwt de ontdekkings-trechter
-> vóór de engine: een dagelijkse scan van de hele MEXC-markt levert volatiele, handelbare, niet-te-jonge
-> USDT-coins als rotatie-kandidaten — strikt gescheiden van `coin_daily_metrics` (de coins die we al handelen).
+> **✅ GEBOUWD + GEDEPLOYED (2026-06-29)** — kern af + 4-uurs cron draait op de 66bio-VPS.
+> Zie §Gebouwde staat voor de delta t.o.v. het plan.
+> Onderzoeks-findings: `docs/findings/mexc-volatiele-coins-2026-06-19.md`.
+> Bouw-beslissingen + architectuur: `docs/findings/mexc-coin-tracking-2026-06-29.md`.
+> Server-runbook: `docs/deployment/mexc-scan-server.md`.
+
+---
+
+## Gebouwde staat (2026-06-29)
+
+De vier geplande features zijn gebouwd, maar de implementatie is op drie punten verder gegaan dan het originele plan.
+
+### Wat er staat
+
+| Bestand | Rol |
+|---|---|
+| `engine/src/mexc_scan.py` | Scan-engine: MEXC 2 bulk-calls → CoinGecko-join → klines-trend → DB schrijven |
+| `engine/src/routines.py` | `routine_mexc_scan` + `MEXC_SET_KEY="mexc-scan"` (niet-gegated) |
+| `engine/src/db.py` | `mexc()` functie, env-configureerbaar (`MEXC_DB_*`) |
+| `engine/sql/mexc_schema.sql` | Drie tabellen: `mexc_market_scan`, `mexc_snapshots`, `mexc_coin_labels` |
+| `www/database/migrations/2026_06_29_000000_extend_mexc_tracking.php` | Brain-DB gelijkgetrokken met server-schema |
+| `www/app/Livewire/Coins/MexcScan.php` | Livewire-component `/coins/mexc` + `scanNow()` knop |
+| `www/resources/views/livewire/coins/mexc-scan.blade.php` | View met filters + "Nu verversen"-knop |
+
+### Delta t.o.v. het originele plan
+
+**1. Uitgebreide data per munt (verder dan v1-plan)**
+- `mexc_market_scan` bevat ook: `bid_price/ask_price/bid_qty/ask_qty`, `spread_pct`, `book_pressure` (orderboek-top uit ticker gratis), en candle-trend-kolommen uit `klines 1d`: `ret_7d_pct`, `ret_14d_pct`, `avg_day_range_pct`, `up_days`, `down_days`, `trend_window_d`, `auto_flag` (`faller`/`choppy`/NULL).
+- `auto_flag` filtert "alleen-dalers" automatisch (ret_7d < −25%) en "schokkerig maar geen richting" (avg_range > 40% én |ret_7d| < 15%). Drempels zijn eerste gok, later afstemmen op Daans goed/slecht-labels.
+
+**2. 4-uurs tijdreeks op de server (nieuw t.o.v. plan)**
+- Tabel `mexc_snapshots` (append-only): elke run een rij per kandidaat — rang + orderboek-momentopname + `snapshot_at`. Op de server: 6 runs/dag = ~1700 rijen/dag. Alleen wat je niet uit klines kunt reconstrueren (klines geeft 500 dagen prijs-history direct).
+- DB is een **eigen `mexc`-database op de 66bio-VPS** (`116.203.78.110`), losgekoppeld van de brain-DB op de Mac. Dezelfde code draait lokaal tegen brain (default env) en op de server (via `MEXC_DB_*` env vars in `/opt/mexc-scan/.env`).
+- Cron: `/etc/cron.d/mexc-scan` — `5 */4 * * *`, draait als root, logt naar `/opt/mexc-scan/log/scan.log`.
+
+**3. Classificatie-schema klaar, UI nog open**
+- Tabel `mexc_coin_labels` (unieke sleutel `base`) bestaat al: `classification ENUM('unrated','good','bad')`, `reasons JSON`, `note`. Overleeft de truncate van `mexc_market_scan`.
+- **UI (radio-knoppen + redenen)** is nog **niet gebouwd** — wacht op de website-migratie naar de VPS (epic-SV), zodat de Livewire-laag bij de server-DB kan.
+
+### Server-status
+- **Locatie:** `/opt/mexc-scan/` op `116.203.78.110` (Python 3.12 venv, pymysql 2.2.8)
+- **Verbinding:** `mexc@127.0.0.1` op poort 3306, wachtwoord in `/opt/mexc-scan/.env` (chmod 600)
+- **Verificatie:** `ssh root@116.203.78.110 '/opt/mexc-scan/venv/bin/python -c "..."'` (zie deployment-runbook §5)
+- **Code-update:** opnieuw `scp engine/src/db.py engine/src/mexc_scan.py root@116.203.78.110:/opt/mexc-scan/src/` — geen herstart nodig
+
+### Open punten
+- **Classificatie-UI (deel C)** — na epic-SV (website naar server)
+- **`auto_flag`-drempelwaarden afstemmen** — zodra er goed/slecht-labels + genoeg history zijn
+- **`mexc@localhost` wachtwoord-mismatch** — opschonen bij brain-verhuizing (onschadelijk, scan verbindt op IP)
+- **Ploi-backup** — checken of de `mexc`-DB onder de backup-routine valt
+
+---
 
 ## Epic Specification
 
@@ -93,7 +141,7 @@ def brain(dict_cursor=True):
 
 ### 1. Brain-tabel `mexc_market_scan` (migratie)
 
-**Status:** Approved
+**Status:** ✅ Gebouwd
 
 ```php
 // www/database/migrations/2026_06_20_010000_create_mexc_market_scan_table.php
@@ -135,7 +183,7 @@ return new class extends Migration {
 
 ### 2. Python fetch-module `engine/src/mexc_scan.py` (fetch + join + schrijf)
 
-**Status:** Approved
+**Status:** ✅ Gebouwd — uitgebreid met spread/orderboek, candle-trends en 4-uurs history (zie §Gebouwde staat)
 
 Module met `run(verbose=True) -> {fetched, kept, top:[...]}`. Stappen:
 1. **HTTP via stdlib `urllib.request`** (geen `requests`-dependency nodig — bewezen werkend in het prototype).
@@ -168,7 +216,7 @@ Module met `run(verbose=True) -> {fetched, kept, top:[...]}`. Stappen:
 
 ### 3. Routine-set `mexc-scan` in `engine/src/routines.py`
 
-**Status:** Approved
+**Status:** ✅ Gebouwd
 
 ```python
 def routine_mexc_scan(j):
@@ -200,7 +248,7 @@ SETS = { ..., MEXC_SET_KEY: (MEXC_SET_NAME, REGISTRY_MEXC, False) }
 
 ### 4. UI-tab `App\Livewire\Coins\MexcScan` onder /coins met filters
 
-**Status:** Approved
+**Status:** ✅ Gebouwd — inclusief "Nu verversen"-knop (Livewire `scanNow()`). Classificatie-UI (deel C, radio-knoppen) volgt bij epic-SV.
 
 - Nieuw component `App\Livewire\Coins\MexcScan` (`mount()` → `abort_unless(auth()->user()?->is_admin, 403)`,
   `#[Layout('layouts.trading')]`), view `livewire/coins/mexc-scan.blade.php`.
